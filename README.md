@@ -120,3 +120,11 @@ node --test tests/fuzzy.test.mjs
 ## Engineering review
 
 A staff-level performance and security review is documented in `docs/PERFORMANCE_SECURITY_REVIEW.md`.
+
+## CI checks (GitHub Actions)
+
+A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
+- `npm test` (fuzzy matcher tests)
+- `glib-compile-schemas --strict --dry-run schemas`
+- `bash -n scripts/install-local.sh scripts/package-extension.sh`
+
