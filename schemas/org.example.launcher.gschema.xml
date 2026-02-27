@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.example.launcher" path="/org/example/launcher/">
+    <key name="toggle-launcher" type="as">
+      <default>["&lt;Super&gt;space"]</default>
+      <summary>Toggle launcher keybinding</summary>
+      <description>Shortcut used to open the launcher overlay.</description>
+    </key>
+    <key name="blur-enabled" type="b">
+      <default>true</default>
+      <summary>Enable blur</summary>
+      <description>Use blur-like styling for the launcher overlay.</description>
+    </key>
+    <key name="animations-enabled" type="b">
+      <default>true</default>
+      <summary>Enable animations</summary>
+      <description>Animate overlay open/close transitions.</description>
+    </key>
+    <key name="open-animation-ms" type="i">
+      <default>140</default>
+      <summary>Open animation duration</summary>
+      <description>Overlay open transition duration in milliseconds.</description>
+    </key>
+    <key name="close-animation-ms" type="i">
+      <default>110</default>
+      <summary>Close animation duration</summary>
+      <description>Overlay close transition duration in milliseconds.</description>
+    </key>
+    <key name="max-results" type="i">
+      <default>12</default>
+      <summary>Maximum results</summary>
+      <description>Maximum number of ranked results displayed.</description>
+    </key>
+    <key name="debounce-ms" type="i">
+      <default>15</default>
+      <summary>Debounce milliseconds</summary>
+      <description>Delay before triggering search recalculation.</description>
+    </key>
+    <key name="weight-windows" type="i">
+      <default>30</default>
+      <summary>Window result weight</summary>
+      <description>Additional score applied to window matches.</description>
+    </key>
+    <key name="weight-apps" type="i">
+      <default>20</default>
+      <summary>App result weight</summary>
+      <description>Additional score applied to app matches.</description>
+    </key>
+    <key name="weight-recents" type="i">
+      <default>10</default>
+      <summary>Recent result weight</summary>
+      <description>Additional score applied to recent file matches.</description>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,10 @@
+{
+  "name": "hop-launcher",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/fuzzy.test.mjs",
+    "install:local": "bash ./scripts/install-local.sh",
+    "package": "bash ./scripts/package-extension.sh"
+  }
+}
