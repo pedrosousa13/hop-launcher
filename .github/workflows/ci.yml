@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, work]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install JS dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run fuzzy matcher tests
+        run: npm test
+
+      - name: Validate GSettings schema
+        run: glib-compile-schemas --strict --dry-run schemas
+
+      - name: Validate helper scripts syntax
+        run: bash -n scripts/install-local.sh scripts/package-extension.sh
