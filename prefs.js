@@ -4,6 +4,12 @@ import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+
+function isValidAccelerator(accel) {
+    const [keyval, mods] = Gtk.accelerator_parse(accel);
+    return keyval !== 0 && mods !== 0;
+}
+
 function addSpinRow(group, settings, key, title, subtitle, lower, upper, step = 1, page = 5) {
     const row = new Adw.SpinRow({
         title,
@@ -37,7 +43,9 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         });
         keybindRow.connect('changed', row => {
             const value = row.text.trim();
-            settings.set_strv('toggle-launcher', value ? [value] : ['<Super>space']);
+            const accel = value || '<Super>space';
+            if (isValidAccelerator(accel))
+                settings.set_strv('toggle-launcher', [accel]);
         });
         behaviorGroup.add(keybindRow);
 

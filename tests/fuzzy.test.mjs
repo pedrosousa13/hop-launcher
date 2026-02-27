@@ -40,3 +40,15 @@ test('window title substring can win', () => {
     const ranked = rankResults('ranking', items, {maxResults: 5});
     assert.equal(ranked[0].kind, 'window');
 });
+
+
+test('empty query falls back to source weighting order', () => {
+    const items = [
+        {kind: 'app', primaryText: 'Calculator', secondaryText: ''},
+        {kind: 'window', primaryText: 'Terminal', secondaryText: ''},
+        {kind: 'recent', primaryText: 'notes.txt', secondaryText: ''},
+    ];
+
+    const ranked = rankResults('', items, {maxResults: 10});
+    assert.equal(ranked[0].kind, 'window');
+});

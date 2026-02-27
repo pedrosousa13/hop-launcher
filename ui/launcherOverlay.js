@@ -3,9 +3,12 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
 import {rankResults} from '../lib/fuzzy.js';
 
 const SLIDE_Y = 14;
+const ASYNC_SEARCH_THRESHOLD = 180;
 
 export const LauncherOverlay = GObject.registerClass(
 class LauncherOverlay extends St.BoxLayout {
@@ -27,8 +30,10 @@ class LauncherOverlay extends St.BoxLayout {
         this._providers = providers;
         this._signals = [];
         this._debounceSourceId = null;
+        this._idleSearchSourceId = null;
         this._selectedIndex = 0;
         this._results = [];
+        this._searchGeneration = 0;
 
         this._input = new St.Entry({
             style_class: 'hop-launcher-input',
@@ -77,6 +82,8 @@ class LauncherOverlay extends St.BoxLayout {
     }
 
     close() {
+        this._cancelPendingSearch();
+
         this.remove_all_transitions();
         const animate = this._settings.get_boolean('animations-enabled');
         this.ease({
@@ -101,6 +108,18 @@ class LauncherOverlay extends St.BoxLayout {
         }
     }
 
+    _cancelPendingSearch() {
+        if (this._debounceSourceId) {
+            GLib.source_remove(this._debounceSourceId);
+            this._debounceSourceId = null;
+        }
+
+        if (this._idleSearchSourceId) {
+            GLib.source_remove(this._idleSearchSourceId);
+            this._idleSearchSourceId = null;
+        }
+    }
+
     _queueSearch() {
         if (this._debounceSourceId) {
             GLib.source_remove(this._debounceSourceId);
@@ -119,16 +138,37 @@ class LauncherOverlay extends St.BoxLayout {
         const rawQuery = this._input.get_text();
         const {query, mode} = this._extractMode(rawQuery);
         const items = this._collectItems(mode);
+        const generation = ++this._searchGeneration;
 
-        this._results = rankResults(query, items, {
+        if (items.length < ASYNC_SEARCH_THRESHOLD) {
+            this._results = this._rank(query, items);
+            this._selectedIndex = 0;
+            this._renderResults();
+            return;
+        }
+
+        if (this._idleSearchSourceId)
+            GLib.source_remove(this._idleSearchSourceId);
+
+        this._idleSearchSourceId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._idleSearchSourceId = null;
+            if (generation !== this._searchGeneration)
+                return GLib.SOURCE_REMOVE;
+
+            this._results = this._rank(query, items);
+            this._selectedIndex = 0;
+            this._renderResults();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _rank(query, items) {
+        return rankResults(query, items, {
             weightWindows: this._settings.get_int('weight-windows'),
             weightApps: this._settings.get_int('weight-apps'),
             weightRecents: this._settings.get_int('weight-recents'),
             maxResults: this._settings.get_int('max-results'),
         });
-
-        this._selectedIndex = 0;
-        this._renderResults();
     }
 
     _extractMode(rawQuery) {
@@ -155,10 +195,7 @@ class LauncherOverlay extends St.BoxLayout {
                     id: 'show-overview',
                     primaryText: 'Show Overview',
                     secondaryText: 'Shell action',
-                    execute: () => {
-                        if (global.workspace_manager)
-                            global.display.emit('overlay-key');
-                    },
+                    execute: () => Main.overview.show(),
                 },
             ];
         }
@@ -265,9 +302,7 @@ class LauncherOverlay extends St.BoxLayout {
     }
 
     destroyOverlay() {
-        if (this._debounceSourceId)
-            GLib.source_remove(this._debounceSourceId);
-        this._debounceSourceId = null;
+        this._cancelPendingSearch();
 
         for (const id of this._signals)
             this._input.clutter_text.disconnect(id);

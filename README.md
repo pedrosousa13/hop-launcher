@@ -85,6 +85,7 @@ Create a zip file in `dist/`:
 - `scripts/install-local.sh`
 - `scripts/package-extension.sh`
 - `tests/fuzzy.test.mjs`
+- `docs/PERFORMANCE_SECURITY_REVIEW.md`
 
 ## Keybinding
 
@@ -114,3 +115,8 @@ Create a zip file in `dist/`:
 ```bash
 node --test tests/fuzzy.test.mjs
 ```
+
+
+## Engineering review
+
+A staff-level performance and security review is documented in `docs/PERFORMANCE_SECURITY_REVIEW.md`.
