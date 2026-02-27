@@ -19,7 +19,7 @@ jobs:
           cache: 'npm'
 
       - name: Install JS dependencies
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Run fuzzy matcher tests
         run: npm test
