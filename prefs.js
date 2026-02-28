@@ -115,6 +115,22 @@ function aliasTargetPlaceholder(type) {
     return 'appId|titleContains (example: org.gnome.Terminal.desktop|standup)';
 }
 
+function aliasTypeDescription(type) {
+    if (type === 'rewrite')
+        return 'Replaces the search text for ranking.';
+    if (type === 'app')
+        return 'Boosts one app when alias matches exactly.';
+    return 'Boosts open windows by app id and/or title match.';
+}
+
+function aliasTargetExample(type) {
+    if (type === 'rewrite')
+        return 'Example: youtube';
+    if (type === 'app')
+        return 'Example: org.gnome.Terminal.desktop';
+    return 'Examples: org.gnome.Calendar.desktop|standup, |standup, org.gnome.Calendar.desktop|';
+}
+
 export default class HopLauncherPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings('org.example.launcher');
@@ -342,7 +358,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         const aliasesHeaderRow = new Adw.ActionRow({
             title: 'Alias rules',
-            subtitle: 'Use exact alias keys for rewrite, app, or open-window targeting.',
+            subtitle: 'Alias must match exactly. Each rule defines type and target.',
         });
         const addAliasButton = new Gtk.Button({label: 'Add alias'});
         aliasesHeaderRow.add_suffix(addAliasButton);
@@ -364,30 +380,56 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             aliasRows = [];
 
             aliases.forEach((rule, index) => {
-                const row = new Adw.ActionRow({title: `Rule ${index + 1}`});
-                row.set_activatable(false);
+                const row = new Adw.ExpanderRow({
+                    title: `Rule ${index + 1}: ${rule.alias}`,
+                    subtitle: `${rule.type} -> ${formatAliasTarget(rule)}`,
+                });
+                row.set_enable_expansion(true);
+                row.set_expanded(false);
 
                 const aliasEntry = new Gtk.Entry({
                     text: rule.alias,
-                    width_chars: 10,
-                    halign: Gtk.Align.START,
                 });
                 aliasEntry.set_placeholder_text('alias');
+                const aliasRow = new Adw.ActionRow({
+                    title: 'Alias',
+                    subtitle: 'Exact key used in search. No spaces.',
+                });
+                aliasRow.set_activatable(false);
+                aliasRow.add_suffix(aliasEntry);
 
                 const typeModel = Gtk.StringList.new(ALIAS_TYPES);
                 const typeDropDown = new Gtk.DropDown({model: typeModel});
                 typeDropDown.set_selected(Math.max(0, ALIAS_TYPES.indexOf(rule.type)));
+                const typeRow = new Adw.ActionRow({title: 'Type'});
+                typeRow.set_activatable(false);
+                typeRow.add_suffix(typeDropDown);
+                const helperRow = new Adw.ActionRow({
+                    title: 'How this works',
+                    subtitle: aliasTypeDescription(rule.type),
+                });
+                helperRow.set_activatable(false);
 
                 const targetEntry = new Gtk.Entry({
                     text: formatAliasTarget(rule),
-                    hexpand: true,
-                    width_chars: 32,
                 });
                 targetEntry.set_placeholder_text(aliasTargetPlaceholder(rule.type));
+                targetEntry.set_hexpand(true);
+                targetEntry.set_width_chars(34);
+                const targetRow = new Adw.ActionRow({title: 'Target'});
+                targetRow.set_activatable(false);
+                targetRow.add_suffix(targetEntry);
+                const exampleRow = new Adw.ActionRow({
+                    title: 'Target format',
+                    subtitle: aliasTargetExample(rule.type),
+                });
+                exampleRow.set_activatable(false);
 
                 typeDropDown.connect('notify::selected', dropDown => {
                     const selectedType = ALIAS_TYPES[dropDown.get_selected()] ?? 'rewrite';
                     targetEntry.set_placeholder_text(aliasTargetPlaceholder(selectedType));
+                    helperRow.set_subtitle(aliasTypeDescription(selectedType));
+                    exampleRow.set_subtitle(aliasTargetExample(selectedType));
                 });
 
                 const saveButton = new Gtk.Button({label: 'Save'});
@@ -410,11 +452,17 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
                     saveAliases(next);
                 });
 
-                row.add_suffix(aliasEntry);
-                row.add_suffix(typeDropDown);
-                row.add_suffix(targetEntry);
-                row.add_suffix(saveButton);
-                row.add_suffix(deleteButton);
+                const actionsRow = new Adw.ActionRow({title: 'Actions'});
+                actionsRow.set_activatable(false);
+                actionsRow.add_suffix(saveButton);
+                actionsRow.add_suffix(deleteButton);
+
+                row.add_row(aliasRow);
+                row.add_row(typeRow);
+                row.add_row(helperRow);
+                row.add_row(targetRow);
+                row.add_row(exampleRow);
+                row.add_row(actionsRow);
                 aliasRows.push(row);
                 personalizationGroup.add(row);
             });

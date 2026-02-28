@@ -27,6 +27,59 @@ test('launchOrFocusApp prefers focusing an existing normal window', () => {
     assert.equal(launched, false);
 });
 
+test('launchOrFocusApp restores and focuses a minimized existing window', () => {
+    let activatedWith = null;
+    let unminimizedWith = null;
+    let launched = false;
+    const now = () => 99;
+
+    const app = {
+        get_windows: () => [{
+            skip_taskbar: false,
+            minimized: true,
+            is_override_redirect: () => false,
+            unminimize: timestamp => {
+                unminimizedWith = timestamp;
+            },
+            activate: timestamp => {
+                activatedWith = timestamp;
+            },
+        }],
+        open_new_window: () => {
+            launched = true;
+        },
+    };
+
+    assert.equal(launchOrFocusApp(app, now), true);
+    assert.equal(unminimizedWith, 99);
+    assert.equal(activatedWith, 99);
+    assert.equal(launched, false);
+});
+
+test('launchOrFocusApp focuses existing window when skip_taskbar is a method returning false', () => {
+    let activatedWith = null;
+    let launched = false;
+    const now = () => 123;
+
+    const app = {
+        get_windows: () => [{
+            skip_taskbar: () => false,
+            minimized: false,
+            is_override_redirect: () => false,
+            activate: timestamp => {
+                activatedWith = timestamp;
+            },
+        }],
+        open_new_window: () => {
+            launched = true;
+        },
+    };
+
+    assert.equal(launchOrFocusApp(app, now), true);
+    assert.equal(activatedWith, 123);
+    assert.equal(launched, false);
+});
+
 test('launchOrFocusApp falls back to open_new_window when activate is unavailable', () => {
     let launched = false;
     const app = {
