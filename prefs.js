@@ -9,6 +9,7 @@ import {
     resolveTypedAccelerator,
     sanitizeModifierState,
 } from './lib/keybindingCapture.js';
+import {parseAliasesConfig} from './lib/aliases.js';
 
 
 function isValidAccelerator(accel) {
@@ -63,6 +64,55 @@ function addStringArrayRow(group, settings, key, title, subtitle) {
         settings.set_strv(key, values);
     });
     group.add(row);
+}
+
+const ALIAS_TYPES = ['rewrite', 'app', 'window'];
+
+function normalizeAlias(value) {
+    return (value ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+}
+
+function formatAliasTarget(rule) {
+    if (rule.type === 'rewrite')
+        return rule.target?.query ?? '';
+    if (rule.type === 'app')
+        return rule.target?.appId ?? '';
+    if (rule.type === 'window') {
+        const appId = (rule.target?.appId ?? '').trim();
+        const titleContains = (rule.target?.titleContains ?? '').trim();
+        if (appId && titleContains)
+            return `${appId}|${titleContains}`;
+        return appId || titleContains;
+    }
+    return '';
+}
+
+function parseAliasTarget(type, rawTarget) {
+    const target = (rawTarget ?? '').toString().trim();
+    if (type === 'rewrite')
+        return target ? {query: target} : null;
+    if (type === 'app')
+        return target ? {appId: target} : null;
+    if (type === 'window') {
+        const [left = '', right = ''] = target.split('|', 2);
+        const appId = left.trim();
+        const titleContains = right.trim();
+        if (!appId && !titleContains)
+            return null;
+        return {appId, titleContains};
+    }
+    return null;
+}
+
+function aliasTargetPlaceholder(type) {
+    if (type === 'rewrite')
+        return 'expanded query text';
+    if (type === 'app')
+        return 'desktop app id (example: org.gnome.Terminal.desktop)';
+    return 'appId|titleContains (example: org.gnome.Terminal.desktop|standup)';
 }
 
 export default class HopLauncherPreferences extends ExtensionPreferences {
@@ -266,6 +316,117 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         );
 
         page.add(smartGroup);
+
+        const personalizationGroup = new Adw.PreferencesGroup({
+            title: 'Personalization',
+            description: 'Configure aliases and usage-based ranking.',
+        });
+
+        const learningRow = new Adw.SwitchRow({
+            title: 'Learn from app launches',
+            subtitle: 'Boost apps you pick often for similar searches.',
+        });
+        settings.bind('learning-enabled', learningRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        personalizationGroup.add(learningRow);
+
+        const resetLearningRow = new Adw.ActionRow({
+            title: 'Reset learned ranking',
+            subtitle: 'Clear launch history used by personalized ranking.',
+        });
+        const resetLearningButton = new Gtk.Button({label: 'Reset'});
+        resetLearningButton.connect('clicked', () => {
+            settings.set_string('launch-learning-json', '{"version":1,"entries":{}}');
+        });
+        resetLearningRow.add_suffix(resetLearningButton);
+        personalizationGroup.add(resetLearningRow);
+
+        const aliasesHeaderRow = new Adw.ActionRow({
+            title: 'Alias rules',
+            subtitle: 'Use exact alias keys for rewrite, app, or open-window targeting.',
+        });
+        const addAliasButton = new Gtk.Button({label: 'Add alias'});
+        aliasesHeaderRow.add_suffix(addAliasButton);
+        personalizationGroup.add(aliasesHeaderRow);
+
+        let aliases = parseAliasesConfig(settings.get_string('custom-aliases-json'));
+        let aliasRows = [];
+
+        const saveAliases = nextAliases => {
+            const cleaned = parseAliasesConfig(JSON.stringify(nextAliases));
+            aliases = cleaned;
+            settings.set_string('custom-aliases-json', JSON.stringify(cleaned));
+            rebuildAliasRows();
+        };
+
+        const rebuildAliasRows = () => {
+            for (const row of aliasRows)
+                personalizationGroup.remove(row);
+            aliasRows = [];
+
+            aliases.forEach((rule, index) => {
+                const row = new Adw.ActionRow({title: `Rule ${index + 1}`});
+                row.set_activatable(false);
+
+                const aliasEntry = new Gtk.Entry({
+                    text: rule.alias,
+                    width_chars: 10,
+                    halign: Gtk.Align.START,
+                });
+                aliasEntry.set_placeholder_text('alias');
+
+                const typeModel = Gtk.StringList.new(ALIAS_TYPES);
+                const typeDropDown = new Gtk.DropDown({model: typeModel});
+                typeDropDown.set_selected(Math.max(0, ALIAS_TYPES.indexOf(rule.type)));
+
+                const targetEntry = new Gtk.Entry({
+                    text: formatAliasTarget(rule),
+                    hexpand: true,
+                    width_chars: 32,
+                });
+                targetEntry.set_placeholder_text(aliasTargetPlaceholder(rule.type));
+
+                typeDropDown.connect('notify::selected', dropDown => {
+                    const selectedType = ALIAS_TYPES[dropDown.get_selected()] ?? 'rewrite';
+                    targetEntry.set_placeholder_text(aliasTargetPlaceholder(selectedType));
+                });
+
+                const saveButton = new Gtk.Button({label: 'Save'});
+                saveButton.connect('clicked', () => {
+                    const alias = normalizeAlias(aliasEntry.get_text());
+                    const type = ALIAS_TYPES[typeDropDown.get_selected()] ?? 'rewrite';
+                    const target = parseAliasTarget(type, targetEntry.get_text());
+                    if (!alias || /\s/.test(alias) || !target)
+                        return;
+
+                    const next = aliases.map((entry, entryIndex) =>
+                        entryIndex === index ? {alias, type, target} : entry
+                    );
+                    saveAliases(next);
+                });
+
+                const deleteButton = new Gtk.Button({label: 'Delete'});
+                deleteButton.connect('clicked', () => {
+                    const next = aliases.filter((_, entryIndex) => entryIndex !== index);
+                    saveAliases(next);
+                });
+
+                row.add_suffix(aliasEntry);
+                row.add_suffix(typeDropDown);
+                row.add_suffix(targetEntry);
+                row.add_suffix(saveButton);
+                row.add_suffix(deleteButton);
+                aliasRows.push(row);
+                personalizationGroup.add(row);
+            });
+        };
+
+        addAliasButton.connect('clicked', () => {
+            const next = [...aliases, {alias: 'new', type: 'rewrite', target: {query: 'example'}}];
+            saveAliases(next);
+        });
+
+        rebuildAliasRows();
+        page.add(personalizationGroup);
 
         window.add(page);
     }

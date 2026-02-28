@@ -81,5 +81,20 @@
       <summary>Currency rate cache TTL</summary>
       <description>Hours before cached exchange rates are considered stale.</description>
     </key>
+    <key name="custom-aliases-json" type="s">
+      <default>'[]'</default>
+      <summary>Custom aliases JSON</summary>
+      <description>Alias records used for rewrite, app, and open-window targeting.</description>
+    </key>
+    <key name="launch-learning-json" type="s">
+      <default>'{"version":1,"entries":{}}'</default>
+      <summary>Launch learning JSON</summary>
+      <description>Stored app-launch history used for query-aware ranking boosts.</description>
+    </key>
+    <key name="learning-enabled" type="b">
+      <default>true</default>
+      <summary>Learning enabled</summary>
+      <description>Enable usage-based ranking from launcher app launches.</description>
+    </key>
   </schema>
 </schemalist>

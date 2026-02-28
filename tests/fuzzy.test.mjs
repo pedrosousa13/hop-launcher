@@ -104,3 +104,27 @@ test('ranking deduplicates duplicate result identities', () => {
     const appRows = ranked.filter(row => row.kind === 'app' && row.id === 'org.gnome.Terminal.desktop');
     assert.equal(appRows.length, 1);
 });
+
+test('ranking deduplicates app rows with different ids but same visible text', () => {
+    const items = [
+        {kind: 'app', id: 'brave-browser.desktop', primaryText: 'Brave Browser', secondaryText: 'Web browser'},
+        {kind: 'app', id: 'brave-browser-alt.desktop', primaryText: 'Brave Browser', secondaryText: 'Web browser'},
+    ];
+
+    const ranked = rankResults('brave', items, {maxResults: 10});
+    assert.equal(ranked.length, 1);
+    assert.equal(ranked[0].primaryText, 'Brave Browser');
+});
+
+test('ranking applies external item score boosts', () => {
+    const app = {kind: 'app', id: 'firefox.desktop', primaryText: 'Firefox', secondaryText: ''};
+    const window = {kind: 'window', id: 'window:1', primaryText: 'Firefox', secondaryText: ''};
+    const boosts = new Map([[app, 80]]);
+
+    const ranked = rankResults('fire', [window, app], {
+        maxResults: 10,
+        scoreBoost: item => boosts.get(item) ?? 0,
+    });
+
+    assert.equal(ranked[0].kind, 'app');
+});

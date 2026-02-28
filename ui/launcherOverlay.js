@@ -9,9 +9,20 @@ import {rankResults} from '../lib/fuzzy.js';
 import {extractQueryRoute} from '../lib/queryRouter.js';
 import {collectProviderItems} from '../lib/providerAggregator.js';
 import {BUILD_LABEL} from '../lib/buildInfo.js';
+import {buildAliasContext, parseAliasesConfig} from '../lib/aliases.js';
+import {
+    applyLearningBoosts,
+    parseLearningStore,
+    recordAppLaunch,
+    serializeLearningStore,
+} from '../lib/learning.js';
+import {resolveEnterAction} from '../lib/resultAction.js';
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
+const KEY_ALIASES = 'custom-aliases-json';
+const KEY_LEARNING_STORE = 'launch-learning-json';
+const KEY_LEARNING_ENABLED = 'learning-enabled';
 
 export const LauncherOverlay = GObject.registerClass(
 class LauncherOverlay extends St.BoxLayout {
@@ -42,6 +53,11 @@ class LauncherOverlay extends St.BoxLayout {
         this._renderedResultKeys = [];
         this._searchGeneration = 0;
         this._maxResultsHeight = 420;
+        this._settingsSignals = [];
+        this._typedQuery = '';
+        this._aliases = parseAliasesConfig(this._settings.get_string(KEY_ALIASES));
+        this._learningStore = parseLearningStore(this._settings.get_string(KEY_LEARNING_STORE));
+        this._learningEnabled = this._settings.get_boolean(KEY_LEARNING_ENABLED);
 
         this._header = new St.BoxLayout({
             style_class: 'hop-launcher-header',
@@ -82,6 +98,18 @@ class LauncherOverlay extends St.BoxLayout {
         this._signals.push(
             this._input.clutter_text.connect('text-changed', () => this._queueSearch()),
             this._input.clutter_text.connect('key-press-event', (_, event) => this._onKeyPress(event))
+        );
+
+        this._settingsSignals.push(
+            this._settings.connect(`changed::${KEY_ALIASES}`, () => {
+                this._aliases = parseAliasesConfig(this._settings.get_string(KEY_ALIASES));
+            }),
+            this._settings.connect(`changed::${KEY_LEARNING_STORE}`, () => {
+                this._learningStore = parseLearningStore(this._settings.get_string(KEY_LEARNING_STORE));
+            }),
+            this._settings.connect(`changed::${KEY_LEARNING_ENABLED}`, () => {
+                this._learningEnabled = this._settings.get_boolean(KEY_LEARNING_ENABLED);
+            })
         );
     }
 
@@ -174,6 +202,7 @@ class LauncherOverlay extends St.BoxLayout {
         const generation = ++this._searchGeneration;
 
         if (!normalizedQuery) {
+            this._typedQuery = '';
             if (this._idleSearchSourceId) {
                 GLib.source_remove(this._idleSearchSourceId);
                 this._idleSearchSourceId = null;
@@ -185,9 +214,18 @@ class LauncherOverlay extends St.BoxLayout {
         }
 
         const items = this._collectItems(mode, query);
+        const aliasContext = buildAliasContext(normalizedQuery, this._aliases, items);
+        const rankingQuery = aliasContext.rankingQuery.trim();
+        const learningBoosts = this._learningEnabled
+            ? applyLearningBoosts(this._learningStore, normalizedQuery, items)
+            : new Map();
+        const scoreBoost = item =>
+            (aliasContext.boosts.get(item) ?? 0) +
+            (learningBoosts.get(item) ?? 0);
+        this._typedQuery = normalizedQuery;
 
         if (items.length < ASYNC_SEARCH_THRESHOLD) {
-            this._results = this._rank(normalizedQuery, items);
+            this._results = this._rank(rankingQuery, items, scoreBoost);
             this._selectedIndex = 0;
             this._renderResults();
             return;
@@ -201,14 +239,14 @@ class LauncherOverlay extends St.BoxLayout {
             if (generation !== this._searchGeneration)
                 return GLib.SOURCE_REMOVE;
 
-            this._results = this._rank(normalizedQuery, items);
+            this._results = this._rank(rankingQuery, items, scoreBoost);
             this._selectedIndex = 0;
             this._renderResults();
             return GLib.SOURCE_REMOVE;
         });
     }
 
-    _rank(query, items) {
+    _rank(query, items, scoreBoost = null) {
         return rankResults(query, items, {
             weightWindows: this._settings.get_int('weight-windows'),
             weightApps: this._settings.get_int('weight-apps'),
@@ -217,6 +255,7 @@ class LauncherOverlay extends St.BoxLayout {
             weightEmoji: this._settings.get_int('weight-emoji'),
             weightUtility: this._settings.get_int('weight-utility'),
             maxResults: this._settings.get_int('max-results'),
+            scoreBoost,
         });
     }
 
@@ -459,8 +498,17 @@ class LauncherOverlay extends St.BoxLayout {
 
         if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
             const selected = this._results[this._selectedIndex];
-            if (selected?.execute)
+            const action = resolveEnterAction(selected);
+            if (action.type === 'copy')
+                this._copyText(action.text);
+            else if (action.type === 'execute')
                 selected.execute();
+
+            if (selected?.kind === 'app' && this._learningEnabled && selected.id) {
+                this._learningStore = recordAppLaunch(this._learningStore, this._typedQuery, selected.id);
+                this._settings.set_string(KEY_LEARNING_STORE, serializeLearningStore(this._learningStore));
+            }
+
             this.close();
             return Clutter.EVENT_STOP;
         }
@@ -475,7 +523,18 @@ class LauncherOverlay extends St.BoxLayout {
         for (const id of this._signals)
             this._input.clutter_text.disconnect(id);
         this._signals = [];
+        for (const id of this._settingsSignals)
+            this._settings.disconnect(id);
+        this._settingsSignals = [];
 
         this.destroy();
+    }
+
+    _copyText(text) {
+        const value = (text ?? '').toString().trim();
+        if (!value)
+            return;
+        const clipboard = St.Clipboard.get_default();
+        clipboard.set_text(St.ClipboardType.CLIPBOARD, value);
     }
 });
