@@ -6,6 +6,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {rankResults} from '../lib/fuzzy.js';
+import {extractQueryRoute} from '../lib/queryRouter.js';
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
@@ -136,7 +137,7 @@ class LauncherOverlay extends St.BoxLayout {
 
     _runSearch() {
         const rawQuery = this._input.get_text();
-        const {query, mode} = this._extractMode(rawQuery);
+        const {query, mode} = extractQueryRoute(rawQuery);
         const items = this._collectItems(mode);
         const generation = ++this._searchGeneration;
 
@@ -171,23 +172,18 @@ class LauncherOverlay extends St.BoxLayout {
         });
     }
 
-    _extractMode(rawQuery) {
-        const q = rawQuery.trimStart();
-        if (q.startsWith('w '))
-            return {mode: 'windows', query: q.slice(2)};
-        if (q.startsWith('a '))
-            return {mode: 'apps', query: q.slice(2)};
-        if (q.startsWith('>'))
-            return {mode: 'actions', query: q.slice(1)};
-        return {mode: 'all', query: q};
-    }
-
     _collectItems(mode) {
         const all = this._providers.flatMap(p => p.getResults());
         if (mode === 'windows')
             return all.filter(i => i.kind === 'window');
         if (mode === 'apps')
             return all.filter(i => i.kind === 'app');
+        if (mode === 'files')
+            return all.filter(i => i.kind === 'file');
+        if (mode === 'emoji')
+            return all.filter(i => i.kind === 'emoji');
+        if (mode === 'currency' || mode === 'timezone' || mode === 'calculator')
+            return all.filter(i => i.kind === 'utility');
         if (mode === 'actions') {
             return [
                 {
