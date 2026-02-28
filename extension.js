@@ -13,7 +13,6 @@ import {CurrencyProvider} from './lib/providers/currency.js';
 import {TimezoneProvider} from './lib/providers/timezone.js';
 import {EmojiProvider} from './lib/providers/emoji.js';
 import {FilesProvider} from './lib/providers/files.js';
-import {BUILD_LABEL} from './lib/buildInfo.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
@@ -83,14 +82,12 @@ export default class HopLauncherExtension extends Extension {
         if (!this._overlay)
             return;
 
-        log(`[hop-launcher ${BUILD_LABEL}] toggle requested`);
         if (this._overlay.visible)
             this._overlay.close();
         else {
             // Recompute geometry at open time to keep overlay centered across dynamic layout changes.
             this._positionOverlay();
             this._overlay.open();
-            log(`[hop-launcher ${BUILD_LABEL}] overlay opened`);
         }
     }
 

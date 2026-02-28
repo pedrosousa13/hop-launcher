@@ -8,7 +8,6 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {rankResults} from '../lib/fuzzy.js';
 import {extractQueryRoute} from '../lib/queryRouter.js';
 import {collectProviderItems} from '../lib/providerAggregator.js';
-import {BUILD_LABEL} from '../lib/buildInfo.js';
 import {buildAliasContext, parseAliasesConfig} from '../lib/aliases.js';
 import {
     applyLearningBoosts,
@@ -67,18 +66,11 @@ class LauncherOverlay extends St.BoxLayout {
 
         this._input = new St.Entry({
             style_class: 'hop-launcher-input',
-            hint_text: `[${BUILD_LABEL}] Search apps, windows, files, emoji, utilities…`,
+            hint_text: 'Search apps, windows, files, emoji, utilities…',
             can_focus: true,
             x_expand: true,
         });
         this._header.add_child(this._input);
-
-        this._buildBadge = new St.Label({
-            text: BUILD_LABEL,
-            style_class: 'hop-launcher-build-badge dim-label',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        this._header.add_child(this._buildBadge);
 
         this._scroll = new St.ScrollView({
             style_class: 'hop-launcher-scrollview',

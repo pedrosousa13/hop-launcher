@@ -26,11 +26,6 @@
   spacing: 10px;
 }
 
-.hop-launcher-build-badge {
-  font-size: 11px;
-  padding: 0 4px;
-}
-
 .hop-launcher-scrollview {
   background-color: rgba(14, 15, 18, 0.58);
   border: 1px solid rgba(255, 255, 255, 0.08);
