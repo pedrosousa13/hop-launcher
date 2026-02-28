@@ -52,3 +52,26 @@ test('empty query falls back to source weighting order', () => {
     const ranked = rankResults('', items, {maxResults: 10});
     assert.equal(ranked[0].kind, 'window');
 });
+
+test('new smart-provider kinds stay below windows and apps with default weights', () => {
+    const items = [
+        {kind: 'file', primaryText: 'terminal.md', secondaryText: ''},
+        {kind: 'emoji', primaryText: 'Terminal Face', secondaryText: ''},
+        {kind: 'utility', primaryText: 'terminal = 1', secondaryText: ''},
+        {kind: 'app', primaryText: 'Terminal', secondaryText: ''},
+        {kind: 'window', primaryText: 'Terminal', secondaryText: ''},
+    ];
+
+    const ranked = rankResults('terminal', items, {
+        weightWindows: 30,
+        weightApps: 20,
+        weightRecents: 10,
+        weightFiles: 12,
+        weightEmoji: 8,
+        weightUtility: 6,
+        maxResults: 10,
+    });
+
+    assert.equal(ranked[0].kind, 'window');
+    assert.equal(ranked[1].kind, 'app');
+});
