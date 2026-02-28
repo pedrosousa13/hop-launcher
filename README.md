@@ -56,6 +56,12 @@ After any code change:
 ./scripts/install-local.sh
 ```
 
+If you suspect GNOME cached stale extension modules, force reload without full logout:
+
+```bash
+./scripts/reload-shell.sh
+```
+
 Watch GNOME Shell logs in another terminal:
 
 ```bash
@@ -81,7 +87,7 @@ Create a zip file in `dist/`:
 - `metadata.json`
 - `extension.js`
 - `prefs.js`
-- `style.css`
+- `stylesheet.css`
 - `ui/launcherOverlay.js`
 - `lib/fuzzy.js`
 - `lib/providers/apps.js`
@@ -134,4 +140,4 @@ A staff-level performance and security review is documented in `docs/PERFORMANCE
 A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
 - `npm test` (fuzzy matcher tests)
 - `glib-compile-schemas --strict --dry-run schemas`
-- `bash -n scripts/install-local.sh scripts/package-extension.sh`
+- `bash -n scripts/install-local.sh scripts/reload-shell.sh scripts/package-extension.sh`

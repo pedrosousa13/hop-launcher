@@ -75,3 +75,32 @@ test('new smart-provider kinds stay below windows and apps with default weights'
     assert.equal(ranked[0].kind, 'window');
     assert.equal(ranked[1].kind, 'app');
 });
+
+test('ranking clamps maxResults to at least one', () => {
+    const items = [
+        {kind: 'app', primaryText: 'Calculator', secondaryText: ''},
+        {kind: 'window', primaryText: 'Terminal', secondaryText: ''},
+    ];
+    const ranked = rankResults('', items, {maxResults: 0});
+    assert.equal(ranked.length, 1);
+    assert.equal(ranked[0].kind, 'window');
+});
+
+test('ranking caches normalized haystack for reused scoring', () => {
+    const item = {kind: 'app', primaryText: 'Brave Browser', secondaryText: 'Web browser'};
+    rankResults('br', [item], {maxResults: 5});
+    assert.equal(item._searchHaystack, 'Brave Browser Web browser');
+    assert.equal(item._searchHaystackLower, 'brave browser web browser');
+});
+
+test('ranking deduplicates duplicate result identities', () => {
+    const items = [
+        {kind: 'app', id: 'org.gnome.Terminal.desktop', primaryText: 'Terminal', secondaryText: 'Application'},
+        {kind: 'app', id: 'org.gnome.Terminal.desktop', primaryText: 'Terminal', secondaryText: 'Application'},
+        {kind: 'window', id: 'window:1', primaryText: 'Terminal', secondaryText: 'Terminal • Workspace 1'},
+    ];
+
+    const ranked = rankResults('terminal', items, {maxResults: 10});
+    const appRows = ranked.filter(row => row.kind === 'app' && row.id === 'org.gnome.Terminal.desktop');
+    assert.equal(appRows.length, 1);
+});

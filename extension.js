@@ -13,6 +13,7 @@ import {CurrencyProvider} from './lib/providers/currency.js';
 import {TimezoneProvider} from './lib/providers/timezone.js';
 import {EmojiProvider} from './lib/providers/emoji.js';
 import {FilesProvider} from './lib/providers/files.js';
+import {BUILD_LABEL} from './lib/buildInfo.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
@@ -66,6 +67,14 @@ export default class HopLauncherExtension extends Extension {
             this._overlay = null;
         }
 
+        for (const provider of this._providers) {
+            try {
+                provider.destroy?.();
+            } catch (error) {
+                logError(error, '[hop-launcher] provider destroy failed');
+            }
+        }
+
         this._providers = [];
         this._settings = null;
     }
@@ -74,24 +83,37 @@ export default class HopLauncherExtension extends Extension {
         if (!this._overlay)
             return;
 
+        log(`[hop-launcher ${BUILD_LABEL}] toggle requested`);
         if (this._overlay.visible)
             this._overlay.close();
-        else
+        else {
+            // Recompute geometry at open time to keep overlay centered across dynamic layout changes.
+            this._positionOverlay();
             this._overlay.open();
+            log(`[hop-launcher ${BUILD_LABEL}] overlay opened`);
+        }
     }
 
     _positionOverlay() {
-        const monitor = Main.layoutManager.primaryMonitor;
-        if (!monitor || !this._overlay)
+        if (!this._overlay)
             return;
 
-        const width = Math.min(700, Math.floor(monitor.width * 0.8));
-        const height = Math.floor(monitor.height * 0.6);
+        const monitorIndex = Main.layoutManager.primaryIndex ?? global.display.get_primary_monitor();
+        const monitor = Main.layoutManager.monitors?.[monitorIndex] ?? Main.layoutManager.primaryMonitor;
+        if (!monitor)
+            return;
 
-        this._overlay.set_size(width, height);
+        const workArea = Main.layoutManager.getWorkAreaForMonitor(monitorIndex);
+        const width = Math.min(700, Math.floor(workArea.width * 0.8));
+        const maxResultsHeight = Math.floor(workArea.height * 0.55);
+        const topOffset = Math.floor(workArea.height * 0.18);
+
+        this._overlay.set_width(width);
+        this._overlay.set_height(-1);
+        this._overlay.setMaxResultsHeight(maxResultsHeight);
         this._overlay.set_position(
-            monitor.x + Math.floor((monitor.width - width) / 2),
-            monitor.y + Math.floor((monitor.height - height) / 5)
+            workArea.x + Math.floor((workArea.width - width) / 2),
+            workArea.y + topOffset
         );
     }
 

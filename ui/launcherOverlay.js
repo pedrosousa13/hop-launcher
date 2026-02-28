@@ -7,6 +7,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {rankResults} from '../lib/fuzzy.js';
 import {extractQueryRoute} from '../lib/queryRouter.js';
+import {collectProviderItems} from '../lib/providerAggregator.js';
+import {BUILD_LABEL} from '../lib/buildInfo.js';
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
@@ -32,23 +34,42 @@ class LauncherOverlay extends St.BoxLayout {
         this._signals = [];
         this._debounceSourceId = null;
         this._idleSearchSourceId = null;
+        this._stageKeyFocusChangedId = null;
+        this._stageCapturedEventId = null;
+        this._stageButtonPressId = null;
         this._selectedIndex = 0;
         this._results = [];
+        this._renderedResultKeys = [];
         this._searchGeneration = 0;
+        this._maxResultsHeight = 420;
+
+        this._header = new St.BoxLayout({
+            style_class: 'hop-launcher-header',
+            x_expand: true,
+        });
+        this.add_child(this._header);
 
         this._input = new St.Entry({
             style_class: 'hop-launcher-input',
-            hint_text: 'Search apps, windows, files, emoji, utilities…',
+            hint_text: `[${BUILD_LABEL}] Search apps, windows, files, emoji, utilities…`,
             can_focus: true,
             x_expand: true,
         });
-        this.add_child(this._input);
+        this._header.add_child(this._input);
+
+        this._buildBadge = new St.Label({
+            text: BUILD_LABEL,
+            style_class: 'hop-launcher-build-badge dim-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._header.add_child(this._buildBadge);
 
         this._scroll = new St.ScrollView({
             style_class: 'hop-launcher-scrollview',
             overlay_scrollbars: true,
             x_expand: true,
-            y_expand: true,
+            y_expand: false,
+            visible: false,
         });
         this._list = new St.BoxLayout({
             style_class: 'hop-launcher-results',
@@ -66,7 +87,11 @@ class LauncherOverlay extends St.BoxLayout {
 
     open() {
         this._refreshProviders();
-        this._runSearch();
+        this._input.set_text('');
+        this._results = [];
+        this._selectedIndex = 0;
+        this._clearList();
+        this._setResultsVisible(false);
 
         this.visible = true;
         this.remove_all_transitions();
@@ -80,10 +105,12 @@ class LauncherOverlay extends St.BoxLayout {
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
         });
         global.stage.set_key_focus(this._input.clutter_text);
+        this._ensureAutoCloseWatch();
     }
 
     close() {
         this._cancelPendingSearch();
+        this._disconnectAutoCloseWatch();
 
         this.remove_all_transitions();
         const animate = this._settings.get_boolean('animations-enabled');
@@ -104,8 +131,13 @@ class LauncherOverlay extends St.BoxLayout {
 
     _refreshProviders() {
         for (const provider of this._providers) {
-            if (provider.refresh)
+            if (!provider.refresh || !provider.refreshOnOpen)
+                continue;
+            try {
                 provider.refresh();
+            } catch (error) {
+                logError(error, '[hop-launcher] provider refresh failed');
+            }
         }
     }
 
@@ -138,11 +170,24 @@ class LauncherOverlay extends St.BoxLayout {
     _runSearch() {
         const rawQuery = this._input.get_text();
         const {query, mode} = extractQueryRoute(rawQuery);
-        const items = this._collectItems(mode, query);
+        const normalizedQuery = query.trim();
         const generation = ++this._searchGeneration;
 
+        if (!normalizedQuery) {
+            if (this._idleSearchSourceId) {
+                GLib.source_remove(this._idleSearchSourceId);
+                this._idleSearchSourceId = null;
+            }
+            this._results = [];
+            this._selectedIndex = 0;
+            this._renderResults();
+            return;
+        }
+
+        const items = this._collectItems(mode, query);
+
         if (items.length < ASYNC_SEARCH_THRESHOLD) {
-            this._results = this._rank(query, items);
+            this._results = this._rank(normalizedQuery, items);
             this._selectedIndex = 0;
             this._renderResults();
             return;
@@ -156,7 +201,7 @@ class LauncherOverlay extends St.BoxLayout {
             if (generation !== this._searchGeneration)
                 return GLib.SOURCE_REMOVE;
 
-            this._results = this._rank(query, items);
+            this._results = this._rank(normalizedQuery, items);
             this._selectedIndex = 0;
             this._renderResults();
             return GLib.SOURCE_REMOVE;
@@ -188,7 +233,9 @@ class LauncherOverlay extends St.BoxLayout {
             ];
         }
 
-        const all = this._providers.flatMap(p => p.getResults(query, mode));
+        const all = collectProviderItems(this._providers, query, mode, error => {
+            logError(error, '[hop-launcher] provider getResults failed');
+        });
         if (mode === 'windows')
             return all.filter(i => i.kind === 'window');
         if (mode === 'apps')
@@ -203,17 +250,28 @@ class LauncherOverlay extends St.BoxLayout {
     }
 
     _renderResults() {
-        this._clearList();
-
-        if (this._results.length === 0) {
-            const empty = new St.Label({
-                text: 'No results',
-                style_class: 'dim-label hop-launcher-empty',
-                x_align: Clutter.ActorAlign.START,
-            });
-            this._list.add_child(empty);
+        const hasQuery = this._input.get_text().trim().length > 0;
+        if (!hasQuery || this._results.length === 0) {
+            this._clearList();
+            this._setResultsVisible(false);
             return;
         }
+
+        this._setResultsVisible(true);
+        const nextKeys = this._results.map(result =>
+            `${result.kind}:${result.id ?? result.primaryText ?? ''}:${result.secondaryText ?? ''}`
+        );
+        const unchanged = nextKeys.length === this._renderedResultKeys.length &&
+            nextKeys.every((key, index) => key === this._renderedResultKeys[index]);
+
+        if (unchanged) {
+            this._updateSelectionStyles();
+            this._ensureSelectionVisible();
+            return;
+        }
+
+        this._clearList();
+        this._renderedResultKeys = nextKeys;
 
         this._results.forEach((result, index) => {
             const row = new St.BoxLayout({
@@ -221,11 +279,11 @@ class LauncherOverlay extends St.BoxLayout {
                 x_expand: true,
             });
 
-            const icon = new St.Icon({
-                gicon: result.icon ?? null,
-                icon_name: result.icon ? undefined : 'system-search-symbolic',
-                style_class: 'hop-launcher-icon',
-            });
+            const icon = new St.Icon({style_class: 'hop-launcher-icon'});
+            if (result.icon !== null && result.icon !== undefined)
+                icon.gicon = result.icon;
+            else
+                icon.icon_name = 'system-search-symbolic';
 
             const text = new St.BoxLayout({vertical: true, x_expand: true});
             text.add_child(new St.Label({text: result.primaryText ?? ''}));
@@ -265,6 +323,119 @@ class LauncherOverlay extends St.BoxLayout {
 
     _clearList() {
         this._list.destroy_all_children();
+        this._renderedResultKeys = [];
+    }
+
+    setMaxResultsHeight(height) {
+        const value = Number.isFinite(height) ? Math.floor(height) : 420;
+        this._maxResultsHeight = Math.max(120, value);
+        if (this._scroll.visible)
+            this._scroll.set_height(this._maxResultsHeight);
+    }
+
+    _setResultsVisible(visible) {
+        this._scroll.visible = visible;
+        this._scroll.y_expand = visible;
+        this._scroll.set_height(visible ? this._maxResultsHeight : 0);
+    }
+
+    _updateSelectionStyles() {
+        const children = this._list.get_children();
+        for (let index = 0; index < children.length; index++) {
+            const row = children[index];
+            if (index === this._selectedIndex)
+                row.add_style_class_name('selected');
+            else
+                row.remove_style_class_name('selected');
+        }
+    }
+
+    _moveSelection(delta) {
+        if (this._results.length === 0)
+            return Clutter.EVENT_PROPAGATE;
+
+        const next = Math.max(0, Math.min(this._results.length - 1, this._selectedIndex + delta));
+        if (next === this._selectedIndex)
+            return Clutter.EVENT_STOP;
+
+        this._selectedIndex = next;
+        this._updateSelectionStyles();
+        this._ensureSelectionVisible();
+        return Clutter.EVENT_STOP;
+    }
+
+    _ensureAutoCloseWatch() {
+        if (this._stageKeyFocusChangedId)
+            return;
+
+        this._stageKeyFocusChangedId = global.stage.connect('notify::key-focus', () => {
+            if (!this.visible)
+                return;
+
+            const focus = global.stage.get_key_focus();
+            if (!focus || !this.contains(focus))
+                this.close();
+        });
+
+        this._stageCapturedEventId = global.stage.connect('captured-event', (_stage, event) => {
+            if (!this.visible)
+                return Clutter.EVENT_PROPAGATE;
+
+            const type = event.type();
+            if (type !== Clutter.EventType.BUTTON_PRESS && type !== Clutter.EventType.TOUCH_BEGIN)
+                return Clutter.EVENT_PROPAGATE;
+
+            if (this._isEventInsideOverlay(event))
+                return Clutter.EVENT_PROPAGATE;
+
+            this.close();
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        this._stageButtonPressId = global.stage.connect('button-press-event', (_stage, event) => {
+            if (!this.visible)
+                return Clutter.EVENT_PROPAGATE;
+
+            if (this._isEventInsideOverlay(event))
+                return Clutter.EVENT_PROPAGATE;
+
+            this.close();
+            return Clutter.EVENT_PROPAGATE;
+        });
+    }
+
+    _disconnectAutoCloseWatch() {
+        if (this._stageKeyFocusChangedId) {
+            global.stage.disconnect(this._stageKeyFocusChangedId);
+            this._stageKeyFocusChangedId = null;
+        }
+
+        if (this._stageCapturedEventId) {
+            global.stage.disconnect(this._stageCapturedEventId);
+            this._stageCapturedEventId = null;
+        }
+
+        if (this._stageButtonPressId) {
+            global.stage.disconnect(this._stageButtonPressId);
+            this._stageButtonPressId = null;
+        }
+    }
+
+    _isEventInsideOverlay(event) {
+        const source = event.get_source?.() ?? global.stage.get_event_actor?.(event);
+        if (source && this.contains(source))
+            return true;
+
+        const [x, y] = event.get_coords?.() ?? [null, null];
+        if (x === null || y === null)
+            return false;
+
+        const [overlayX, overlayY] = this.get_transformed_position();
+        const [overlayWidth, overlayHeight] = this.get_transformed_size();
+        return x >= overlayX &&
+            y >= overlayY &&
+            x <= overlayX + overlayWidth &&
+            y <= overlayY + overlayHeight;
     }
 
     _onKeyPress(event) {
@@ -275,20 +446,16 @@ class LauncherOverlay extends St.BoxLayout {
             return Clutter.EVENT_STOP;
         }
 
-        if (this._results.length === 0)
-            return Clutter.EVENT_PROPAGATE;
-
         if (symbol === Clutter.KEY_Down) {
-            this._selectedIndex = Math.min(this._selectedIndex + 1, this._results.length - 1);
-            this._renderResults();
-            return Clutter.EVENT_STOP;
+            return this._moveSelection(1);
         }
 
         if (symbol === Clutter.KEY_Up) {
-            this._selectedIndex = Math.max(this._selectedIndex - 1, 0);
-            this._renderResults();
-            return Clutter.EVENT_STOP;
+            return this._moveSelection(-1);
         }
+
+        if (this._results.length === 0)
+            return Clutter.EVENT_PROPAGATE;
 
         if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
             const selected = this._results[this._selectedIndex];
@@ -303,6 +470,7 @@ class LauncherOverlay extends St.BoxLayout {
 
     destroyOverlay() {
         this._cancelPendingSearch();
+        this._disconnectAutoCloseWatch();
 
         for (const id of this._signals)
             this._input.clutter_text.disconnect(id);

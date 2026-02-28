@@ -12,7 +12,7 @@ rm -f "${OUT_FILE}"
 (
   cd "${ROOT_DIR}"
   zip -r "${OUT_FILE}" \
-    metadata.json extension.js prefs.js style.css \
+    metadata.json extension.js prefs.js stylesheet.css \
     lib ui schemas README.md \
     -x '*.git*' -x 'dist/*' -x 'scripts/*' -x 'tests/*' -x 'package.json'
 )

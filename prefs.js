@@ -1,14 +1,37 @@
 import Adw from 'gi://Adw';
+import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import {
+    interpretKeybindingPress,
+    resolveTypedAccelerator,
+    sanitizeModifierState,
+} from './lib/keybindingCapture.js';
 
 
 function isValidAccelerator(accel) {
     const [keyval, mods] = Gtk.accelerator_parse(accel);
     return keyval !== 0 && mods !== 0;
 }
+
+const MODIFIER_KEYVALS = new Set([
+    Gdk.KEY_Shift_L,
+    Gdk.KEY_Shift_R,
+    Gdk.KEY_Control_L,
+    Gdk.KEY_Control_R,
+    Gdk.KEY_Alt_L,
+    Gdk.KEY_Alt_R,
+    Gdk.KEY_Meta_L,
+    Gdk.KEY_Meta_R,
+    Gdk.KEY_Super_L,
+    Gdk.KEY_Super_R,
+    Gdk.KEY_Hyper_L,
+    Gdk.KEY_Hyper_R,
+    Gdk.KEY_ISO_Level3_Shift,
+    Gdk.KEY_ISO_Level5_Shift,
+]);
 
 function addSpinRow(group, settings, key, title, subtitle, lower, upper, step = 1, page = 5) {
     const row = new Adw.SpinRow({
@@ -56,12 +79,72 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         const keybindRow = new Adw.EntryRow({
             title: 'Toggle keybinding',
             text: settings.get_strv('toggle-launcher').join(', '),
+            editable: false,
         });
-        keybindRow.connect('changed', row => {
-            const value = row.text.trim();
-            const accel = value || '<Super>space';
-            if (isValidAccelerator(accel))
+        keybindRow.set_tooltip_text('Click Capture, then press a key combo. Backspace/Delete clears.');
+
+        const captureButton = new Gtk.Button({label: 'Capture'});
+        captureButton.set_valign(Gtk.Align.CENTER);
+        captureButton.connect('clicked', () => {
+            const dialog = new Adw.MessageDialog({
+                transient_for: window,
+                modal: true,
+                heading: 'Capture Shortcut',
+                body: 'Press your key combo now. Escape cancels, Backspace/Delete clears.',
+            });
+            dialog.add_response('cancel', 'Cancel');
+            dialog.set_default_response('cancel');
+            dialog.set_close_response('cancel');
+
+            const keyController = new Gtk.EventControllerKey();
+            keyController.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
+            keyController.connect('key-pressed', (_controller, keyval, _keycode, state) => {
+                const mods = sanitizeModifierState(state, Gtk.accelerator_get_default_mod_mask());
+                const action = interpretKeybindingPress({
+                    keyval,
+                    mods,
+                    keyNames: {
+                        escape: Gdk.KEY_Escape,
+                        backSpace: Gdk.KEY_BackSpace,
+                        delete: Gdk.KEY_Delete,
+                        modifiers: MODIFIER_KEYVALS,
+                    },
+                });
+
+                if (action.kind === 'cancel') {
+                    dialog.close();
+                    return true;
+                }
+
+                if (action.kind === 'clear') {
+                    settings.set_strv('toggle-launcher', []);
+                    dialog.close();
+                    return true;
+                }
+
+                if (action.kind === 'ignore')
+                    return true;
+
+                const accel = Gtk.accelerator_name(action.keyval, action.mods);
+                if (!isValidAccelerator(accel))
+                    return true;
+
                 settings.set_strv('toggle-launcher', [accel]);
+                dialog.close();
+                return true;
+            });
+            dialog.add_controller(keyController);
+            dialog.present();
+        });
+        keybindRow.add_suffix(captureButton);
+
+        settings.connect('changed::toggle-launcher', () => {
+            const accel = resolveTypedAccelerator(
+                settings.get_strv('toggle-launcher').join(', '),
+                '',
+                isValidAccelerator
+            );
+            keybindRow.set_text(accel ?? '');
         });
         behaviorGroup.add(keybindRow);
 
