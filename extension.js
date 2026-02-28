@@ -8,6 +8,11 @@ import {LauncherOverlay} from './ui/launcherOverlay.js';
 import {AppsProvider} from './lib/providers/apps.js';
 import {WindowsProvider} from './lib/providers/windows.js';
 import {RecentsProvider} from './lib/providers/recents.js';
+import {CalculatorProvider} from './lib/providers/calculator.js';
+import {CurrencyProvider} from './lib/providers/currency.js';
+import {TimezoneProvider} from './lib/providers/timezone.js';
+import {EmojiProvider} from './lib/providers/emoji.js';
+import {FilesProvider} from './lib/providers/files.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
@@ -18,6 +23,11 @@ export default class HopLauncherExtension extends Extension {
             new WindowsProvider(),
             new AppsProvider(),
             new RecentsProvider(),
+            new FilesProvider(this._settings),
+            new EmojiProvider(),
+            new CalculatorProvider(),
+            new TimezoneProvider(),
+            new CurrencyProvider(this._settings),
         ];
 
         this._overlay = new LauncherOverlay(this._settings, this._providers);

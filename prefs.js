@@ -26,6 +26,22 @@ function addSpinRow(group, settings, key, title, subtitle, lower, upper, step = 
     group.add(row);
 }
 
+function addStringArrayRow(group, settings, key, title, subtitle) {
+    const row = new Adw.EntryRow({
+        title,
+        text: settings.get_strv(key).join(', '),
+    });
+    row.set_tooltip_text(subtitle);
+    row.connect('changed', entry => {
+        const values = entry.text
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+        settings.set_strv(key, values);
+    });
+    group.add(row);
+}
+
 export default class HopLauncherPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings('org.example.launcher');
@@ -128,8 +144,45 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         addSpinRow(rankingGroup, settings, 'weight-windows', 'Window weight', 'Prefer open windows when scores tie.', 0, 100, 1, 5);
         addSpinRow(rankingGroup, settings, 'weight-apps', 'App weight', 'Prefer apps over recents when scores tie.', 0, 100, 1, 5);
         addSpinRow(rankingGroup, settings, 'weight-recents', 'Recent weight', 'Boost for recents provider results.', 0, 100, 1, 5);
+        addSpinRow(rankingGroup, settings, 'weight-files', 'File weight', 'Boost for indexed file matches.', 0, 100, 1, 5);
+        addSpinRow(rankingGroup, settings, 'weight-emoji', 'Emoji weight', 'Boost for emoji matches.', 0, 100, 1, 5);
+        addSpinRow(rankingGroup, settings, 'weight-utility', 'Utility weight', 'Boost for calculator/currency/time rows.', 0, 100, 1, 5);
 
         page.add(rankingGroup);
+
+        const smartGroup = new Adw.PreferencesGroup({
+            title: 'Smart providers',
+            description: 'Configure indexed folders and currency cache behavior.',
+        });
+
+        addStringArrayRow(
+            smartGroup,
+            settings,
+            'indexed-folders',
+            'Indexed folders (comma-separated)',
+            'Example: /home/user/Documents, /home/user/Downloads'
+        );
+
+        const currencyRefreshRow = new Adw.SwitchRow({
+            title: 'Currency online refresh',
+            subtitle: 'When enabled, currency rates may be refreshed online in future updates.',
+        });
+        settings.bind('currency-refresh-enabled', currencyRefreshRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        smartGroup.add(currencyRefreshRow);
+
+        addSpinRow(
+            smartGroup,
+            settings,
+            'currency-rate-ttl-hours',
+            'Currency cache TTL (hours)',
+            'How long cached rates are treated as fresh.',
+            1,
+            168,
+            1,
+            6
+        );
+
+        page.add(smartGroup);
 
         window.add(page);
     }

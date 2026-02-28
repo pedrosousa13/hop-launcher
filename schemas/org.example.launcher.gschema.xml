@@ -51,5 +51,35 @@
       <summary>Recent result weight</summary>
       <description>Additional score applied to recent file matches.</description>
     </key>
+    <key name="weight-files" type="i">
+      <default>12</default>
+      <summary>File result weight</summary>
+      <description>Additional score applied to indexed file matches.</description>
+    </key>
+    <key name="weight-emoji" type="i">
+      <default>8</default>
+      <summary>Emoji result weight</summary>
+      <description>Additional score applied to emoji matches.</description>
+    </key>
+    <key name="weight-utility" type="i">
+      <default>6</default>
+      <summary>Utility result weight</summary>
+      <description>Additional score applied to calculator, currency, and timezone rows.</description>
+    </key>
+    <key name="indexed-folders" type="as">
+      <default>[]</default>
+      <summary>Indexed folders</summary>
+      <description>Folder list used by file search indexing.</description>
+    </key>
+    <key name="currency-refresh-enabled" type="b">
+      <default>true</default>
+      <summary>Currency refresh enabled</summary>
+      <description>Allow periodic online exchange-rate refresh when available.</description>
+    </key>
+    <key name="currency-rate-ttl-hours" type="i">
+      <default>12</default>
+      <summary>Currency rate cache TTL</summary>
+      <description>Hours before cached exchange rates are considered stale.</description>
+    </key>
   </schema>
 </schemalist>

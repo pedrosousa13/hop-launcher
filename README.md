@@ -20,6 +20,11 @@ A polished **Raycast-lite** command palette for GNOME Shell 45+ on Wayland.
 - Prefix filters:
   - `w ` windows only
   - `a ` apps only
+  - `f ` files only
+  - `:emoji ` emoji picker
+  - `tz ` timezone lookup
+  - `$100 usd to eur` currency conversion
+  - `=2+2` calculator
   - `>` action mode (minimal shell action)
 - Smooth open/close animations with settings for duration and optional disable.
 - Fast incremental updates with debounce and caching.
@@ -41,6 +46,7 @@ Then test instantly:
 - press **Super+Space** to open
 - type `chr` or `crome` and verify matching
 - try `w ` for windows only and `a ` for apps only
+- try `f report`, `:emoji smile`, `tz pst`, `100 usd to eur`, and `2+2`
 
 ## Fast dev loop
 
@@ -97,6 +103,8 @@ Create a zip file in `dist/`:
 - Behavior: keybinding, blur/translucency, animations on/off
 - Performance: debounce, max results, open/close animation durations
 - Ranking: windows/apps/recents source weight controls
+- Ranking: windows/apps/recents/files/emoji/utility source weight controls
+- Smart providers: indexed folders and currency cache controls
 
 ## Compatibility notes
 
@@ -127,4 +135,3 @@ A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
 - `npm test` (fuzzy matcher tests)
 - `glib-compile-schemas --strict --dry-run schemas`
 - `bash -n scripts/install-local.sh scripts/package-extension.sh`
-

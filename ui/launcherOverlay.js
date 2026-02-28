@@ -38,7 +38,7 @@ class LauncherOverlay extends St.BoxLayout {
 
         this._input = new St.Entry({
             style_class: 'hop-launcher-input',
-            hint_text: 'Search apps, windows, recents…',
+            hint_text: 'Search apps, windows, files, emoji, utilities…',
             can_focus: true,
             x_expand: true,
         });
@@ -138,7 +138,7 @@ class LauncherOverlay extends St.BoxLayout {
     _runSearch() {
         const rawQuery = this._input.get_text();
         const {query, mode} = extractQueryRoute(rawQuery);
-        const items = this._collectItems(mode);
+        const items = this._collectItems(mode, query);
         const generation = ++this._searchGeneration;
 
         if (items.length < ASYNC_SEARCH_THRESHOLD) {
@@ -168,22 +168,14 @@ class LauncherOverlay extends St.BoxLayout {
             weightWindows: this._settings.get_int('weight-windows'),
             weightApps: this._settings.get_int('weight-apps'),
             weightRecents: this._settings.get_int('weight-recents'),
+            weightFiles: this._settings.get_int('weight-files'),
+            weightEmoji: this._settings.get_int('weight-emoji'),
+            weightUtility: this._settings.get_int('weight-utility'),
             maxResults: this._settings.get_int('max-results'),
         });
     }
 
-    _collectItems(mode) {
-        const all = this._providers.flatMap(p => p.getResults());
-        if (mode === 'windows')
-            return all.filter(i => i.kind === 'window');
-        if (mode === 'apps')
-            return all.filter(i => i.kind === 'app');
-        if (mode === 'files')
-            return all.filter(i => i.kind === 'file');
-        if (mode === 'emoji')
-            return all.filter(i => i.kind === 'emoji');
-        if (mode === 'currency' || mode === 'timezone' || mode === 'calculator')
-            return all.filter(i => i.kind === 'utility');
+    _collectItems(mode, query) {
         if (mode === 'actions') {
             return [
                 {
@@ -195,6 +187,18 @@ class LauncherOverlay extends St.BoxLayout {
                 },
             ];
         }
+
+        const all = this._providers.flatMap(p => p.getResults(query, mode));
+        if (mode === 'windows')
+            return all.filter(i => i.kind === 'window');
+        if (mode === 'apps')
+            return all.filter(i => i.kind === 'app');
+        if (mode === 'files')
+            return all.filter(i => i.kind === 'file');
+        if (mode === 'emoji')
+            return all.filter(i => i.kind === 'emoji');
+        if (mode === 'currency' || mode === 'timezone' || mode === 'calculator')
+            return all.filter(i => i.kind === 'utility');
         return all;
     }
 
