@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {searchEmoji, shouldHandleEmojiQuery} from '../lib/providers/emoji.js';
+
+test('handles explicit emoji prefix', () => {
+    assert.equal(shouldHandleEmojiQuery(':emoji smile'), true);
+    assert.equal(shouldHandleEmojiQuery('smile'), true);
+});
+
+test('finds smile emoji by keyword', () => {
+    const matches = searchEmoji('smile');
+    assert.equal(matches[0].emoji, '😀');
+});
