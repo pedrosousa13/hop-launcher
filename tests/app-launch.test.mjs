@@ -153,3 +153,39 @@ test('launchOrFocusApp focuses matching open window when app.get_windows is empt
 
     global.display = originalDisplay;
 });
+
+test('launchOrFocusApp does not throw when window flag methods require bound this', () => {
+    const originalDisplay = global.display;
+    let appActivated = false;
+
+    const window = {
+        _skipTaskbar: false,
+        is_skip_taskbar() {
+            if (this !== window)
+                throw new TypeError('unbound method call');
+            return this._skipTaskbar;
+        },
+        is_override_redirect() {
+            if (this !== window)
+                throw new TypeError('unbound method call');
+            return false;
+        },
+    };
+
+    global.display = {
+        get_tab_list: () => [window],
+    };
+
+    const app = {
+        get_id: () => 'org.test.app.desktop',
+        get_windows: () => [],
+        activate: () => {
+            appActivated = true;
+        },
+    };
+
+    assert.doesNotThrow(() => launchOrFocusApp(app, () => 1));
+    assert.equal(appActivated, true);
+
+    global.display = originalDisplay;
+});
