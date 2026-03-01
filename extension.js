@@ -1,6 +1,8 @@
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import Soup from 'gi://Soup?version=3.0';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -18,6 +20,28 @@ import {WeatherProvider} from './lib/providers/weather.js';
 import {WebSearchProvider} from './lib/providers/webSearch.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
+
+Gio._promisify(Soup.Session.prototype, 'send_and_read_async', 'send_and_read_finish');
+
+function createSoupRequestJson() {
+    const session = new Soup.Session({
+        user_agent: 'hop-launcher/1.0',
+    });
+
+    return async url => {
+        const message = Soup.Message.new('GET', url);
+        const bytes = await session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, null);
+        const status = Number(message.status_code ?? message.get_status?.());
+        if (!Number.isFinite(status) || status < 200 || status >= 300)
+            throw new Error(`weather http ${status}`);
+
+        const payload = bytes.get_data();
+        const json = typeof payload === 'string'
+            ? payload
+            : new TextDecoder().decode(payload);
+        return JSON.parse(json);
+    };
+}
 
 export default class HopLauncherExtension extends Extension {
     enable() {
@@ -38,7 +62,9 @@ export default class HopLauncherExtension extends Extension {
             new CalculatorProvider(),
             new TimezoneProvider(),
             new CurrencyProvider(this._settings),
-            new WeatherProvider(),
+            new WeatherProvider({
+                soupRequestJson: createSoupRequestJson(),
+            }),
             new WebSearchProvider(this._settings, {openUrl}),
         ];
 

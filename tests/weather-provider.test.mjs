@@ -161,3 +161,49 @@ test('does not provide weather rows in all mode without weather intent', () => {
     const rows = provider.getResults('firefox', 'all');
     assert.deepEqual(rows, []);
 });
+
+test('uses soup fallback when fetch is unavailable', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = undefined;
+
+    const soupRequestJson = async url => {
+        if (url.includes('geocoding-api.open-meteo.com')) {
+            return {
+                results: [{
+                    name: 'Lisbon',
+                    latitude: 38.72,
+                    longitude: -9.13,
+                    country_code: 'PT',
+                }],
+            };
+        }
+
+        if (url.includes('api.open-meteo.com')) {
+            return {
+                current: {
+                    temperature_2m: 18,
+                    weather_code: 1,
+                    wind_speed_10m: 14,
+                },
+            };
+        }
+
+        throw new Error('unexpected url');
+    };
+
+    try {
+        const provider = new WeatherProvider({soupRequestJson, timeoutMs: 3000});
+        const pending = provider.getResults('weather lisbon', 'weather');
+        assert.equal(pending.length, 1);
+        assert.match(pending[0].primaryText, /Fetching weather/);
+
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const cached = provider.getResults('weather lisbon', 'weather');
+        assert.equal(cached.length, 1);
+        assert.match(cached[0].primaryText, /Lisbon/);
+        assert.doesNotMatch(cached[0].primaryText, /Weather unavailable/);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
