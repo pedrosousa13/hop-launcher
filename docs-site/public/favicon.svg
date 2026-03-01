@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hop Launcher">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c6cff"/>
+      <stop offset="100%" stop-color="#2f6fed"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <path d="M36 14c-6 2-11 7-13 13l-6 2 7 5 5 7 2-6c6-2 11-7 13-13l6-2-7-5-5-7-2 6Z" fill="#fff"/>
+  <circle cx="33" cy="31" r="3" fill="#2f6fed"/>
+  <path d="M24 41c-3 1-5 3-6 6 3-1 5-3 6-6Z" fill="#ffd166"/>
+</svg>

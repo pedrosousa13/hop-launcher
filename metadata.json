@@ -1,7 +1,7 @@
 {
   "uuid": "hop-launcher@example.org",
   "name": "Hop Launcher",
-  "description": "Raycast-lite launcher for GNOME Wayland with apps, windows, recents, and fuzzy search.",
+  "description": "Launcher for GNOME Wayland with apps, windows, recents, and fuzzy search.",
   "version": 1,
   "shell-version": ["45", "46", "47", "48", "49"],
   "settings-schema": "org.example.launcher"

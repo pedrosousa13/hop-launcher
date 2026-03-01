@@ -22,6 +22,8 @@ import {getResultHintActionLabel, getResultHintIconSpec} from '../lib/resultKind
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
+const MIN_TRANSLUCENCY = 55;
+const MAX_TRANSLUCENCY = 100;
 const KEY_ALIASES = 'custom-aliases-json';
 const KEY_LEARNING_STORE = 'launch-learning-json';
 const KEY_LEARNING_ENABLED = 'learning-enabled';
@@ -123,6 +125,38 @@ class LauncherOverlay extends St.BoxLayout {
                 this._queueSearch();
             });
         }
+
+        this.applyVisualSettings({
+            blurEnabled: this._settings.get_boolean('blur-enabled'),
+            translucencyPercent: this._settings.get_int('overlay-translucency'),
+        });
+    }
+
+    applyVisualSettings({blurEnabled = true, translucencyPercent = 90} = {}) {
+        const raw = Number(translucencyPercent);
+        const clampedPercent = Math.min(MAX_TRANSLUCENCY, Math.max(MIN_TRANSLUCENCY, Number.isFinite(raw) ? raw : 90));
+        const factor = clampedPercent / 100;
+
+        const overlayBaseAlpha = blurEnabled ? 0.82 : 0.9;
+        const overlayAlpha = Math.max(0.1, Math.min(0.98, overlayBaseAlpha * factor));
+        const overlayBorderAlpha = Math.max(0.03, Math.min(0.2, 0.08 * factor));
+        const inputAlpha = Math.max(0.015, Math.min(0.2, 0.04 * factor));
+        const inputBorderAlpha = Math.max(0.02, Math.min(0.2, 0.07 * factor));
+        const scrollAlpha = Math.max(0.08, Math.min(0.7, 0.46 * factor));
+        const scrollBorderAlpha = Math.max(0.02, Math.min(0.2, 0.06 * factor));
+
+        this.set_style(
+            `background-color: rgba(20, 21, 24, ${overlayAlpha.toFixed(3)});` +
+            ` border: 1px solid rgba(255, 255, 255, ${overlayBorderAlpha.toFixed(3)});`
+        );
+        this._input.set_style(
+            `background-color: rgba(255, 255, 255, ${inputAlpha.toFixed(3)});` +
+            ` border: 1px solid rgba(255, 255, 255, ${inputBorderAlpha.toFixed(3)});`
+        );
+        this._scroll.set_style(
+            `background-color: rgba(13, 14, 16, ${scrollAlpha.toFixed(3)});` +
+            ` border: 1px solid rgba(255, 255, 255, ${scrollBorderAlpha.toFixed(3)});`
+        );
     }
 
     open() {

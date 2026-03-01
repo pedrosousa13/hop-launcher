@@ -1,6 +1,6 @@
 # Hop Launcher (GNOME Wayland)
 
-A polished **Raycast-lite** command palette for GNOME Shell 45+ on Wayland.
+A polished command palette for GNOME Shell 45+ on Wayland.
 
 ## Features (v1)
 
@@ -141,12 +141,13 @@ Create a zip file in `dist/`:
 
 ## Settings pane highlights
 
-- Behavior: keybinding, blur/translucency, animations on/off
+- Behavior: keybinding, blur style, launcher-wide translucency, animations on/off
+- Main features: one-click enable/disable for windows, apps, files, emoji, calculator, currency, timezone, weather, and web search
 - Performance: debounce, max results, open/close animation durations
 - Ranking: windows/apps/recents source weight controls
 - Ranking: windows/apps/recents/files/emoji/utility source weight controls
 - Smart providers: indexed folders and currency cache controls
-- Smart providers: web search provider toggle, max actions, and JSON URL-template config
+- Web search providers: add/edit/reorder/remove providers, reset defaults, max actions, and URL-template config
 
 ## Compatibility notes
 

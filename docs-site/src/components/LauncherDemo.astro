@@ -1,0 +1,241 @@
+---
+import type { DemoActionKind, DemoResult, DemoResultKind, DemoScenario } from "../data/demoScenarios";
+
+interface Props {
+  scenarios: DemoScenario[];
+}
+
+const { scenarios } = Astro.props;
+const initialScenario = scenarios[0];
+
+const kindIcon: Record<DemoResultKind, string> = {
+  app: "/icons/lucide/app-window.svg",
+  window: "/icons/lucide/monitor.svg",
+  file: "/icons/lucide/files.svg",
+  utility: "/icons/lucide/copy.svg",
+  action: "/icons/lucide/search.svg"
+};
+
+const actionIcon: Record<DemoActionKind, string> = {
+  open: "/icons/lucide/app-window.svg",
+  focus: "/icons/lucide/monitor.svg",
+  run: "/icons/lucide/search.svg",
+  copy: "/icons/lucide/copy.svg"
+};
+
+const actionLabel: Record<DemoActionKind, string> = {
+  open: "Open",
+  focus: "Focus",
+  run: "Run",
+  copy: "Copy"
+};
+
+const appIconByLabel: Record<string, string> = {
+  "brave web browser": "/icons/apps/brave-browser.png",
+  "zen browser": "/icons/apps/zen-browser.png",
+  "chromium web browser": "/icons/apps/chromium.png",
+  "google chrome": "/icons/apps/chromium.png"
+};
+
+const getActionLabel = (result: DemoResult) => result.actionLabel ?? actionLabel[result.actionKind];
+const getLeftIcon = (result: DemoResult) =>
+  result.leftIcon ??
+  appIconByLabel[result.label.toLowerCase()] ??
+  kindIcon[result.kind];
+const getLeftIconClass = (src: string) =>
+  src.includes("/icons/lucide/") ? "left-icon-lucide" : "left-icon-app";
+---
+
+<section id="launcher-demo" class="mx-auto mt-14 w-full max-w-6xl px-6 md:px-10">
+  <div class="surface-card rounded-3xl p-4 md:p-6">
+    <div class="flex flex-wrap gap-2" role="tablist" aria-label="Demo query scenarios">
+      {scenarios.map((scenario, index) => (
+        <button
+          class="demo-chip max-w-full rounded-full px-3 py-1.5 text-left text-xs font-semibold tracking-wide break-words whitespace-normal transition hover:border-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]"
+          type="button"
+          data-scenario-id={scenario.id}
+          data-index={index}
+          aria-selected={index === 0 ? "true" : "false"}
+          data-active={index === 0 ? "true" : "false"}
+        >
+          {scenario.query}
+        </button>
+      ))}
+    </div>
+
+    <div class="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start">
+      <div class="launcher-shell rounded-2xl px-3 py-3 text-[color:var(--text)]">
+        <div class="launcher-input rounded-xl px-3 py-3">
+          <p class="font-mono text-sm">
+            <span data-query>{initialScenario.query}</span><span class="demo-caret" aria-hidden="true"></span>
+          </p>
+        </div>
+
+        <ul class="launcher-results mt-3 space-y-1.5 rounded-xl p-2" data-results>
+          {initialScenario.results.map((result, index) => (
+            <li
+              class="launcher-row demo-result rounded-lg px-3 py-2 text-sm"
+              data-selected={index === 0 ? "true" : "false"}
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex min-w-0 items-center gap-2.5">
+                  <span class={`icon-badge ${getLeftIconClass(getLeftIcon(result))}`} aria-hidden="true">
+                    <img src={getLeftIcon(result)} alt="" loading="lazy" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="row-title truncate leading-tight">{result.label}</div>
+                    <div class="row-secondary truncate text-xs">{result.secondaryText}</div>
+                  </div>
+                </div>
+                <div class="row-action flex shrink-0 items-center gap-1.5 text-xs">
+                  <img src={actionIcon[result.actionKind]} alt="" class="action-icon" loading="lazy" />
+                  <span>{getActionLabel(result)}</span>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="surface-soft rounded-2xl p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-[color:var(--muted)]">Scenario</h3>
+        <p class="mt-2 text-base font-semibold" data-description>{initialScenario.description}</p>
+        <p class="mt-4 text-sm leading-relaxed text-[color:var(--muted)]">
+          This loop mimics the launcher flow: type, rank, resolve. Click chips to jump between realistic query paths.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline type="application/json" id="launcher-scenarios" set:html={JSON.stringify(scenarios)}></script>
+</section>
+
+<script>
+  type ClientResult = {
+    label: string;
+    secondaryText: string;
+    kind: "app" | "window" | "file" | "utility" | "action";
+    actionKind: "open" | "focus" | "run" | "copy";
+    leftIcon?: string;
+    actionLabel?: string;
+  };
+  type ClientScenario = { id: string; query: string; description: string; results: ClientResult[] };
+
+  const kindIcon: Record<ClientResult["kind"], string> = {
+    app: "/icons/lucide/app-window.svg",
+    window: "/icons/lucide/monitor.svg",
+    file: "/icons/lucide/files.svg",
+    utility: "/icons/lucide/copy.svg",
+    action: "/icons/lucide/search.svg"
+  };
+
+  const actionIcon: Record<ClientResult["actionKind"], string> = {
+    open: "/icons/lucide/app-window.svg",
+    focus: "/icons/lucide/monitor.svg",
+    run: "/icons/lucide/search.svg",
+    copy: "/icons/lucide/copy.svg"
+  };
+
+  const actionLabel: Record<ClientResult["actionKind"], string> = {
+    open: "Open",
+    focus: "Focus",
+    run: "Run",
+    copy: "Copy"
+  };
+
+  const appIconByLabel: Record<string, string> = {
+    "brave web browser": "/icons/apps/brave-browser.png",
+    "zen browser": "/icons/apps/zen-browser.png",
+    "chromium web browser": "/icons/apps/chromium.png",
+    "google chrome": "/icons/apps/chromium.png"
+  };
+
+  const root = document.getElementById("launcher-demo");
+  const dataNode = document.getElementById("launcher-scenarios");
+
+  if (!root || !dataNode) {
+    throw new Error("Launcher demo bootstrap failed.");
+  }
+
+  const scenarios = JSON.parse(dataNode.textContent || "[]") as ClientScenario[];
+  const chips = Array.from(root.querySelectorAll<HTMLButtonElement>(".demo-chip"));
+  const queryNode = root.querySelector<HTMLElement>("[data-query]");
+  const resultsNode = root.querySelector<HTMLElement>("[data-results]");
+  const descriptionNode = root.querySelector<HTMLElement>("[data-description]");
+
+  if (!chips.length || !queryNode || !resultsNode || !descriptionNode || !Array.isArray(scenarios)) {
+    throw new Error("Launcher demo markup invalid.");
+  }
+
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let activeIndex = 0;
+  let timeoutId: number | undefined;
+
+  const renderResults = (results: ClientResult[]) => {
+    resultsNode.innerHTML = "";
+    results.forEach((result, idx) => {
+      const item = document.createElement("li");
+      item.className = "launcher-row demo-result rounded-lg px-3 py-2 text-sm";
+      item.dataset.selected = idx === 0 ? "true" : "false";
+      item.style.animationDelay = `${idx * 65}ms`;
+      const action = result.actionLabel ?? actionLabel[result.actionKind];
+      const leftIcon = result.leftIcon ?? appIconByLabel[result.label.toLowerCase()] ?? kindIcon[result.kind];
+      const leftIconClass = leftIcon.includes("/icons/lucide/") ? "left-icon-lucide" : "left-icon-app";
+      item.innerHTML = `<div class=\"flex items-center justify-between gap-3\"><div class=\"flex min-w-0 items-center gap-2.5\"><span class=\"icon-badge ${leftIconClass}\" aria-hidden=\"true\"><img src=\"${leftIcon}\" alt=\"\" loading=\"lazy\" /></span><div class=\"min-w-0\"><div class=\"row-title truncate leading-tight\">${result.label}</div><div class=\"row-secondary truncate text-xs\">${result.secondaryText}</div></div></div><div class=\"row-action flex shrink-0 items-center gap-1.5 text-xs\"><img src=\"${actionIcon[result.actionKind]}\" alt=\"\" class=\"action-icon\" loading=\"lazy\" /><span>${action}</span></div></div>`;
+      resultsNode.appendChild(item);
+    });
+  };
+
+  const setChipState = (index: number) => {
+    chips.forEach((chip, i) => {
+      const isActive = i === index;
+      chip.setAttribute("aria-selected", isActive ? "true" : "false");
+      chip.dataset.active = isActive ? "true" : "false";
+    });
+  };
+
+  const typeQuery = async (text: string) => {
+    if (prefersReducedMotion) {
+      queryNode.textContent = text;
+      return;
+    }
+
+    queryNode.textContent = "";
+    for (const char of text) {
+      queryNode.textContent += char;
+      await new Promise<void>((resolve) => {
+        timeoutId = window.setTimeout(resolve, 56);
+      });
+    }
+  };
+
+  const runScenario = async (index: number) => {
+    activeIndex = index;
+    const scenario = scenarios[index];
+    setChipState(index);
+    descriptionNode.textContent = scenario.description;
+    await typeQuery(scenario.query);
+    renderResults(scenario.results);
+  };
+
+  const queueNext = () => {
+    if (prefersReducedMotion)
+      return;
+
+    timeoutId = window.setTimeout(async () => {
+      const next = (activeIndex + 1) % scenarios.length;
+      await runScenario(next);
+      queueNext();
+    }, 1700);
+  };
+
+  chips.forEach((chip, idx) => {
+    chip.addEventListener("click", async () => {
+      window.clearTimeout(timeoutId);
+      await runScenario(idx);
+      queueNext();
+    });
+  });
+
+  runScenario(0).then(queueNext);
+</script>

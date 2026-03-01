@@ -1,0 +1,126 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script is:inline>
+      (() => {
+        const KEY = "hop-theme";
+        const root = document.documentElement;
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+        const readMode = () => {
+          try {
+            const stored = localStorage.getItem(KEY);
+            if (stored === "light" || stored === "dark" || stored === "auto")
+              return stored;
+          } catch {
+            // ignore storage read failures
+          }
+          return "auto";
+        };
+
+        const resolveTheme = mode => (mode === "auto" ? (media.matches ? "dark" : "light") : mode);
+        const mode = readMode();
+        root.dataset.themeMode = mode;
+        root.dataset.theme = resolveTheme(mode);
+      })();
+    </script>
+    <title>{title}</title>
+  </head>
+  <body class="bg-[color:var(--bg)] text-[color:var(--text)] antialiased">
+    <div class="grain-layer" aria-hidden="true"></div>
+    <div class="field-layer" aria-hidden="true"></div>
+
+    <header class="mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6 md:px-10 md:pt-8">
+      <nav class="flex items-center gap-2" aria-label="Site navigation">
+        <a href="/" class="nav-link">Home</a>
+        <a href="/docs/" class="nav-link">Docs</a>
+      </nav>
+
+      <div class="theme-toggle" role="group" aria-label="Color theme">
+        <button type="button" class="theme-toggle-btn" data-theme-mode="auto">Auto</button>
+        <button type="button" class="theme-toggle-btn" data-theme-mode="light">Light</button>
+        <button type="button" class="theme-toggle-btn" data-theme-mode="dark">Dark</button>
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <script is:inline>
+      (() => {
+        const KEY = "hop-theme";
+        const root = document.documentElement;
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = Array.from(document.querySelectorAll("[data-theme-mode]"));
+
+        const resolveTheme = mode => (mode === "auto" ? (media.matches ? "dark" : "light") : mode);
+
+        const apply = mode => {
+          root.dataset.themeMode = mode;
+          root.dataset.theme = resolveTheme(mode);
+          buttons.forEach(button => {
+            const active = button.dataset.themeMode === mode;
+            button.dataset.active = active ? "true" : "false";
+            button.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+        };
+
+        const readMode = () => {
+          const mode = root.dataset.themeMode;
+          if (mode === "light" || mode === "dark" || mode === "auto")
+            return mode;
+          return "auto";
+        };
+
+        const save = mode => {
+          try {
+            localStorage.setItem(KEY, mode);
+          } catch {
+            // ignore storage write failures
+          }
+        };
+
+        buttons.forEach(button => {
+          button.addEventListener("click", () => {
+            const mode = button.dataset.themeMode;
+            if (mode !== "light" && mode !== "dark" && mode !== "auto")
+              return;
+            save(mode);
+            apply(mode);
+          });
+        });
+
+        media.addEventListener("change", () => {
+          if (readMode() === "auto")
+            apply("auto");
+        });
+
+        apply(readMode());
+      })();
+    </script>
+  </body>
+</html>

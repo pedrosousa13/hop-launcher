@@ -1,0 +1,25 @@
+---
+import { getCollection } from "astro:content";
+import MainLayout from "../../layouts/MainLayout.astro";
+
+const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+---
+
+<MainLayout title="Hop Launcher Docs" description="Structured documentation for Hop Launcher usage, ranking, and release status.">
+  <section class="docs-page mx-auto w-full max-w-6xl px-6 pt-8 pb-20 md:px-10 md:pt-12">
+    <h1 class="font-display text-4xl font-semibold md:text-5xl">Documentation</h1>
+    <p class="mt-4 max-w-2xl text-base text-[color:var(--muted)] md:text-lg">
+      Browse focused docs for setup, query patterns, ranking behavior, and current release status.
+    </p>
+
+    <div class="mt-8 grid gap-4 md:grid-cols-2">
+      {docs.map((doc) => (
+        <a href={`/docs/${doc.slug}/`} class="surface-card rounded-2xl p-5 transition hover:translate-y-[-2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]">
+          <p class="text-xs font-semibold tracking-[0.14em] text-[color:var(--muted)] uppercase">Doc</p>
+          <h2 class="mt-2 text-xl font-semibold">{doc.data.title}</h2>
+          <p class="mt-2 text-sm text-[color:var(--muted)]">{doc.data.description}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+</MainLayout>

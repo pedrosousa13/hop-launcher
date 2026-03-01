@@ -2,7 +2,7 @@
 <schemalist>
   <schema id="org.example.launcher" path="/org/example/launcher/">
     <key name="toggle-launcher" type="as">
-      <default>["&lt;Super&gt;space"]</default>
+      <default>[]</default>
       <summary>Toggle launcher keybinding</summary>
       <description>Shortcut used to open the launcher overlay.</description>
     </key>
@@ -11,10 +11,60 @@
       <summary>Enable blur</summary>
       <description>Use blur-like styling for the launcher overlay.</description>
     </key>
+    <key name="overlay-translucency" type="i">
+      <default>90</default>
+      <summary>Overlay translucency</summary>
+      <description>Translucency strength for launcher surfaces as a percentage.</description>
+    </key>
     <key name="animations-enabled" type="b">
       <default>true</default>
       <summary>Enable animations</summary>
       <description>Animate overlay open/close transitions.</description>
+    </key>
+    <key name="feature-windows-enabled" type="b">
+      <default>true</default>
+      <summary>Windows provider enabled</summary>
+      <description>Show results from open windows.</description>
+    </key>
+    <key name="feature-apps-enabled" type="b">
+      <default>true</default>
+      <summary>Apps provider enabled</summary>
+      <description>Show installed application results.</description>
+    </key>
+    <key name="feature-files-enabled" type="b">
+      <default>true</default>
+      <summary>Files provider enabled</summary>
+      <description>Show indexed file search results.</description>
+    </key>
+    <key name="feature-emoji-enabled" type="b">
+      <default>true</default>
+      <summary>Emoji provider enabled</summary>
+      <description>Show emoji lookup results.</description>
+    </key>
+    <key name="feature-calculator-enabled" type="b">
+      <default>true</default>
+      <summary>Calculator provider enabled</summary>
+      <description>Show calculator expression results.</description>
+    </key>
+    <key name="feature-currency-enabled" type="b">
+      <default>true</default>
+      <summary>Currency provider enabled</summary>
+      <description>Show currency conversion results.</description>
+    </key>
+    <key name="feature-timezone-enabled" type="b">
+      <default>true</default>
+      <summary>Timezone provider enabled</summary>
+      <description>Show timezone conversion and clock results.</description>
+    </key>
+    <key name="feature-weather-enabled" type="b">
+      <default>true</default>
+      <summary>Weather provider enabled</summary>
+      <description>Show weather lookup results.</description>
+    </key>
+    <key name="feature-web-search-enabled" type="b">
+      <default>true</default>
+      <summary>Web search provider enabled</summary>
+      <description>Show configured web search provider actions.</description>
     </key>
     <key name="open-animation-ms" type="i">
       <default>140</default>

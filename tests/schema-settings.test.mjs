@@ -29,3 +29,21 @@ test('schema declares learning insights settings', () => {
     assert.match(schema, /<key name="learning-insights-sort" type="s">/);
     assert.match(schema, /<default>'count'<\/default>/);
 });
+
+test('schema declares main feature toggles', () => {
+    const schema = readSchema();
+    assert.match(schema, /<key name="feature-windows-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-apps-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-files-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-emoji-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-calculator-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-currency-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-timezone-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-weather-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-web-search-enabled" type="b">/);
+});
+
+test('schema declares overlay translucency key', () => {
+    const schema = readSchema();
+    assert.match(schema, /<key name="overlay-translucency" type="i">/);
+});
