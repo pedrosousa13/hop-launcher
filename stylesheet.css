@@ -41,6 +41,11 @@
   border: 1px solid transparent;
 }
 
+.hop-launcher-row-singleline {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
 .hop-launcher-row:hover {
   background-color: rgba(255, 255, 255, 0.05);
 }
@@ -72,6 +77,10 @@
 
 .hop-launcher-hint-container {
   min-width: 72px;
+}
+
+.hop-launcher-text-singleline {
+  y-align: center;
 }
 
 .hop-launcher-copy-label {

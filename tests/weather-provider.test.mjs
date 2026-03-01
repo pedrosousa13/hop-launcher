@@ -25,27 +25,24 @@ test('parses weather query with and without prefixes', () => {
 });
 
 test('exports expected wttr format string', () => {
-    assert.equal(WTTR_FORMAT, '%l|%c|%t|%w|%C');
+    assert.equal(WTTR_FORMAT, '3');
 });
 
 test('formats weather utility row', () => {
     const row = buildWeatherRow({
         location: 'zurich',
-        placeLabel: 'Zurich',
+        prettyText: 'Zurich: ☀️ +12°C',
         observedAt: '2026-03-01T08:00',
-        icon: '☀️',
-        tempText: '+12°C',
-        windText: '11 km/h',
-        conditionText: 'Sunny',
     }, 'zurich');
 
     assert.equal(row.kind, 'utility');
-    assert.match(row.primaryText, /☀️ \+12°C • Sunny/);
-    assert.match(row.secondaryText, /Zurich/);
+    assert.equal(row.primaryText, 'Zurich: ☀️ +12°C');
+    assert.match(row.secondaryText, /wttr\.in/);
+    assert.match(row.secondaryText, /Updated 2026-03-01T08:00/);
 });
 
 test('returns pending row then cached weather row after fetch', async () => {
-    const requestText = async () => 'Zurich|☀️|+12°C|11 km/h|Sunny';
+    const requestText = async () => 'Zurich: ☀️ +12°C';
     const provider = new WeatherProvider({requestText, timeoutMs: 3000});
 
     const pending = provider.getResults('weather zurich', 'weather');
@@ -56,15 +53,15 @@ test('returns pending row then cached weather row after fetch', async () => {
 
     const cached = provider.getResults('weather zurich', 'weather');
     assert.equal(cached.length, 1);
-    assert.match(cached[0].primaryText, /°C/);
-    assert.match(cached[0].secondaryText, /Zurich/);
+    assert.match(cached[0].primaryText, /☀️/);
+    assert.match(cached[0].secondaryText, /wttr\.in/);
 });
 
 test('returns stale cached row and refreshes in background', async () => {
     let calls = 0;
     const requestText = async () => {
         calls++;
-        return 'Berlin|⛅|+8°C|9 km/h|Partly cloudy';
+        return 'Berlin: ⛅ +8°C';
     };
 
     const provider = new WeatherProvider({requestText, ttlMs: 1, timeoutMs: 3000});
@@ -93,6 +90,20 @@ test('timeout keeps pending/fallback behavior without throwing', async () => {
     const next = provider.getResults('weather timeout-town', 'weather');
     assert.equal(next.length, 1);
     assert.match(next[0].primaryText, /Weather unavailable/);
+});
+
+test('default timeout tolerates slower wttr responses', async () => {
+    const requestText = async () => new Promise(resolve => setTimeout(() => resolve('Lisbon: ☀️ +18°C'), 3000));
+    const provider = new WeatherProvider({requestText});
+
+    const rows = provider.getResults('weather lisbon', 'weather');
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].primaryText, /Fetching weather/);
+
+    await new Promise(resolve => setTimeout(resolve, 3100));
+    const next = provider.getResults('weather lisbon', 'weather');
+    assert.equal(next.length, 1);
+    assert.match(next[0].primaryText, /☀️/);
 });
 
 test('does not provide weather rows in all mode without weather intent', () => {

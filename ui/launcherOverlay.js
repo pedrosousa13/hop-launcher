@@ -349,9 +349,16 @@ class LauncherOverlay extends St.BoxLayout {
                 icon.icon_name = 'system-search-symbolic';
             }
 
+            const secondaryText = (result.secondaryText ?? '').toString();
+            const hasSecondaryText = secondaryText.trim().length > 0;
             const text = new St.BoxLayout({vertical: true, x_expand: true});
             text.add_child(new St.Label({text: result.primaryText ?? ''}));
-            text.add_child(new St.Label({text: result.secondaryText ?? '', style_class: 'dim-label'}));
+            if (hasSecondaryText) {
+                text.add_child(new St.Label({text: secondaryText, style_class: 'dim-label'}));
+            } else {
+                row.add_style_class_name('hop-launcher-row-singleline');
+                text.add_style_class_name('hop-launcher-text-singleline');
+            }
 
             const hint = new St.BoxLayout({style_class: 'hop-launcher-hint-box'});
             const hintIcon = isCopyAction
@@ -369,7 +376,7 @@ class LauncherOverlay extends St.BoxLayout {
                 y_expand: true,
                 vertical: true,
                 x_align: Clutter.ActorAlign.END,
-                y_align: Clutter.ActorAlign.END,
+                y_align: hasSecondaryText ? Clutter.ActorAlign.END : Clutter.ActorAlign.CENTER,
             });
             hintContainer.add_child(hint);
 
