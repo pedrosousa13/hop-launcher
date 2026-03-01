@@ -44,6 +44,17 @@ test('parseWebSearchServices keeps valid custom rows and skips invalid rows', ()
     assert.equal(out[0].name, 'Kagi');
 });
 
+test('parseWebSearchServices accepts legacy url field as template', () => {
+    const json = JSON.stringify([
+        {id: 'kagi', name: 'Kagi', url: 'https://kagi.com/search?q=%s', enabled: true},
+    ]);
+
+    const out = parseWebSearchServices(json, {fallbackToDefaults: false});
+    assert.equal(out.length, 1);
+    assert.equal(out[0].id, 'kagi');
+    assert.equal(out[0].urlTemplate, 'https://kagi.com/search?q=%s');
+});
+
 test('filterEnabledSearchServices only returns enabled rows', () => {
     const out = filterEnabledSearchServices([
         {id: 'g', name: 'Google', urlTemplate: 'https://google.com/search?q=%s', enabled: true},

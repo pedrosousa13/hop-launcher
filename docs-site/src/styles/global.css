@@ -182,6 +182,7 @@ code,
   border: 1px solid var(--border);
   background: var(--surface-3);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  min-width: 0;
 }
 
 .launcher-input {
@@ -192,6 +193,8 @@ code,
 .launcher-results {
   border: 1px solid var(--border);
   background: rgba(2, 4, 10, 0.42);
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 :root[data-theme="light"] .launcher-results {
@@ -328,6 +331,24 @@ code,
 .docs-page {
   font-family: "Atkinson Hyperlegible", "Manrope", "Segoe UI", sans-serif;
   font-size: clamp(1.04rem, 0.99rem + 0.2vw, 1.15rem);
+}
+
+@media (max-width: 480px) {
+  #launcher-demo {
+    overflow-x: hidden;
+  }
+
+  #launcher-demo .surface-card {
+    overflow-x: hidden;
+  }
+
+  #launcher-demo .launcher-row > div {
+    gap: 0.5rem;
+  }
+
+  #launcher-demo .row-action span {
+    display: none;
+  }
 }
 
 @keyframes caret-blink {

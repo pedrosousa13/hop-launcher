@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-UUID="hop-launcher@example.org"
+UUID="hop-launcher@hoplauncher.app"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT_DIR}/dist"
 OUT_FILE="${OUT_DIR}/${UUID}.zip"

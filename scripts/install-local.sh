@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-UUID="hop-launcher@example.org"
+UUID="hop-launcher@hoplauncher.app"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 EXT_DIR="${DATA_HOME}/gnome-shell/extensions/${UUID}"

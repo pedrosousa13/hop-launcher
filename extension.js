@@ -47,7 +47,7 @@ function createSoupRequestJson() {
 
 export default class HopLauncherExtension extends Extension {
     enable() {
-        this._settings = this.getSettings('org.example.launcher');
+        this._settings = this.getSettings('org.hoplauncher.app');
         const openUrl = url => {
             try {
                 Gio.AppInfo.launch_default_for_uri(url, null);

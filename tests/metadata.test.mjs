@@ -27,3 +27,10 @@ test('install script UUID matches metadata uuid', () => {
   assert.ok(match, 'install-local.sh must define UUID');
   assert.equal(match[1], metadata.uuid);
 });
+
+test('metadata uses hoplauncher.app identity and website', () => {
+  const metadata = readMetadata();
+  assert.equal(metadata.uuid, 'hop-launcher@hoplauncher.app');
+  assert.equal(metadata.url, 'https://hoplauncher.app');
+  assert.equal(metadata['settings-schema'], 'org.hoplauncher.app');
+});

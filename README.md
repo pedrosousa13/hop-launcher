@@ -40,7 +40,7 @@ From this repo root:
 ```
 
 That script:
-- syncs your working tree to `~/.local/share/gnome-shell/extensions/hop-launcher@example.org`
+- syncs your working tree to `~/.local/share/gnome-shell/extensions/hop-launcher@hoplauncher.app`
 - compiles GSettings schemas
 - disables + re-enables the extension
 
@@ -106,7 +106,7 @@ journalctl --user -f /usr/bin/gnome-shell
 Open preferences:
 
 ```bash
-gnome-extensions prefs hop-launcher@example.org
+gnome-extensions prefs hop-launcher@hoplauncher.app
 ```
 
 ## Packaging for release
@@ -128,7 +128,7 @@ Create a zip file in `dist/`:
 - `lib/providers/apps.js`
 - `lib/providers/windows.js`
 - `lib/providers/recents.js`
-- `schemas/org.example.launcher.gschema.xml`
+- `schemas/org.hoplauncher.app.gschema.xml`
 - `scripts/install-local.sh`
 - `scripts/package-extension.sh`
 - `tests/fuzzy.test.mjs`

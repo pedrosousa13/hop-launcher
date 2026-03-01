@@ -37,13 +37,16 @@ test('WebSearchProvider returns enabled services with URL-encoded query', () => 
     assert.equal(rows[0].searchUrl, 'https://www.google.com/search?q=gnome%20shell');
 });
 
-test('WebSearchProvider honors max actions and enabled toggle', () => {
+test('WebSearchProvider honors max actions', () => {
     const provider = new WebSearchProvider(makeSettings({'web-search-max-actions': 1}));
     const rows = provider.getResults('query', 'all');
     assert.equal(rows.length, 1);
+});
 
-    const disabled = new WebSearchProvider(makeSettings({'web-search-enabled': false}));
-    assert.deepEqual(disabled.getResults('query', 'all'), []);
+test('WebSearchProvider ignores deprecated web-search-enabled gate', () => {
+    const provider = new WebSearchProvider(makeSettings({'web-search-enabled': false}));
+    const rows = provider.getResults('query', 'all');
+    assert.equal(rows.length, 2);
 });
 
 test('WebSearchProvider preserves configured provider order', () => {

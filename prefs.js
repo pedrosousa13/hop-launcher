@@ -84,6 +84,12 @@ function addSwitchRow(group, settings, key, title, subtitle) {
     group.add(row);
 }
 
+function createProviderId() {
+    if (typeof GLib.uuid_string_random === 'function')
+        return GLib.uuid_string_random();
+    return `provider-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 const ALIAS_TYPES = ['rewrite', 'app', 'window'];
 
 function normalizeAlias(value) {
@@ -157,7 +163,7 @@ function formatLearningTimestamp(ms) {
 
 export default class HopLauncherPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
-        const settings = this.getSettings('org.example.launcher');
+        const settings = this.getSettings('org.hoplauncher.app');
 
         const page = new Adw.PreferencesPage({title: 'Hop Launcher'});
 
@@ -327,14 +333,6 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             title: 'Web search providers',
             description: 'Manage provider templates used by web search actions.',
         });
-
-        addSwitchRow(
-            webSearchGroup,
-            settings,
-            'web-search-enabled',
-            'Enable web search actions',
-            'Global switch for appended web search actions.'
-        );
 
         addSpinRow(
             webSearchGroup,
@@ -578,7 +576,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         };
 
         addProviderButton.connect('clicked', () => {
-            const providerId = GLib.uuid_string_random();
+            const providerId = createProviderId();
             const next = addWebSearchProvider(webSearchServices, {
                 id: providerId,
                 name: 'New provider',

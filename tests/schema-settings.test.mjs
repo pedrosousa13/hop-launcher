@@ -6,8 +6,13 @@ import path from 'node:path';
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
 function readSchema() {
-    return fs.readFileSync(path.join(rootDir, 'schemas', 'org.example.launcher.gschema.xml'), 'utf8');
+    return fs.readFileSync(path.join(rootDir, 'schemas', 'org.hoplauncher.app.gschema.xml'), 'utf8');
 }
+
+test('schema uses hoplauncher.app namespace and path', () => {
+    const schema = readSchema();
+    assert.match(schema, /<schema id="org\.hoplauncher\.app" path="\/org\/hoplauncher\/app\/">/);
+});
 
 test('schema declares min-fuzzy-score setting with strict default', () => {
     const schema = readSchema();
