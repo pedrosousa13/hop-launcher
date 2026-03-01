@@ -9,6 +9,20 @@ test('fuzzy scoring tolerates crome typo for Google Chrome', () => {
     assert.ok(typo > unrelated);
 });
 
+test('ranking keeps common one-typo window title matches at default threshold', () => {
+    const items = [
+        {kind: 'window', primaryText: 'Google Docs - Budget 2026 - Brave', secondaryText: 'Brave • Workspace 1'},
+    ];
+
+    const ranked = rankResults('budjet', items, {
+        maxResults: 10,
+        minFuzzyScore: 30,
+    });
+
+    assert.equal(ranked.length, 1);
+    assert.match(ranked[0].primaryText, /Budget 2026/);
+});
+
 test('ordered short query chr matches Google Chrome strongly', () => {
     const score = computeFuzzyScore('chr', 'Google Chrome');
     assert.ok(score > 20);
