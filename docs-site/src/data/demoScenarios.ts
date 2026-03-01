@@ -1,9 +1,13 @@
 export type DemoResultKind = "app" | "window" | "file" | "utility" | "action";
+export type DemoActionKind = "open" | "focus" | "run" | "copy";
 
 export type DemoResult = {
   label: string;
-  hint: string;
+  secondaryText: string;
   kind: DemoResultKind;
+  actionKind: DemoActionKind;
+  leftIcon?: string;
+  actionLabel?: string;
 };
 
 export type DemoScenario = {
@@ -16,51 +20,106 @@ export type DemoScenario = {
 export const demoScenarios: DemoScenario[] = [
   {
     id: "typo-app",
-    query: "crome",
-    description: "Fuzzy typo tolerance surfaces the right app quickly.",
+    query: "brav",
+    description: "Apps stay readable with left app icons and right-side action affordances.",
     results: [
-      { label: "Google Chrome", hint: "App", kind: "app" },
-      { label: "Chromium", hint: "App", kind: "app" },
-      { label: "Chrome Settings", hint: "Window", kind: "window" }
+      {
+        label: "Brave Web Browser",
+        secondaryText: "Access the Internet",
+        kind: "app",
+        leftIcon: "/icons/apps/brave-browser.png",
+        actionKind: "open"
+      },
+      {
+        label: "Search Google for \"brav\"",
+        secondaryText: "Web action",
+        kind: "action",
+        actionKind: "run"
+      },
+      {
+        label: "Search DuckDuckGo for \"brav\"",
+        secondaryText: "Web action",
+        kind: "action",
+        actionKind: "run"
+      },
+      {
+        label: "Zen Browser",
+        secondaryText: "Application",
+        kind: "app",
+        leftIcon: "/icons/apps/zen-browser.png",
+        actionKind: "open"
+      },
+      {
+        label: "Chromium Web Browser",
+        secondaryText: "Access the Internet",
+        kind: "app",
+        leftIcon: "/icons/apps/chromium.png",
+        actionKind: "open"
+      }
     ]
   },
   {
     id: "windows-filter",
-    query: "w term",
-    description: "Prefix filters narrow results to windows only.",
+    query: "hop-la",
+    description: "Window-focused queries show monitor icon + Focus action on the right.",
     results: [
-      { label: "Terminal - dev shell", hint: "Window", kind: "window" },
-      { label: "Terminal - logs", hint: "Window", kind: "window" }
+      {
+        label: "..hop-launcher/docs-site",
+        secondaryText: "Warp - Workspace 1",
+        kind: "window",
+        actionKind: "focus"
+      },
+      {
+        label: "Search Google for \"hop-la\"",
+        secondaryText: "Web action",
+        kind: "action",
+        actionKind: "run"
+      },
+      {
+        label: "Search DuckDuckGo for \"hop-la\"",
+        secondaryText: "Web action",
+        kind: "action",
+        actionKind: "run"
+      }
     ]
   },
   {
-    id: "emoji",
-    query: "emoji smile",
-    description: "Emoji picker intent gives quick copyable symbols.",
+    id: "calculator",
+    query: "29*58",
+    description: "Utility rows keep copy affordance explicit and aligned right.",
     results: [
-      { label: "😄  grinning face with smiling eyes", hint: "Emoji", kind: "utility" },
-      { label: "🙂  slightly smiling face", hint: "Emoji", kind: "utility" }
+      {
+        label: "1682",
+        secondaryText: "Calculator - 29*58",
+        kind: "utility",
+        actionKind: "copy"
+      }
     ]
   },
   {
     id: "timezone",
     query: "zurich time",
-    description: "Timezone lookup handles city and alias patterns.",
+    description: "Timezone results keep primary value and context in a two-line stack.",
     results: [
-      { label: "Zurich", hint: "14:37 CET", kind: "utility" },
-      { label: "Geneva", hint: "14:37 CET", kind: "utility" }
+      {
+        label: "Zurich - 14:40:47",
+        secondaryText: "Europe/Zurich",
+        kind: "utility",
+        actionKind: "copy"
+      }
     ]
   },
   {
-    id: "currency",
-    query: "100usd to eur",
-    description: "Currency conversion intent resolves quickly.",
-    results: [{ label: "100 USD = 92.41 EUR", hint: "Currency", kind: "utility" }]
-  },
-  {
     id: "weather",
-    query: "weather berlin",
-    description: "Weather intent returns current conditions.",
-    results: [{ label: "Berlin 7°C · Partly cloudy", hint: "Open-Meteo", kind: "utility" }]
+    query: "zurich weather",
+    description: "Weather intent mirrors launcher row hierarchy and copy affordance.",
+    results: [
+      {
+        label: "Zurich, Zurich, CH: Overcast - 11C Wind 5 km/h",
+        secondaryText: "Open-Meteo - Updated 2:41:02 PM",
+        kind: "utility",
+        actionKind: "copy"
+      }
+    ]
   }
 ];

@@ -24,15 +24,15 @@ const groupLabel: Record<FeatureCard["group"], string> = {
 
   <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     {cards.map((card) => (
-      <article class="rounded-2xl border border-[color:var(--border)] bg-white/85 p-5 shadow-[0_12px_26px_rgba(22,33,58,0.06)] transition hover:translate-y-[-2px]">
-        <div class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold tracking-wide text-[color:var(--muted)] uppercase">
+      <article class="surface-card rounded-2xl p-5 transition hover:translate-y-[-2px]">
+        <div class="inline-flex rounded-full code-chip px-3 py-1 text-xs font-semibold tracking-wide text-[color:var(--muted)] uppercase">
           {groupLabel[card.group]}
         </div>
         <h3 class="mt-4 text-lg font-semibold">{card.title}</h3>
         <p class="mt-2 text-sm leading-relaxed text-[color:var(--muted)]">{card.summary}</p>
         <ul class="mt-4 flex flex-wrap gap-2">
           {card.examples.map((example) => (
-            <li class="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-700">{example}</li>
+            <li class="code-chip rounded-md px-2 py-1 font-mono text-xs">{example}</li>
           ))}
         </ul>
       </article>
