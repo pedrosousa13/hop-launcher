@@ -54,12 +54,28 @@
   icon-size: 20px;
 }
 
+.hop-launcher-icon-copy {
+  color: rgba(255, 255, 255, 1);
+}
+
 .hop-launcher-hint-icon {
   icon-size: 15px;
 }
 
+.hop-launcher-hint-icon-copy {
+  color: rgba(255, 255, 255, 1);
+}
+
 .hop-launcher-hint-box {
   spacing: 6px;
+}
+
+.hop-launcher-hint-container {
+  min-width: 72px;
+}
+
+.hop-launcher-copy-label {
+  color: rgba(255, 255, 255, 1);
 }
 
 .hop-launcher-empty {

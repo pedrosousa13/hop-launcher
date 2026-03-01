@@ -13,6 +13,7 @@ import {CurrencyProvider} from './lib/providers/currency.js';
 import {TimezoneProvider} from './lib/providers/timezone.js';
 import {EmojiProvider} from './lib/providers/emoji.js';
 import {FilesProvider} from './lib/providers/files.js';
+import {WeatherProvider} from './lib/providers/weather.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
@@ -28,9 +29,10 @@ export default class HopLauncherExtension extends Extension {
             new CalculatorProvider(),
             new TimezoneProvider(),
             new CurrencyProvider(this._settings),
+            new WeatherProvider(),
         ];
 
-        this._overlay = new LauncherOverlay(this._settings, this._providers);
+        this._overlay = new LauncherOverlay(this._settings, this._providers, this.path);
         Main.layoutManager.addChrome(this._overlay);
         this._positionOverlay();
 

@@ -17,13 +17,14 @@ A polished **Raycast-lite** command palette for GNOME Shell 45+ on Wayland.
   - focus
   - close
   - move to next workspace
-- Prefix filters:
+- Prefix filters and inferred utility intents:
   - `w ` windows only
   - `a ` apps only
   - `f ` files only
-  - `:emoji ` emoji picker
-  - `tz ` timezone lookup
-  - `$100 usd to eur` currency conversion
+  - `:emoji ` or `emoji ` emoji picker
+  - `tz ` / `timezone ` / `time in <city>` / `<city> time` / bare tokens like `pst`, `tokyo`, or `zurich` for timezone lookup
+  - `$100 usd to eur`, `100 usd to eur`, or `100usd to eur` currency conversion (supports common codes like `CHF`)
+  - `weather <location>`, `wx <location>`, or `<location> weather` for current weather (`wttr.in` icons)
   - `=2+2` calculator
   - `>` action mode (minimal shell action)
 - Smooth open/close animations with settings for duration and optional disable.
@@ -46,7 +47,7 @@ Then test instantly:
 - press **Super+Space** to open
 - type `chr` or `crome` and verify matching
 - try `w ` for windows only and `a ` for apps only
-- try `f report`, `:emoji smile`, `tz pst`, `100 usd to eur`, and `2+2`
+- try `f report`, `emoji smile`, `time in zurich`, `zurich time`, `weather berlin`, `zurich weather`, `wx 94103`, `pst`, `100eur to chf`, `100usd to eur`, and `2+2`
 
 ## Fast dev loop
 

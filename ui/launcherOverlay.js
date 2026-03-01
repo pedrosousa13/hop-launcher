@@ -1,4 +1,5 @@
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -16,17 +17,21 @@ import {
     serializeLearningStore,
 } from '../lib/learning.js';
 import {resolveEnterAction} from '../lib/resultAction.js';
-import {getResultHintIconName} from '../lib/resultKindHint.js';
+import {getResultHintActionLabel, getResultHintIconSpec} from '../lib/resultKindHint.js';
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
 const KEY_ALIASES = 'custom-aliases-json';
 const KEY_LEARNING_STORE = 'launch-learning-json';
 const KEY_LEARNING_ENABLED = 'learning-enabled';
+const COPY_HINT_ICON = {
+    relativePath: 'assets/icons/lucide/copy.svg',
+    fallbackIconName: 'edit-copy-symbolic',
+};
 
 export const LauncherOverlay = GObject.registerClass(
 class LauncherOverlay extends St.BoxLayout {
-    _init(settings, providers) {
+    _init(settings, providers, extensionPath = '') {
         super._init({
             style_class: 'hop-launcher-overlay',
             reactive: true,
@@ -42,6 +47,7 @@ class LauncherOverlay extends St.BoxLayout {
 
         this._settings = settings;
         this._providers = providers;
+        this._extensionPath = (extensionPath ?? '').toString();
         this._signals = [];
         this._debounceSourceId = null;
         this._idleSearchSourceId = null;
@@ -53,6 +59,7 @@ class LauncherOverlay extends St.BoxLayout {
         this._renderedResultKeys = [];
         this._searchGeneration = 0;
         this._maxResultsHeight = 420;
+        this._hintGIconCache = new Map();
         this._settingsSignals = [];
         this._typedQuery = '';
         this._aliases = parseAliasesConfig(this._settings.get_string(KEY_ALIASES));
@@ -105,6 +112,16 @@ class LauncherOverlay extends St.BoxLayout {
                 this._learningEnabled = this._settings.get_boolean(KEY_LEARNING_ENABLED);
             })
         );
+
+        for (const provider of this._providers) {
+            if (!provider?.setUpdateCallback)
+                continue;
+            provider.setUpdateCallback(() => {
+                if (!this.visible)
+                    return;
+                this._queueSearch();
+            });
+        }
     }
 
     open() {
@@ -278,7 +295,7 @@ class LauncherOverlay extends St.BoxLayout {
             return all.filter(i => i.kind === 'file');
         if (mode === 'emoji')
             return all.filter(i => i.kind === 'emoji');
-        if (mode === 'currency' || mode === 'timezone' || mode === 'calculator')
+        if (mode === 'currency' || mode === 'timezone' || mode === 'calculator' || mode === 'weather')
             return all.filter(i => i.kind === 'utility');
         return all;
     }
@@ -309,6 +326,9 @@ class LauncherOverlay extends St.BoxLayout {
         this._renderedResultKeys = nextKeys;
 
         this._results.forEach((result, index) => {
+            const enterAction = resolveEnterAction(result);
+            const isCopyAction = enterAction.type === 'copy';
+            const actionLabel = getResultHintActionLabel(result.kind, enterAction.type);
             const row = new St.BoxLayout({
                 style_class: `hop-launcher-row${index === this._selectedIndex ? ' selected' : ''}`,
                 x_expand: true,
@@ -317,31 +337,89 @@ class LauncherOverlay extends St.BoxLayout {
             const icon = new St.Icon({style_class: 'hop-launcher-icon'});
             if (result.icon !== null && result.icon !== undefined)
                 icon.gicon = result.icon;
-            else
+            else if (isCopyAction) {
+                icon.icon_name = COPY_HINT_ICON.fallbackIconName;
+                icon.add_style_class_name('hop-launcher-icon-copy');
+            } else {
                 icon.icon_name = 'system-search-symbolic';
+            }
 
             const text = new St.BoxLayout({vertical: true, x_expand: true});
             text.add_child(new St.Label({text: result.primaryText ?? ''}));
             text.add_child(new St.Label({text: result.secondaryText ?? '', style_class: 'dim-label'}));
 
             const hint = new St.BoxLayout({style_class: 'hop-launcher-hint-box'});
-            const hintIconName = getResultHintIconName(result.kind);
-            if (hintIconName) {
-                hint.add_child(new St.Icon({
-                    style_class: 'hop-launcher-hint-icon dim-label',
-                    icon_name: hintIconName,
-                }));
-            }
-            hint.add_child(new St.Label({text: 'Enter', style_class: 'dim-label'}));
+            const hintIcon = isCopyAction
+                ? this._createHintIconFromSpec(COPY_HINT_ICON, true)
+                : this._createHintIcon(result.kind);
+            if (hintIcon)
+                hint.add_child(hintIcon);
+            hint.add_child(new St.Label({
+                text: actionLabel,
+                style_class: isCopyAction ? 'hop-launcher-copy-label' : 'dim-label',
+            }));
+            const hintContainer = new St.BoxLayout({
+                style_class: 'hop-launcher-hint-container',
+                x_expand: false,
+                y_expand: true,
+                vertical: true,
+                x_align: Clutter.ActorAlign.END,
+                y_align: Clutter.ActorAlign.END,
+            });
+            hintContainer.add_child(hint);
 
             row.add_child(icon);
             row.add_child(text);
-            row.add_child(hint);
+            row.add_child(hintContainer);
             this._list.add_child(row);
         });
 
         this._updateResultsHeight();
         this._ensureSelectionVisible();
+    }
+
+    _createHintIcon(kind) {
+        const spec = getResultHintIconSpec(kind);
+        return this._createHintIconFromSpec(spec, false);
+    }
+
+    _createHintIconFromSpec(spec, forceWhite = false) {
+        if (!spec)
+            return null;
+
+        const icon = new St.Icon({style_class: 'hop-launcher-hint-icon dim-label'});
+        if (forceWhite)
+            icon.add_style_class_name('hop-launcher-hint-icon-copy');
+        const fileIcon = this._loadHintGIcon(spec.relativePath);
+        if (fileIcon)
+            icon.gicon = fileIcon;
+        else
+            icon.icon_name = spec.fallbackIconName;
+        return icon;
+    }
+
+    _loadHintGIcon(relativePath) {
+        if (!relativePath)
+            return null;
+        if (this._hintGIconCache.has(relativePath))
+            return this._hintGIconCache.get(relativePath);
+        if (!this._extensionPath) {
+            this._hintGIconCache.set(relativePath, null);
+            return null;
+        }
+
+        let icon = null;
+        try {
+            const fullPath = GLib.build_filenamev([this._extensionPath, relativePath]);
+            const file = Gio.File.new_for_path(fullPath);
+            if (file.query_exists(null))
+                icon = new Gio.FileIcon({file});
+        } catch (_) {
+            icon = null;
+        }
+
+        this._hintGIconCache.set(relativePath, icon);
+        return icon;
     }
 
     _ensureSelectionVisible() {
@@ -541,6 +619,7 @@ class LauncherOverlay extends St.BoxLayout {
         for (const id of this._settingsSignals)
             this._settings.disconnect(id);
         this._settingsSignals = [];
+        this._hintGIconCache.clear();
 
         this.destroy();
     }
