@@ -32,7 +32,7 @@ const groupLabel: Record<FeatureCard["group"], string> = {
         <p class="mt-2 text-sm leading-relaxed text-[color:var(--muted)]">{card.summary}</p>
         <ul class="mt-4 flex flex-wrap gap-2">
           {card.examples.map((example) => (
-            <li class="code-chip rounded-md px-2 py-1 font-mono text-xs">{example}</li>
+            <li class="code-chip max-w-full rounded-md px-2 py-1 font-mono text-xs break-words whitespace-normal">{example}</li>
           ))}
         </ul>
       </article>
