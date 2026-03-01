@@ -1,6 +1,7 @@
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
@@ -12,6 +13,7 @@ import {
 import {parseAliasesConfig} from './lib/aliases.js';
 import {buildLearningInsights} from './lib/learningInsights.js';
 import {
+    addWebSearchProvider,
     DEFAULT_WEB_SEARCH_SERVICES,
     parseWebSearchServices,
     serializeWebSearchServices,
@@ -70,6 +72,15 @@ function addStringArrayRow(group, settings, key, title, subtitle) {
             .filter(Boolean);
         settings.set_strv(key, values);
     });
+    group.add(row);
+}
+
+function addSwitchRow(group, settings, key, title, subtitle) {
+    const row = new Adw.SwitchRow({
+        title,
+        subtitle,
+    });
+    settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(row);
 }
 
@@ -234,6 +245,18 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         settings.bind('blur-enabled', blurRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         behaviorGroup.add(blurRow);
 
+        addSpinRow(
+            behaviorGroup,
+            settings,
+            'overlay-translucency',
+            'Launcher translucency (%)',
+            'Applies to launcher panel, input, and results surfaces.',
+            55,
+            100,
+            1,
+            5
+        );
+
         const animationSwitchRow = new Adw.SwitchRow({
             title: 'Enable animations',
             subtitle: 'Animate opening and closing for a polished feel.',
@@ -243,9 +266,25 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         page.add(behaviorGroup);
 
+        const featuresGroup = new Adw.PreferencesGroup({
+            title: 'Main features',
+            description: 'Enable or disable result sources shown by the launcher.',
+        });
+
+        addSwitchRow(featuresGroup, settings, 'feature-windows-enabled', 'Windows', 'Open window results.');
+        addSwitchRow(featuresGroup, settings, 'feature-apps-enabled', 'Apps', 'Installed app results.');
+        addSwitchRow(featuresGroup, settings, 'feature-files-enabled', 'Files', 'Indexed and recent file results.');
+        addSwitchRow(featuresGroup, settings, 'feature-emoji-enabled', 'Emoji', 'Emoji lookup results.');
+        addSwitchRow(featuresGroup, settings, 'feature-calculator-enabled', 'Calculator', 'Inline calculator results.');
+        addSwitchRow(featuresGroup, settings, 'feature-currency-enabled', 'Currency', 'Currency conversion results.');
+        addSwitchRow(featuresGroup, settings, 'feature-timezone-enabled', 'Timezone', 'Timezone clock/conversion results.');
+        addSwitchRow(featuresGroup, settings, 'feature-weather-enabled', 'Weather', 'Weather lookup results.');
+        addSwitchRow(featuresGroup, settings, 'feature-web-search-enabled', 'Web search', 'Appended web search actions.');
+        page.add(featuresGroup);
+
         const searchGroup = new Adw.PreferencesGroup({
             title: 'Search',
-            description: 'Main search behavior and providers.',
+            description: 'Search behavior and scoring.',
         });
 
         addSpinRow(
@@ -271,16 +310,34 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             1,
             5
         );
-
-        const webSearchEnabledRow = new Adw.SwitchRow({
-            title: 'Web search actions',
-            subtitle: 'Append search actions at the end for non-empty queries.',
-        });
-        settings.bind('web-search-enabled', webSearchEnabledRow, 'active', Gio.SettingsBindFlags.DEFAULT);
-        searchGroup.add(webSearchEnabledRow);
-
         addSpinRow(
             searchGroup,
+            settings,
+            'max-results',
+            'Maximum results',
+            'Maximum ranked rows shown per query.',
+            5,
+            30,
+            1,
+            5
+        );
+        page.add(searchGroup);
+
+        const webSearchGroup = new Adw.PreferencesGroup({
+            title: 'Web search providers',
+            description: 'Manage provider templates used by web search actions.',
+        });
+
+        addSwitchRow(
+            webSearchGroup,
+            settings,
+            'web-search-enabled',
+            'Enable web search actions',
+            'Global switch for appended web search actions.'
+        );
+
+        addSpinRow(
+            webSearchGroup,
             settings,
             'web-search-max-actions',
             'Max web actions',
@@ -297,14 +354,14 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         });
         const addProviderButton = new Gtk.Button({label: 'Add provider'});
         providersHeaderRow.add_suffix(addProviderButton);
-        searchGroup.add(providersHeaderRow);
+        webSearchGroup.add(providersHeaderRow);
 
         const providerStatusRow = new Adw.ActionRow({
             title: 'Provider status',
             subtitle: 'Checking configured providers…',
         });
         providerStatusRow.set_activatable(false);
-        searchGroup.add(providerStatusRow);
+        webSearchGroup.add(providerStatusRow);
 
         const defaultsRow = new Adw.ActionRow({
             title: 'Reset web search defaults',
@@ -315,10 +372,10 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             settings.set_string('web-search-services-json', JSON.stringify(DEFAULT_WEB_SEARCH_SERVICES));
         });
         defaultsRow.add_suffix(defaultsButton);
-        searchGroup.add(defaultsRow);
+        webSearchGroup.add(defaultsRow);
 
         addStringArrayRow(
-            searchGroup,
+            webSearchGroup,
             settings,
             'indexed-folders',
             'Indexed folders (comma-separated)',
@@ -377,10 +434,10 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         const rebuildProviderRows = () => {
             for (const row of providerRows)
-                searchGroup.remove(row);
+                webSearchGroup.remove(row);
             providerRows = [];
             if (emptyProvidersRow) {
-                searchGroup.remove(emptyProvidersRow);
+                webSearchGroup.remove(emptyProvidersRow);
                 emptyProvidersRow = null;
             }
 
@@ -390,7 +447,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
                     subtitle: 'Use Add provider to create one.',
                 });
                 emptyProvidersRow.set_activatable(false);
-                searchGroup.add(emptyProvidersRow);
+                webSearchGroup.add(emptyProvidersRow);
                 updateProviderStatus();
                 return;
             }
@@ -513,7 +570,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
                 row.add_row(previewRow);
                 row.add_row(actionsRow);
                 providerRows.push(row);
-                searchGroup.add(row);
+                webSearchGroup.add(row);
             });
 
             pendingExpandedProviderId = null;
@@ -521,17 +578,14 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         };
 
         addProviderButton.connect('clicked', () => {
-            const providerId = `provider-${Date.now().toString(36)}`;
-            const next = [
-                ...webSearchServices,
-                {
-                    id: providerId,
-                    name: 'New provider',
-                    urlTemplate: 'https://example.com/search?q=%s',
-                    enabled: true,
-                    keyword: '',
-                },
-            ];
+            const providerId = GLib.uuid_string_random();
+            const next = addWebSearchProvider(webSearchServices, {
+                id: providerId,
+                name: 'New provider',
+                urlTemplate: 'https://example.com/search?q=%s',
+                enabled: true,
+                keyword: '',
+            });
             pendingExpandedProviderId = providerId;
             saveWebSearchServices(next);
         });
@@ -545,7 +599,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         });
 
         rebuildProviderRows();
-        page.add(searchGroup);
+        page.add(webSearchGroup);
 
         const integrationsGroup = new Adw.PreferencesGroup({
             title: 'Integrations',

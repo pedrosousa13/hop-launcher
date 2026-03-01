@@ -18,6 +18,8 @@ import {EmojiProvider} from './lib/providers/emoji.js';
 import {FilesProvider} from './lib/providers/files.js';
 import {WeatherProvider} from './lib/providers/weather.js';
 import {WebSearchProvider} from './lib/providers/webSearch.js';
+import {makeSettingsGatedProvider} from './lib/providerToggleWrapper.js';
+import {buildProviderFeatureMap} from './lib/providerFeatureMap.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
@@ -53,20 +55,23 @@ export default class HopLauncherExtension extends Extension {
                 logError(error, '[hop-launcher] open url failed');
             }
         };
-        this._providers = [
-            new WindowsProvider(),
-            new AppsProvider(),
-            new RecentsProvider(),
-            new FilesProvider(this._settings),
-            new EmojiProvider(),
-            new CalculatorProvider(),
-            new TimezoneProvider(),
-            new CurrencyProvider(this._settings),
-            new WeatherProvider({
+        const providers = buildProviderFeatureMap({
+            windows: new WindowsProvider(),
+            apps: new AppsProvider(),
+            recents: new RecentsProvider(),
+            files: new FilesProvider(this._settings),
+            emoji: new EmojiProvider(),
+            calculator: new CalculatorProvider(),
+            timezone: new TimezoneProvider(),
+            currency: new CurrencyProvider(this._settings),
+            weather: new WeatherProvider({
                 soupRequestJson: createSoupRequestJson(),
             }),
-            new WebSearchProvider(this._settings, {openUrl}),
-        ];
+            webSearch: new WebSearchProvider(this._settings, {openUrl}),
+        });
+        this._providers = providers.map(([provider, key]) =>
+            makeSettingsGatedProvider(provider, this._settings, key)
+        );
 
         this._overlay = new LauncherOverlay(this._settings, this._providers, this.path);
         Main.layoutManager.addChrome(this._overlay);
@@ -82,14 +87,18 @@ export default class HopLauncherExtension extends Extension {
             () => this._toggle()
         );
 
-        this._applyBlur();
-        this._blurChangedId = this._settings.connect('changed::blur-enabled', () => this._applyBlur());
+        this._applyOverlayVisuals();
+        this._overlayVisualSettingIds = [
+            this._settings.connect('changed::blur-enabled', () => this._applyOverlayVisuals()),
+            this._settings.connect('changed::overlay-translucency', () => this._applyOverlayVisuals()),
+        ];
     }
 
     disable() {
-        if (this._blurChangedId) {
-            this._settings.disconnect(this._blurChangedId);
-            this._blurChangedId = null;
+        if (this._overlayVisualSettingIds?.length) {
+            for (const id of this._overlayVisualSettingIds)
+                this._settings.disconnect(id);
+            this._overlayVisualSettingIds = [];
         }
 
         if (this._monitorsChangedId) {
@@ -152,13 +161,19 @@ export default class HopLauncherExtension extends Extension {
         );
     }
 
-    _applyBlur() {
+    _applyOverlayVisuals() {
         if (!this._overlay)
             return;
 
-        if (this._settings.get_boolean('blur-enabled'))
+        const blurEnabled = this._settings.get_boolean('blur-enabled');
+        if (blurEnabled)
             this._overlay.add_style_class_name('blurred');
         else
             this._overlay.remove_style_class_name('blurred');
+
+        this._overlay.applyVisualSettings({
+            blurEnabled,
+            translucencyPercent: this._settings.get_int('overlay-translucency'),
+        });
     }
 }

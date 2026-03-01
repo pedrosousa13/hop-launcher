@@ -8,9 +8,22 @@ order: 5
 
 - `toggle-launcher`: keybinding list for opening/closing launcher.
 - `blur-enabled`: enables blur-like overlay styling.
+- `overlay-translucency`: launcher-wide translucency percentage for overlay surfaces.
 - `animations-enabled`: enables open/close animations.
 - `open-animation-ms`: open animation duration.
 - `close-animation-ms`: close animation duration.
+
+## Main features
+
+- `feature-windows-enabled`: include open windows provider results.
+- `feature-apps-enabled`: include installed apps provider results.
+- `feature-files-enabled`: include indexed/recent files provider results.
+- `feature-emoji-enabled`: include emoji provider results.
+- `feature-calculator-enabled`: include calculator provider results.
+- `feature-currency-enabled`: include currency provider results.
+- `feature-timezone-enabled`: include timezone provider results.
+- `feature-weather-enabled`: include weather provider results.
+- `feature-web-search-enabled`: include web search provider results.
 
 ## Search and ranking
 
@@ -40,6 +53,6 @@ order: 5
 
 ## Web search actions
 
-- `web-search-enabled`: enable appended web search actions.
+- `web-search-enabled`: global web action switch.
 - `web-search-max-actions`: cap appended actions per query.
 - `web-search-services-json`: provider templates and keywords.

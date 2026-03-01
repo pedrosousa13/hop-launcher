@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    addWebSearchProvider,
     DEFAULT_WEB_SEARCH_SERVICES,
     filterEnabledSearchServices,
     parseWebSearchServices,
@@ -83,4 +84,20 @@ test('serializeWebSearchServices keeps optional keyword field', () => {
     const out = JSON.parse(json);
     assert.equal(out.length, 1);
     assert.equal(out[0].keyword, 'g');
+});
+
+test('addWebSearchProvider appends a valid provider to current rows', () => {
+    const out = addWebSearchProvider([
+        {id: 'google', name: 'Google', urlTemplate: 'https://www.google.com/search?q=%s', enabled: true},
+    ], {
+        id: 'kagi',
+        name: 'Kagi',
+        urlTemplate: 'https://kagi.com/search?q=%s',
+        enabled: true,
+        keyword: 'kg',
+    });
+
+    assert.equal(out.length, 2);
+    assert.equal(out[1].id, 'kagi');
+    assert.equal(out[1].name, 'Kagi');
 });
