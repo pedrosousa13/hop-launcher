@@ -290,6 +290,24 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             description: 'Source tie-break priorities on equal fuzzy scores.',
         });
 
+        addSpinRow(
+            rankingGroup,
+            settings,
+            'min-fuzzy-score',
+            'Fuzzy match threshold',
+            'Higher value means stricter matching.',
+            0,
+            120,
+            1,
+            5
+        );
+        const fuzzyExplanationRow = new Adw.ActionRow({
+            title: 'Explanation',
+            subtitle: 'Set how close results must be to your query. Higher values show fewer, more exact matches.',
+        });
+        fuzzyExplanationRow.set_activatable(false);
+        rankingGroup.add(fuzzyExplanationRow);
+
         addSpinRow(rankingGroup, settings, 'weight-windows', 'Window weight', 'Prefer open windows when scores tie.', 0, 100, 1, 5);
         addSpinRow(rankingGroup, settings, 'weight-apps', 'App weight', 'Prefer apps over recents when scores tie.', 0, 100, 1, 5);
         addSpinRow(rankingGroup, settings, 'weight-recents', 'Recent weight', 'Boost for recents provider results.', 0, 100, 1, 5);

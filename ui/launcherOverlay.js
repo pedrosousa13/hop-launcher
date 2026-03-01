@@ -16,10 +16,10 @@ import {
     serializeLearningStore,
 } from '../lib/learning.js';
 import {resolveEnterAction} from '../lib/resultAction.js';
+import {getResultHintIconName} from '../lib/resultKindHint.js';
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
-const MIN_FUZZY_SCORE = 18;
 const KEY_ALIASES = 'custom-aliases-json';
 const KEY_LEARNING_STORE = 'launch-learning-json';
 const KEY_LEARNING_ENABLED = 'learning-enabled';
@@ -80,6 +80,7 @@ class LauncherOverlay extends St.BoxLayout {
             y_expand: false,
             visible: false,
         });
+        this._scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
         this._list = new St.BoxLayout({
             style_class: 'hop-launcher-results',
             vertical: true,
@@ -248,7 +249,7 @@ class LauncherOverlay extends St.BoxLayout {
             weightEmoji: this._settings.get_int('weight-emoji'),
             weightUtility: this._settings.get_int('weight-utility'),
             maxResults: this._settings.get_int('max-results'),
-            minFuzzyScore: MIN_FUZZY_SCORE,
+            minFuzzyScore: this._settings.get_int('min-fuzzy-score'),
             scoreBoost,
         });
     }
@@ -300,6 +301,7 @@ class LauncherOverlay extends St.BoxLayout {
         if (unchanged) {
             this._updateSelectionStyles();
             this._ensureSelectionVisible();
+            this._updateResultsHeight();
             return;
         }
 
@@ -322,7 +324,15 @@ class LauncherOverlay extends St.BoxLayout {
             text.add_child(new St.Label({text: result.primaryText ?? ''}));
             text.add_child(new St.Label({text: result.secondaryText ?? '', style_class: 'dim-label'}));
 
-            const hint = new St.Label({text: 'Enter', style_class: 'dim-label'});
+            const hint = new St.BoxLayout({style_class: 'hop-launcher-hint-box'});
+            const hintIconName = getResultHintIconName(result.kind);
+            if (hintIconName) {
+                hint.add_child(new St.Icon({
+                    style_class: 'hop-launcher-hint-icon dim-label',
+                    icon_name: hintIconName,
+                }));
+            }
+            hint.add_child(new St.Label({text: 'Enter', style_class: 'dim-label'}));
 
             row.add_child(icon);
             row.add_child(text);
@@ -330,6 +340,7 @@ class LauncherOverlay extends St.BoxLayout {
             this._list.add_child(row);
         });
 
+        this._updateResultsHeight();
         this._ensureSelectionVisible();
     }
 
@@ -363,13 +374,23 @@ class LauncherOverlay extends St.BoxLayout {
         const value = Number.isFinite(height) ? Math.floor(height) : 420;
         this._maxResultsHeight = Math.max(120, value);
         if (this._scroll.visible)
-            this._scroll.set_height(this._maxResultsHeight);
+            this._updateResultsHeight();
     }
 
     _setResultsVisible(visible) {
         this._scroll.visible = visible;
-        this._scroll.y_expand = visible;
-        this._scroll.set_height(visible ? this._maxResultsHeight : 0);
+        this._scroll.y_expand = false;
+        if (!visible) {
+            this._scroll.set_height(0);
+            return;
+        }
+        this._updateResultsHeight();
+    }
+
+    _updateResultsHeight() {
+        const [, naturalHeight] = this._list.get_preferred_height(-1);
+        const targetHeight = Math.max(1, Math.min(this._maxResultsHeight, naturalHeight + 4));
+        this._scroll.set_height(targetHeight);
     }
 
     _updateSelectionStyles() {

@@ -54,6 +54,14 @@
   icon-size: 20px;
 }
 
+.hop-launcher-hint-icon {
+  icon-size: 15px;
+}
+
+.hop-launcher-hint-box {
+  spacing: 6px;
+}
+
 .hop-launcher-empty {
   padding: 10px;
 }

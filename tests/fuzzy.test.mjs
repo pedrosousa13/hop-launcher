@@ -157,3 +157,29 @@ test('ranking keeps empty-query ordering even with minFuzzyScore', () => {
     assert.equal(ranked.length, 2);
     assert.equal(ranked[0].kind, 'window');
 });
+
+test('ranking rejects dispersed long-query letter matches', () => {
+    const items = [
+        {kind: 'app', primaryText: 'Brave Web Browser', secondaryText: 'Access the Internet'},
+        {kind: 'app', primaryText: 'Bluetooth Transfer', secondaryText: 'Send files via Bluetooth'},
+        {kind: 'app', primaryText: 'Report a problem...', secondaryText: 'Report a malfunction to developers'},
+        {kind: 'app', primaryText: 'WebStorm', secondaryText: 'The smartest JavaScript IDE'},
+    ];
+
+    const ranked = rankResults('brave', items, {
+        maxResults: 10,
+        minFuzzyScore: 30,
+    });
+
+    assert.deepEqual(
+        ranked.map(item => item.primaryText),
+        ['Brave Web Browser']
+    );
+});
+
+test('fuzzy scoring makes dispersed brave matches non-positive', () => {
+    const loose1 = computeFuzzyScore('brave', 'Oracle VirtualBox Run several virtual systems on a single host computer');
+    const loose2 = computeFuzzyScore('brave', 'Keyboard Layout Preview keyboard layouts');
+    assert.ok(loose1 <= 0);
+    assert.ok(loose2 <= 0);
+});

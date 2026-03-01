@@ -66,6 +66,11 @@
       <summary>Utility result weight</summary>
       <description>Additional score applied to calculator, currency, and timezone rows.</description>
     </key>
+    <key name="min-fuzzy-score" type="i">
+      <default>30</default>
+      <summary>Minimum fuzzy score</summary>
+      <description>Minimum fuzzy match score required for non-empty search results.</description>
+    </key>
     <key name="indexed-folders" type="as">
       <default>[]</default>
       <summary>Indexed folders</summary>
