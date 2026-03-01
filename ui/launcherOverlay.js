@@ -19,6 +19,7 @@ import {resolveEnterAction} from '../lib/resultAction.js';
 
 const SLIDE_Y = 14;
 const ASYNC_SEARCH_THRESHOLD = 180;
+const MIN_FUZZY_SCORE = 18;
 const KEY_ALIASES = 'custom-aliases-json';
 const KEY_LEARNING_STORE = 'launch-learning-json';
 const KEY_LEARNING_ENABLED = 'learning-enabled';
@@ -247,6 +248,7 @@ class LauncherOverlay extends St.BoxLayout {
             weightEmoji: this._settings.get_int('weight-emoji'),
             weightUtility: this._settings.get_int('weight-utility'),
             maxResults: this._settings.get_int('max-results'),
+            minFuzzyScore: MIN_FUZZY_SCORE,
             scoreBoost,
         });
     }

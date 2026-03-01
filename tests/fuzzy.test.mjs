@@ -128,3 +128,32 @@ test('ranking applies external item score boosts', () => {
 
     assert.equal(ranked[0].kind, 'app');
 });
+
+test('ranking filters non-empty query matches under minFuzzyScore', () => {
+    const items = [
+        {kind: 'app', primaryText: 'Terminal', secondaryText: ''},
+        {kind: 'app', primaryText: 'Mozilla Firefox', secondaryText: ''},
+    ];
+
+    const ranked = rankResults('ter', items, {
+        maxResults: 10,
+        minFuzzyScore: 999,
+    });
+
+    assert.equal(ranked.length, 0);
+});
+
+test('ranking keeps empty-query ordering even with minFuzzyScore', () => {
+    const items = [
+        {kind: 'window', primaryText: 'Terminal', secondaryText: ''},
+        {kind: 'app', primaryText: 'Calculator', secondaryText: ''},
+    ];
+
+    const ranked = rankResults('', items, {
+        maxResults: 10,
+        minFuzzyScore: 40,
+    });
+
+    assert.equal(ranked.length, 2);
+    assert.equal(ranked[0].kind, 'window');
+});

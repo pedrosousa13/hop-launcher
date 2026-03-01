@@ -358,7 +358,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         const aliasesHeaderRow = new Adw.ActionRow({
             title: 'Alias rules',
-            subtitle: 'Alias must match exactly. Each rule defines type and target.',
+            subtitle: 'Alias must match exactly.',
         });
         const addAliasButton = new Gtk.Button({label: 'Add alias'});
         aliasesHeaderRow.add_suffix(addAliasButton);
@@ -401,35 +401,31 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
                 const typeModel = Gtk.StringList.new(ALIAS_TYPES);
                 const typeDropDown = new Gtk.DropDown({model: typeModel});
                 typeDropDown.set_selected(Math.max(0, ALIAS_TYPES.indexOf(rule.type)));
+                typeDropDown.set_hexpand(false);
+                typeDropDown.set_halign(Gtk.Align.END);
                 const typeRow = new Adw.ActionRow({title: 'Type'});
                 typeRow.set_activatable(false);
                 typeRow.add_suffix(typeDropDown);
-                const helperRow = new Adw.ActionRow({
-                    title: 'How this works',
-                    subtitle: aliasTypeDescription(rule.type),
+                const explanationRow = new Adw.ActionRow({
+                    title: 'Explanation',
+                    subtitle: `${aliasTypeDescription(rule.type)} Format: ${aliasTargetExample(rule.type)}`,
                 });
-                helperRow.set_activatable(false);
+                explanationRow.set_activatable(false);
 
                 const targetEntry = new Gtk.Entry({
                     text: formatAliasTarget(rule),
                 });
                 targetEntry.set_placeholder_text(aliasTargetPlaceholder(rule.type));
                 targetEntry.set_hexpand(true);
-                targetEntry.set_width_chars(34);
+                targetEntry.set_width_chars(24);
                 const targetRow = new Adw.ActionRow({title: 'Target'});
                 targetRow.set_activatable(false);
                 targetRow.add_suffix(targetEntry);
-                const exampleRow = new Adw.ActionRow({
-                    title: 'Target format',
-                    subtitle: aliasTargetExample(rule.type),
-                });
-                exampleRow.set_activatable(false);
 
                 typeDropDown.connect('notify::selected', dropDown => {
                     const selectedType = ALIAS_TYPES[dropDown.get_selected()] ?? 'rewrite';
                     targetEntry.set_placeholder_text(aliasTargetPlaceholder(selectedType));
-                    helperRow.set_subtitle(aliasTypeDescription(selectedType));
-                    exampleRow.set_subtitle(aliasTargetExample(selectedType));
+                    explanationRow.set_subtitle(`${aliasTypeDescription(selectedType)} Format: ${aliasTargetExample(selectedType)}`);
                 });
 
                 const saveButton = new Gtk.Button({label: 'Save'});
@@ -459,9 +455,8 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
                 row.add_row(aliasRow);
                 row.add_row(typeRow);
-                row.add_row(helperRow);
+                row.add_row(explanationRow);
                 row.add_row(targetRow);
-                row.add_row(exampleRow);
                 row.add_row(actionsRow);
                 aliasRows.push(row);
                 personalizationGroup.add(row);
