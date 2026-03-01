@@ -330,6 +330,8 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             {fallbackToDefaults: false}
         );
         let providerRows = [];
+        let emptyProvidersRow = null;
+        let pendingExpandedProviderId = null;
 
         const providerErrorLabel = reason => {
             if (reason === 'name-missing')
@@ -368,21 +370,38 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         const saveWebSearchServices = nextServices => {
             const json = serializeWebSearchServices(nextServices, {fallbackToDefaults: false});
+            webSearchServices = parseWebSearchServices(json, {fallbackToDefaults: false});
             settings.set_string('web-search-services-json', json);
+            rebuildProviderRows();
         };
 
         const rebuildProviderRows = () => {
             for (const row of providerRows)
                 searchGroup.remove(row);
             providerRows = [];
+            if (emptyProvidersRow) {
+                searchGroup.remove(emptyProvidersRow);
+                emptyProvidersRow = null;
+            }
+
+            if (webSearchServices.length === 0) {
+                emptyProvidersRow = new Adw.ActionRow({
+                    title: 'No providers configured',
+                    subtitle: 'Use Add provider to create one.',
+                });
+                emptyProvidersRow.set_activatable(false);
+                searchGroup.add(emptyProvidersRow);
+                updateProviderStatus();
+                return;
+            }
 
             webSearchServices.forEach((service, index) => {
                 const row = new Adw.ExpanderRow({
-                    title: `Provider ${index + 1}: ${service.name}`,
-                    subtitle: service.urlTemplate,
+                    title: service.name,
+                    subtitle: `${index + 1}. ${service.urlTemplate}`,
                 });
                 row.set_enable_expansion(true);
-                row.set_expanded(false);
+                row.set_expanded(service.id === pendingExpandedProviderId);
 
                 const nameEntry = new Gtk.Entry({text: service.name});
                 nameEntry.set_placeholder_text('Provider name');
@@ -497,19 +516,23 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
                 searchGroup.add(row);
             });
 
+            pendingExpandedProviderId = null;
             updateProviderStatus();
         };
 
         addProviderButton.connect('clicked', () => {
+            const providerId = `provider-${Date.now().toString(36)}`;
             const next = [
                 ...webSearchServices,
                 {
+                    id: providerId,
                     name: 'New provider',
                     urlTemplate: 'https://example.com/search?q=%s',
                     enabled: true,
                     keyword: '',
                 },
             ];
+            pendingExpandedProviderId = providerId;
             saveWebSearchServices(next);
         });
 

@@ -59,3 +59,12 @@ test('WebSearchProvider preserves configured provider order', () => {
     assert.match(rows[0].primaryText, /DuckDuckGo/);
     assert.match(rows[1].primaryText, /Google/);
 });
+
+test('WebSearchProvider returns no rows when provider list is empty', () => {
+    const provider = new WebSearchProvider(makeSettings({
+        'web-search-services-json': '[]',
+    }));
+
+    const rows = provider.getResults('query', 'all');
+    assert.deepEqual(rows, []);
+});
