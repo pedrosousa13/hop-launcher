@@ -24,7 +24,7 @@ A polished **Raycast-lite** command palette for GNOME Shell 45+ on Wayland.
   - `:emoji ` or `emoji ` emoji picker
   - `tz ` / `timezone ` / `time in <city>` / `<city> time` / bare tokens like `pst`, `tokyo`, or `zurich` for timezone lookup
   - `$100 usd to eur`, `100 usd to eur`, or `100usd to eur` currency conversion (supports common codes like `CHF`)
-  - `weather <location>`, `wx <location>`, or `<location> weather` for current weather (`wttr.in` icons)
+  - `weather <location>`, `wx <location>`, or `<location> weather` for current weather (`Open-Meteo` icons)
   - `=2+2` calculator
   - `>` action mode (minimal shell action)
 - Smooth open/close animations with settings for duration and optional disable.
