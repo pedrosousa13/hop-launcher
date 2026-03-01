@@ -33,6 +33,24 @@ test('validateWebSearchService rejects non-https or templates without %s', () =>
     assert.equal(nonHttps.valid, false);
 });
 
+test('validateWebSearchService supports environments without global URL', () => {
+    const originalURL = globalThis.URL;
+    globalThis.URL = undefined;
+    try {
+        const out = validateWebSearchService({
+            id: 'g',
+            name: 'Google',
+            urlTemplate: 'https://www.google.com/search?q=%s',
+            enabled: true,
+        });
+
+        assert.equal(out.valid, true);
+        assert.equal(out.value?.name, 'Google');
+    } finally {
+        globalThis.URL = originalURL;
+    }
+});
+
 test('parseWebSearchServices keeps valid custom rows and skips invalid rows', () => {
     const json = JSON.stringify([
         {name: 'Kagi', urlTemplate: 'https://kagi.com/search?q=%s', enabled: true},

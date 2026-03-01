@@ -120,3 +120,36 @@ test('launchOrFocusApp uses app.launch when app is a DesktopAppInfo-like object'
     assert.equal(launchOrFocusApp(app), true);
     assert.equal(launched, true);
 });
+
+test('launchOrFocusApp focuses matching open window when app.get_windows is empty', () => {
+    const originalDisplay = global.display;
+    let activatedWith = null;
+    let appActivated = false;
+    const now = () => 777;
+
+    global.display = {
+        get_tab_list: () => [{
+            skip_taskbar: false,
+            minimized: false,
+            is_override_redirect: () => false,
+            get_gtk_application_id: () => 'brave-browser',
+            activate: timestamp => {
+                activatedWith = timestamp;
+            },
+        }],
+    };
+
+    const app = {
+        get_id: () => 'brave-browser.desktop',
+        get_windows: () => [],
+        activate: () => {
+            appActivated = true;
+        },
+    };
+
+    assert.equal(launchOrFocusApp(app, now), true);
+    assert.equal(activatedWith, 777);
+    assert.equal(appActivated, false);
+
+    global.display = originalDisplay;
+});

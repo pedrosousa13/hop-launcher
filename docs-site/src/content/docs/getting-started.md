@@ -24,6 +24,6 @@ The launcher shortcut is intentionally empty by default.
 
 After installation, set your preferred shortcut in extension preferences, then test opening the launcher.
 
-## TODO later
+## Official release
 
-Add official GNOME Extensions install instructions once the extension is ready for publication there.
+GNOME Extensions installation instructions will be added here as soon as the listing is approved and public.

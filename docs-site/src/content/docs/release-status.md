@@ -6,15 +6,15 @@ order: 4
 
 ## Current status
 
-The launcher is actively evolving and not yet distributed through official channels.
+The extension package is ready for GNOME Extensions review and publication.
 
 ## Install messaging
 
-The site intentionally uses a placeholder install CTA until official release/distribution is ready.
+The site now reflects upcoming official distribution through GNOME Extensions.
 
-## TODO later
+## Next step
 
-Add official GNOME Extensions listing and installation instructions once the extension is ready for that channel.
+Add the public GNOME Extensions listing URL and installation steps after the review is approved.
 
 ## Site deployment
 
