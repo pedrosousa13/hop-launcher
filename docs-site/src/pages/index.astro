@@ -1,0 +1,21 @@
+---
+import MainLayout from "../layouts/MainLayout.astro";
+import Hero from "../components/Hero.astro";
+import LauncherDemo from "../components/LauncherDemo.astro";
+import FeatureGrid from "../components/FeatureGrid.astro";
+import HowItWorks from "../components/HowItWorks.astro";
+import StatusBlock from "../components/StatusBlock.astro";
+import { demoScenarios } from "../data/demoScenarios";
+import { featureCards } from "../data/features";
+---
+
+<MainLayout
+  title="Hop Launcher"
+  description="A polished command palette for GNOME Shell with fast fuzzy navigation and smart utility intents."
+>
+  <Hero />
+  <LauncherDemo scenarios={demoScenarios} />
+  <FeatureGrid cards={featureCards} />
+  <HowItWorks />
+  <StatusBlock />
+</MainLayout>

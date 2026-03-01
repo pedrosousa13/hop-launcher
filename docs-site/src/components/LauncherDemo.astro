@@ -1,0 +1,158 @@
+---
+import type { DemoScenario } from "../data/demoScenarios";
+
+interface Props {
+  scenarios: DemoScenario[];
+}
+
+const { scenarios } = Astro.props;
+const initialScenario = scenarios[0];
+---
+
+<section class="mx-auto mt-14 w-full max-w-6xl px-6 md:px-10">
+  <div class="rounded-3xl border border-[color:var(--border)] bg-white/90 p-4 shadow-[0_18px_50px_rgba(20,32,60,0.12)] md:p-6">
+    <div class="flex flex-wrap gap-2" role="tablist" aria-label="Demo query scenarios">
+      {scenarios.map((scenario, index) => (
+        <button
+          class="demo-chip rounded-full border border-[color:var(--border)] bg-slate-50 px-3 py-1.5 text-xs font-semibold tracking-wide text-[color:var(--muted)] transition hover:border-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]"
+          type="button"
+          data-scenario-id={scenario.id}
+          data-index={index}
+          aria-selected={index === 0 ? "true" : "false"}
+          data-active={index === 0 ? "true" : "false"}
+        >
+          {scenario.query}
+        </button>
+      ))}
+    </div>
+
+    <div class="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start">
+      <div class="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-4 text-slate-100">
+        <div class="mb-3 flex items-center gap-2 text-xs text-slate-400">
+          <span class="h-2.5 w-2.5 rounded-full bg-rose-400"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-amber-300"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+          <span class="ml-2 font-mono">Hop Launcher</span>
+        </div>
+        <div class="rounded-lg border border-slate-800 bg-slate-900 px-3 py-3">
+          <p class="font-mono text-sm text-slate-300">
+            <span class="text-slate-500">&gt;</span>
+            <span data-query>{initialScenario.query}</span><span class="demo-caret" aria-hidden="true"></span>
+          </p>
+        </div>
+        <ul class="mt-3 space-y-2" data-results>
+          {initialScenario.results.map((result) => (
+            <li class="demo-result rounded-md border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm">
+              <div class="flex items-center justify-between gap-3">
+                <span>{result.label}</span>
+                <span class="text-xs text-slate-400">{result.hint}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="rounded-2xl border border-[color:var(--border)] bg-slate-50/80 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-[color:var(--muted)]">Scenario</h3>
+        <p class="mt-2 text-base font-semibold" data-description>{initialScenario.description}</p>
+        <p class="mt-4 text-sm leading-relaxed text-[color:var(--muted)]">
+          This UI loop is deterministic: type, resolve ranked results, then move to the next flow. Click any chip to jump directly.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script is:inline type="application/json" id="launcher-scenarios">{JSON.stringify(scenarios)}</script>
+
+<script>
+  type ClientResult = { label: string; hint: string; kind: string };
+  type ClientScenario = { id: string; query: string; description: string; results: ClientResult[] };
+
+  const currentScript = document.currentScript;
+  const root = currentScript?.previousElementSibling?.previousElementSibling;
+  const dataNode = document.getElementById("launcher-scenarios");
+
+  if (!root || !dataNode) {
+    throw new Error("Launcher demo bootstrap failed.");
+  }
+
+  const scenarios = JSON.parse(dataNode.textContent || "[]") as ClientScenario[];
+  const chips = Array.from(root.querySelectorAll<HTMLButtonElement>(".demo-chip"));
+  const queryNode = root.querySelector<HTMLElement>("[data-query]");
+  const resultsNode = root.querySelector<HTMLElement>("[data-results]");
+  const descriptionNode = root.querySelector<HTMLElement>("[data-description]");
+
+  if (!chips.length || !queryNode || !resultsNode || !descriptionNode || !Array.isArray(scenarios)) {
+    throw new Error("Launcher demo markup invalid.");
+  }
+
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let activeIndex = 0;
+  let timeoutId: number | undefined;
+
+  const renderResults = (results: ClientResult[]) => {
+    resultsNode.innerHTML = "";
+    results.forEach((result, idx) => {
+      const item = document.createElement("li");
+      item.className = "demo-result rounded-md border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm";
+      item.style.animationDelay = `${idx * 65}ms`;
+      item.innerHTML = `<div class=\"flex items-center justify-between gap-3\"><span>${result.label}</span><span class=\"text-xs text-slate-400\">${result.hint}</span></div>`;
+      resultsNode.appendChild(item);
+    });
+  };
+
+  const setChipState = (index: number) => {
+    chips.forEach((chip, i) => {
+      const isActive = i === index;
+      chip.setAttribute("aria-selected", isActive ? "true" : "false");
+      chip.dataset.active = isActive ? "true" : "false";
+    });
+  };
+
+  const typeQuery = async (text: string) => {
+    if (prefersReducedMotion) {
+      queryNode.textContent = text;
+      return;
+    }
+
+    queryNode.textContent = "";
+    for (const char of text) {
+      queryNode.textContent += char;
+      await new Promise<void>((resolve) => {
+        timeoutId = window.setTimeout(resolve, 60);
+      });
+    }
+  };
+
+  const runScenario = async (index: number) => {
+    activeIndex = index;
+    const scenario = scenarios[index];
+    setChipState(index);
+    descriptionNode.textContent = scenario.description;
+    await typeQuery(scenario.query);
+    renderResults(scenario.results);
+  };
+
+  const queueNext = () => {
+    if (prefersReducedMotion) {
+      return;
+    }
+
+    timeoutId = window.setTimeout(async () => {
+      const next = (activeIndex + 1) % scenarios.length;
+      await runScenario(next);
+      queueNext();
+    }, 1700);
+  };
+
+  chips.forEach((chip, idx) => {
+    chip.addEventListener("click", async () => {
+      window.clearTimeout(timeoutId);
+      await runScenario(idx);
+      queueNext();
+    });
+  });
+
+  runScenario(0).then(queueNext);
+</script>
