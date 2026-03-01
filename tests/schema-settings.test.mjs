@@ -14,3 +14,10 @@ test('schema declares min-fuzzy-score setting with strict default', () => {
     assert.match(schema, /<key name="min-fuzzy-score" type="i">/);
     assert.match(schema, /<default>30<\/default>/);
 });
+
+test('schema declares tab and web-search settings', () => {
+    const schema = readSchema();
+    assert.match(schema, /<key name="web-search-enabled" type="b">/);
+    assert.match(schema, /<key name="web-search-max-actions" type="i">/);
+    assert.match(schema, /<key name="web-search-services-json" type="s">/);
+});

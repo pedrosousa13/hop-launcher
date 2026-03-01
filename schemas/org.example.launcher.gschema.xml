@@ -101,5 +101,20 @@
       <summary>Learning enabled</summary>
       <description>Enable usage-based ranking from launcher app launches.</description>
     </key>
+    <key name="web-search-enabled" type="b">
+      <default>true</default>
+      <summary>Web search actions enabled</summary>
+      <description>Show configured web search actions for non-empty queries.</description>
+    </key>
+    <key name="web-search-max-actions" type="i">
+      <default>3</default>
+      <summary>Web search max actions</summary>
+      <description>Maximum number of search services appended per query.</description>
+    </key>
+    <key name="web-search-services-json" type="s">
+      <default>'[{\"id\":\"google\",\"name\":\"Google\",\"urlTemplate\":\"https://www.google.com/search?q=%s\",\"enabled\":true,\"keyword\":\"g\"},{\"id\":\"duckduckgo\",\"name\":\"DuckDuckGo\",\"urlTemplate\":\"https://duckduckgo.com/?q=%s\",\"enabled\":true,\"keyword\":\"ddg\"}]'</default>
+      <summary>Web search services JSON</summary>
+      <description>Configured URL-template web search services using %s as query placeholder.</description>
+    </key>
   </schema>
 </schemalist>

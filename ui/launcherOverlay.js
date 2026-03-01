@@ -9,6 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {rankResults} from '../lib/fuzzy.js';
 import {extractQueryRoute} from '../lib/queryRouter.js';
 import {collectProviderItems} from '../lib/providerAggregator.js';
+import {combineRankedWithTail, splitTailItems} from '../lib/searchResultsLayout.js';
 import {buildAliasContext, parseAliasesConfig} from '../lib/aliases.js';
 import {
     applyLearningBoosts,
@@ -225,18 +226,21 @@ class LauncherOverlay extends St.BoxLayout {
         }
 
         const items = this._collectItems(mode, query);
-        const aliasContext = buildAliasContext(normalizedQuery, this._aliases, items);
+        const {rankedItems, tailItems} = splitTailItems(items);
+        const aliasContext = buildAliasContext(normalizedQuery, this._aliases, rankedItems);
         const rankingQuery = aliasContext.rankingQuery.trim();
         const learningBoosts = this._learningEnabled
-            ? applyLearningBoosts(this._learningStore, normalizedQuery, items)
+            ? applyLearningBoosts(this._learningStore, normalizedQuery, rankedItems)
             : new Map();
         const scoreBoost = item =>
             (aliasContext.boosts.get(item) ?? 0) +
             (learningBoosts.get(item) ?? 0);
         this._typedQuery = normalizedQuery;
+        const maxResults = this._settings.get_int('max-results');
 
-        if (items.length < ASYNC_SEARCH_THRESHOLD) {
-            this._results = this._rank(rankingQuery, items, scoreBoost);
+        if (rankedItems.length < ASYNC_SEARCH_THRESHOLD) {
+            const ranked = this._rank(rankingQuery, rankedItems, scoreBoost);
+            this._results = combineRankedWithTail(ranked, tailItems, maxResults);
             this._selectedIndex = 0;
             this._renderResults();
             return;
@@ -250,7 +254,8 @@ class LauncherOverlay extends St.BoxLayout {
             if (generation !== this._searchGeneration)
                 return GLib.SOURCE_REMOVE;
 
-            this._results = this._rank(rankingQuery, items, scoreBoost);
+            const ranked = this._rank(rankingQuery, rankedItems, scoreBoost);
+            this._results = combineRankedWithTail(ranked, tailItems, maxResults);
             this._selectedIndex = 0;
             this._renderResults();
             return GLib.SOURCE_REMOVE;

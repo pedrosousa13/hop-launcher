@@ -10,6 +10,11 @@ import {
     sanitizeModifierState,
 } from './lib/keybindingCapture.js';
 import {parseAliasesConfig} from './lib/aliases.js';
+import {
+    DEFAULT_WEB_SEARCH_SERVICES,
+    parseWebSearchServices,
+    validateWebSearchService,
+} from './lib/webSearchConfig.js';
 
 
 function isValidAccelerator(accel) {
@@ -64,6 +69,23 @@ function addStringArrayRow(group, settings, key, title, subtitle) {
         settings.set_strv(key, values);
     });
     group.add(row);
+}
+
+function addStringRow(group, settings, key, title, subtitle) {
+    const row = new Adw.EntryRow({
+        title,
+        text: settings.get_string(key),
+    });
+    row.set_tooltip_text(subtitle);
+    row.connect('changed', entry => {
+        settings.set_string(key, entry.text);
+    });
+    settings.connect(`changed::${key}`, () => {
+        if (row.text !== settings.get_string(key))
+            row.set_text(settings.get_string(key));
+    });
+    group.add(row);
+    return row;
 }
 
 const ALIAS_TYPES = ['rewrite', 'app', 'window'];
@@ -348,6 +370,103 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             1,
             6
         );
+
+        const webSearchEnabledRow = new Adw.SwitchRow({
+            title: 'Web search actions',
+            subtitle: 'Append search actions at the end for non-empty queries.',
+        });
+        settings.bind('web-search-enabled', webSearchEnabledRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        smartGroup.add(webSearchEnabledRow);
+
+        addSpinRow(
+            smartGroup,
+            settings,
+            'web-search-max-actions',
+            'Max web actions',
+            'Maximum number of providers appended for each query.',
+            1,
+            8,
+            1,
+            1
+        );
+
+        const servicesRow = addStringRow(
+            smartGroup,
+            settings,
+            'web-search-services-json',
+            'Web search services (JSON)',
+            'Use https URL templates with %s placeholder. Example: https://www.google.com/search?q=%s'
+        );
+
+        const servicesHelpRow = new Adw.ActionRow({
+            title: 'How to add a provider',
+            subtitle: 'Add an object with name + urlTemplate. Replace query with %s, then save.',
+        });
+        servicesHelpRow.set_activatable(false);
+        smartGroup.add(servicesHelpRow);
+
+        const validationRow = new Adw.ActionRow({
+            title: 'Config status',
+            subtitle: 'Checking web search services…',
+        });
+        validationRow.set_activatable(false);
+        smartGroup.add(validationRow);
+
+        const defaultsRow = new Adw.ActionRow({
+            title: 'Reset web search defaults',
+            subtitle: 'Restore built-in Google and DuckDuckGo templates.',
+        });
+        const defaultsButton = new Gtk.Button({label: 'Reset defaults'});
+        defaultsButton.connect('clicked', () => {
+            settings.set_string('web-search-services-json', JSON.stringify(DEFAULT_WEB_SEARCH_SERVICES));
+        });
+        defaultsRow.add_suffix(defaultsButton);
+        smartGroup.add(defaultsRow);
+
+        const updateWebSearchValidation = () => {
+            const raw = settings.get_string('web-search-services-json');
+            let parsed;
+            try {
+                parsed = JSON.parse(raw);
+            } catch (_) {
+                validationRow.set_subtitle('Invalid JSON. Falling back to default providers.');
+                return;
+            }
+
+            if (!Array.isArray(parsed)) {
+                validationRow.set_subtitle('JSON must be an array of service objects.');
+                return;
+            }
+
+            const valid = [];
+            const invalid = [];
+            for (const row of parsed) {
+                const checked = validateWebSearchService(row);
+                if (checked.valid)
+                    valid.push(checked.value);
+                else
+                    invalid.push(checked.reason);
+            }
+
+            if (valid.length === 0) {
+                validationRow.set_subtitle('No valid providers found. Ensure https URL templates include %s.');
+                return;
+            }
+
+            if (invalid.length > 0) {
+                validationRow.set_subtitle(`Loaded ${valid.length} provider(s). Ignored ${invalid.length} invalid row(s).`);
+                return;
+            }
+
+            const serviceList = parseWebSearchServices(raw, {fallbackToDefaults: false})
+                .map(service => service.name)
+                .join(', ');
+            validationRow.set_subtitle(`Loaded ${valid.length} provider(s): ${serviceList}`);
+        };
+
+        servicesRow.connect('changed', updateWebSearchValidation);
+        settings.connect('changed::web-search-services-json', updateWebSearchValidation);
+        updateWebSearchValidation();
 
         page.add(smartGroup);
 

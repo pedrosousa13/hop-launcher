@@ -29,6 +29,7 @@ A polished **Raycast-lite** command palette for GNOME Shell 45+ on Wayland.
   - `>` action mode (minimal shell action)
 - Smooth open/close animations with settings for duration and optional disable.
 - Fast incremental updates with debounce and caching.
+- Configurable web search actions (Google/DuckDuckGo defaults), appended at the end of non-empty result lists.
 
 ## Super-quick local test (recommended)
 
@@ -48,6 +49,39 @@ Then test instantly:
 - type `chr` or `crome` and verify matching
 - try `w ` for windows only and `a ` for apps only
 - try `f report`, `emoji smile`, `time in zurich`, `zurich time`, `weather berlin`, `zurich weather`, `wx 94103`, `pst`, `100eur to chf`, `100usd to eur`, and `2+2`
+- type any non-empty query and confirm trailing `Search <provider>` actions appear at the end
+
+## Web search providers (URL templates)
+
+`web-search-services-json` accepts an array of provider objects. Each entry uses a URL template with `%s` placeholder:
+
+```json
+[
+  {
+    "id": "google",
+    "name": "Google",
+    "urlTemplate": "https://www.google.com/search?q=%s",
+    "enabled": true
+  },
+  {
+    "id": "duckduckgo",
+    "name": "DuckDuckGo",
+    "urlTemplate": "https://duckduckgo.com/?q=%s",
+    "enabled": true
+  },
+  {
+    "id": "kagi",
+    "name": "Kagi",
+    "urlTemplate": "https://kagi.com/search?q=%s",
+    "enabled": true
+  }
+]
+```
+
+Rules:
+- Use `https://` URLs only.
+- Include `%s` exactly where the query should be inserted.
+- Queries are URL-encoded automatically.
 
 ## Fast dev loop
 
@@ -112,6 +146,7 @@ Create a zip file in `dist/`:
 - Ranking: windows/apps/recents source weight controls
 - Ranking: windows/apps/recents/files/emoji/utility source weight controls
 - Smart providers: indexed folders and currency cache controls
+- Smart providers: web search provider toggle, max actions, and JSON URL-template config
 
 ## Compatibility notes
 

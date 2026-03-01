@@ -1,5 +1,6 @@
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
+import Gio from 'gi://Gio';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -14,12 +15,20 @@ import {TimezoneProvider} from './lib/providers/timezone.js';
 import {EmojiProvider} from './lib/providers/emoji.js';
 import {FilesProvider} from './lib/providers/files.js';
 import {WeatherProvider} from './lib/providers/weather.js';
+import {WebSearchProvider} from './lib/providers/webSearch.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
 export default class HopLauncherExtension extends Extension {
     enable() {
         this._settings = this.getSettings('org.example.launcher');
+        const openUrl = url => {
+            try {
+                Gio.AppInfo.launch_default_for_uri(url, null);
+            } catch (error) {
+                logError(error, '[hop-launcher] open url failed');
+            }
+        };
         this._providers = [
             new WindowsProvider(),
             new AppsProvider(),
@@ -30,6 +39,7 @@ export default class HopLauncherExtension extends Extension {
             new TimezoneProvider(),
             new CurrencyProvider(this._settings),
             new WeatherProvider(),
+            new WebSearchProvider(this._settings, {openUrl}),
         ];
 
         this._overlay = new LauncherOverlay(this._settings, this._providers, this.path);
