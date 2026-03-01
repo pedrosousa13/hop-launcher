@@ -1,6 +1,6 @@
 # Hop Launcher (GNOME Wayland)
 
-A polished **Raycast-lite** command palette for GNOME Shell 45+ on Wayland.
+A polished command palette for GNOME Shell 45+ on Wayland.
 
 ## Features (v1)
 

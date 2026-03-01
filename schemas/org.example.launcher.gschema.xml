@@ -2,7 +2,7 @@
 <schemalist>
   <schema id="org.example.launcher" path="/org/example/launcher/">
     <key name="toggle-launcher" type="as">
-      <default>["&lt;Super&gt;space"]</default>
+      <default>[]</default>
       <summary>Toggle launcher keybinding</summary>
       <description>Shortcut used to open the launcher overlay.</description>
     </key>

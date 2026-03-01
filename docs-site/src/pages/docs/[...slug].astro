@@ -1,0 +1,58 @@
+---
+import { getCollection, render, type CollectionEntry } from "astro:content";
+import MainLayout from "../../layouts/MainLayout.astro";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("docs");
+  const sorted = entries.sort((a, b) => a.data.order - b.data.order);
+
+  return sorted.map((entry) => ({
+    params: { slug: entry.slug },
+    props: { entry, sorted }
+  }));
+}
+
+interface Props {
+  entry: CollectionEntry<"docs">;
+  sorted: CollectionEntry<"docs">[];
+}
+
+const { entry, sorted } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<MainLayout title={`${entry.data.title} | Hop Launcher Docs`} description={entry.data.description}>
+  <section class="docs-page mx-auto grid w-full max-w-6xl gap-6 px-6 pt-8 pb-20 md:grid-cols-[240px_1fr] md:px-10 md:pt-12">
+    <aside class="surface-soft h-fit rounded-2xl p-4">
+      <p class="text-xs font-semibold tracking-[0.14em] text-[color:var(--muted)] uppercase">Docs</p>
+      <nav class="mt-3 flex flex-col gap-1.5">
+        {sorted.map((item) => {
+          const isActive = item.slug === entry.slug;
+          return (
+            <a
+              href={`/docs/${item.slug}/`}
+              class:list={[
+                "rounded-lg px-3 py-2 text-sm transition",
+                isActive
+                  ? "bg-[color:var(--row-selected)] text-[color:var(--text)]"
+                  : "text-[color:var(--muted)] hover:bg-[color:var(--row-hover)] hover:text-[color:var(--text)]"
+              ]}
+            >
+              {item.data.title}
+            </a>
+          );
+        })}
+      </nav>
+    </aside>
+
+    <article class="surface-card rounded-3xl p-6 md:p-8">
+      <p class="text-xs font-semibold tracking-[0.14em] text-[color:var(--muted)] uppercase">Documentation</p>
+      <h1 class="mt-3 font-display text-3xl font-semibold md:text-4xl">{entry.data.title}</h1>
+      <p class="mt-3 text-base text-[color:var(--muted)]">{entry.data.description}</p>
+
+      <div class="docs-prose mt-8">
+        <Content />
+      </div>
+    </article>
+  </section>
+</MainLayout>
