@@ -24,6 +24,11 @@ test('parses weather query with and without prefixes', () => {
     assert.deepEqual(parseWeatherQuery('tokyo', {allowBare: true}), {location: 'tokyo'});
 });
 
+test('parses leading in marker from weather locations', () => {
+    assert.deepEqual(parseWeatherQuery('weather in zurich'), {location: 'zurich'});
+    assert.deepEqual(parseWeatherQuery('in zurich', {allowBare: true}), {location: 'zurich'});
+});
+
 test('exports expected weather source label', () => {
     assert.equal(OPEN_METEO_SOURCE, 'Open-Meteo');
 });
