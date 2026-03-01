@@ -10,6 +10,7 @@ import {
     sanitizeModifierState,
 } from './lib/keybindingCapture.js';
 import {parseAliasesConfig} from './lib/aliases.js';
+import {buildLearningInsights} from './lib/learningInsights.js';
 import {
     DEFAULT_WEB_SEARCH_SERVICES,
     parseWebSearchServices,
@@ -135,6 +136,12 @@ function aliasTargetExample(type) {
     if (type === 'app')
         return 'Example: org.gnome.Terminal.desktop';
     return 'Examples: org.gnome.Calendar.desktop|standup, |standup, org.gnome.Calendar.desktop|';
+}
+
+function formatLearningTimestamp(ms) {
+    if (!Number.isFinite(ms) || ms <= 0)
+        return 'unknown';
+    return new Date(ms).toISOString().replace('T', ' ').replace('Z', ' UTC');
 }
 
 export default class HopLauncherPreferences extends ExtensionPreferences {
@@ -565,6 +572,86 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         });
         resetLearningRow.add_suffix(resetLearningButton);
         personalizationGroup.add(resetLearningRow);
+
+        const learningSortModel = Gtk.StringList.new(['Most used', 'Most recent']);
+        const learningSortDropDown = new Gtk.DropDown({model: learningSortModel});
+        learningSortDropDown.set_hexpand(false);
+        learningSortDropDown.set_halign(Gtk.Align.END);
+        const learningSortRow = new Adw.ActionRow({
+            title: 'Learning insights sort',
+            subtitle: 'Choose how learned query-app pairs are ordered.',
+        });
+        learningSortRow.set_activatable(false);
+        learningSortRow.add_suffix(learningSortDropDown);
+        personalizationGroup.add(learningSortRow);
+
+        addSpinRow(
+            personalizationGroup,
+            settings,
+            'learning-insights-limit',
+            'Learning insights limit',
+            'How many learned pairs to show below.',
+            1,
+            50,
+            1,
+            5
+        );
+
+        let learningInsightRows = [];
+
+        const getSortSelection = () =>
+            settings.get_string('learning-insights-sort') === 'recent' ? 1 : 0;
+
+        const getSortKey = () =>
+            learningSortDropDown.get_selected() === 1 ? 'recent' : 'count';
+
+        learningSortDropDown.set_selected(getSortSelection());
+        learningSortDropDown.connect('notify::selected', () => {
+            const selectedSort = getSortKey();
+            if (settings.get_string('learning-insights-sort') !== selectedSort)
+                settings.set_string('learning-insights-sort', selectedSort);
+        });
+
+        const rebuildLearningInsights = () => {
+            for (const row of learningInsightRows)
+                personalizationGroup.remove(row);
+            learningInsightRows = [];
+
+            const insights = buildLearningInsights(settings.get_string('launch-learning-json'), {
+                limit: settings.get_int('learning-insights-limit'),
+                sort: settings.get_string('learning-insights-sort'),
+            });
+
+            if (!insights.length) {
+                const emptyRow = new Adw.ActionRow({
+                    title: 'No learned entries yet',
+                    subtitle: 'Launch apps from search to build personalized ranking.',
+                });
+                emptyRow.set_activatable(false);
+                personalizationGroup.add(emptyRow);
+                learningInsightRows.push(emptyRow);
+                return;
+            }
+
+            for (const entry of insights) {
+                const row = new Adw.ActionRow({
+                    title: `${entry.query} -> ${entry.appId}`,
+                    subtitle: `Count ${entry.count} | Last used ${formatLearningTimestamp(entry.lastUsedMs)}`,
+                });
+                row.set_activatable(false);
+                personalizationGroup.add(row);
+                learningInsightRows.push(row);
+            }
+        };
+
+        settings.connect('changed::learning-insights-sort', () => {
+            if (learningSortDropDown.get_selected() !== getSortSelection())
+                learningSortDropDown.set_selected(getSortSelection());
+            rebuildLearningInsights();
+        });
+        settings.connect('changed::learning-insights-limit', rebuildLearningInsights);
+        settings.connect('changed::launch-learning-json', rebuildLearningInsights);
+        rebuildLearningInsights();
 
         const aliasesHeaderRow = new Adw.ActionRow({
             title: 'Alias rules',

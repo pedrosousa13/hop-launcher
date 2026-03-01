@@ -21,3 +21,11 @@ test('schema declares tab and web-search settings', () => {
     assert.match(schema, /<key name="web-search-max-actions" type="i">/);
     assert.match(schema, /<key name="web-search-services-json" type="s">/);
 });
+
+test('schema declares learning insights settings', () => {
+    const schema = readSchema();
+    assert.match(schema, /<key name="learning-insights-limit" type="i">/);
+    assert.match(schema, /<default>10<\/default>/);
+    assert.match(schema, /<key name="learning-insights-sort" type="s">/);
+    assert.match(schema, /<default>'count'<\/default>/);
+});

@@ -101,6 +101,16 @@
       <summary>Learning enabled</summary>
       <description>Enable usage-based ranking from launcher app launches.</description>
     </key>
+    <key name="learning-insights-limit" type="i">
+      <default>10</default>
+      <summary>Learning insights limit</summary>
+      <description>Maximum number of learned query-app pairs shown in Preferences.</description>
+    </key>
+    <key name="learning-insights-sort" type="s">
+      <default>'count'</default>
+      <summary>Learning insights sort</summary>
+      <description>Sort mode for learning insights list: count or recent.</description>
+    </key>
     <key name="web-search-enabled" type="b">
       <default>true</default>
       <summary>Web search actions enabled</summary>
