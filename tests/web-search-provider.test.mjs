@@ -45,3 +45,17 @@ test('WebSearchProvider honors max actions and enabled toggle', () => {
     const disabled = new WebSearchProvider(makeSettings({'web-search-enabled': false}));
     assert.deepEqual(disabled.getResults('query', 'all'), []);
 });
+
+test('WebSearchProvider preserves configured provider order', () => {
+    const provider = new WebSearchProvider(makeSettings({
+        'web-search-services-json': JSON.stringify([
+            {id: 'ddg', name: 'DuckDuckGo', urlTemplate: 'https://duckduckgo.com/?q=%s', enabled: true},
+            {id: 'google', name: 'Google', urlTemplate: 'https://www.google.com/search?q=%s', enabled: true},
+        ]),
+    }));
+
+    const rows = provider.getResults('query', 'all');
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].primaryText, /DuckDuckGo/);
+    assert.match(rows[1].primaryText, /Google/);
+});

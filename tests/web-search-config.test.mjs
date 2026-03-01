@@ -5,6 +5,7 @@ import {
     DEFAULT_WEB_SEARCH_SERVICES,
     filterEnabledSearchServices,
     parseWebSearchServices,
+    serializeWebSearchServices,
     validateWebSearchService,
 } from '../lib/webSearchConfig.js';
 
@@ -50,4 +51,36 @@ test('filterEnabledSearchServices only returns enabled rows', () => {
 
     assert.equal(out.length, 1);
     assert.equal(out[0].id, 'g');
+});
+
+test('serializeWebSearchServices accepts row-style name + url inputs', () => {
+    const json = serializeWebSearchServices([
+        {name: 'Kagi', urlTemplate: 'https://kagi.com/search?q=%s'},
+        {name: 'Brave', urlTemplate: 'https://search.brave.com/search?q=%s'},
+    ], {fallbackToDefaults: false});
+
+    const out = JSON.parse(json);
+    assert.equal(out.length, 2);
+    assert.equal(out[0].name, 'Kagi');
+    assert.equal(out[1].name, 'Brave');
+});
+
+test('serializeWebSearchServices falls back to defaults when all rows are invalid', () => {
+    const json = serializeWebSearchServices([
+        {name: 'Bad', urlTemplate: 'http://example.com/?q=%s'},
+        {name: '', urlTemplate: 'https://example.com/?q=%s'},
+    ]);
+
+    const out = JSON.parse(json);
+    assert.deepEqual(out.map(row => row.name), DEFAULT_WEB_SEARCH_SERVICES.map(row => row.name));
+});
+
+test('serializeWebSearchServices keeps optional keyword field', () => {
+    const json = serializeWebSearchServices([
+        {name: 'Google', urlTemplate: 'https://www.google.com/search?q=%s', keyword: 'g'},
+    ], {fallbackToDefaults: false});
+
+    const out = JSON.parse(json);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].keyword, 'g');
 });

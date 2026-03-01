@@ -13,6 +13,7 @@ import {parseAliasesConfig} from './lib/aliases.js';
 import {
     DEFAULT_WEB_SEARCH_SERVICES,
     parseWebSearchServices,
+    serializeWebSearchServices,
     validateWebSearchService,
 } from './lib/webSearchConfig.js';
 
@@ -69,23 +70,6 @@ function addStringArrayRow(group, settings, key, title, subtitle) {
         settings.set_strv(key, values);
     });
     group.add(row);
-}
-
-function addStringRow(group, settings, key, title, subtitle) {
-    const row = new Adw.EntryRow({
-        title,
-        text: settings.get_string(key),
-    });
-    row.set_tooltip_text(subtitle);
-    row.connect('changed', entry => {
-        settings.set_string(key, entry.text);
-    });
-    settings.connect(`changed::${key}`, () => {
-        if (row.text !== settings.get_string(key))
-            row.set_text(settings.get_string(key));
-    });
-    group.add(row);
-    return row;
 }
 
 const ALIAS_TYPES = ['rewrite', 'app', 'window'];
@@ -252,13 +236,13 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         page.add(behaviorGroup);
 
-        const performanceGroup = new Adw.PreferencesGroup({
-            title: 'Performance',
-            description: 'Tune responsiveness and list density.',
+        const searchGroup = new Adw.PreferencesGroup({
+            title: 'Search',
+            description: 'Main search behavior and providers.',
         });
 
         addSpinRow(
-            performanceGroup,
+            searchGroup,
             settings,
             'debounce-ms',
             'Typing debounce (ms)',
@@ -270,50 +254,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         );
 
         addSpinRow(
-            performanceGroup,
-            settings,
-            'max-results',
-            'Max visible results',
-            'Limit rows for stable frame-time.',
-            5,
-            40,
-            1,
-            5
-        );
-
-        addSpinRow(
-            performanceGroup,
-            settings,
-            'open-animation-ms',
-            'Open animation (ms)',
-            'Duration for opening transition.',
-            60,
-            350,
-            5,
-            20
-        );
-
-        addSpinRow(
-            performanceGroup,
-            settings,
-            'close-animation-ms',
-            'Close animation (ms)',
-            'Duration for closing transition.',
-            50,
-            300,
-            5,
-            20
-        );
-
-        page.add(performanceGroup);
-
-        const rankingGroup = new Adw.PreferencesGroup({
-            title: 'Ranking weights',
-            description: 'Source tie-break priorities on equal fuzzy scores.',
-        });
-
-        addSpinRow(
-            rankingGroup,
+            searchGroup,
             settings,
             'min-fuzzy-score',
             'Fuzzy match threshold',
@@ -323,63 +264,16 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             1,
             5
         );
-        const fuzzyExplanationRow = new Adw.ActionRow({
-            title: 'Explanation',
-            subtitle: 'Set how close results must be to your query. Higher values show fewer, more exact matches.',
-        });
-        fuzzyExplanationRow.set_activatable(false);
-        rankingGroup.add(fuzzyExplanationRow);
-
-        addSpinRow(rankingGroup, settings, 'weight-windows', 'Window weight', 'Prefer open windows when scores tie.', 0, 100, 1, 5);
-        addSpinRow(rankingGroup, settings, 'weight-apps', 'App weight', 'Prefer apps over recents when scores tie.', 0, 100, 1, 5);
-        addSpinRow(rankingGroup, settings, 'weight-recents', 'Recent weight', 'Boost for recents provider results.', 0, 100, 1, 5);
-        addSpinRow(rankingGroup, settings, 'weight-files', 'File weight', 'Boost for indexed file matches.', 0, 100, 1, 5);
-        addSpinRow(rankingGroup, settings, 'weight-emoji', 'Emoji weight', 'Boost for emoji matches.', 0, 100, 1, 5);
-        addSpinRow(rankingGroup, settings, 'weight-utility', 'Utility weight', 'Boost for calculator/currency/time rows.', 0, 100, 1, 5);
-
-        page.add(rankingGroup);
-
-        const smartGroup = new Adw.PreferencesGroup({
-            title: 'Smart providers',
-            description: 'Configure indexed folders and currency cache behavior.',
-        });
-
-        addStringArrayRow(
-            smartGroup,
-            settings,
-            'indexed-folders',
-            'Indexed folders (comma-separated)',
-            'Example: /home/user/Documents, /home/user/Downloads'
-        );
-
-        const currencyRefreshRow = new Adw.SwitchRow({
-            title: 'Currency online refresh',
-            subtitle: 'When enabled, currency rates may be refreshed online in future updates.',
-        });
-        settings.bind('currency-refresh-enabled', currencyRefreshRow, 'active', Gio.SettingsBindFlags.DEFAULT);
-        smartGroup.add(currencyRefreshRow);
-
-        addSpinRow(
-            smartGroup,
-            settings,
-            'currency-rate-ttl-hours',
-            'Currency cache TTL (hours)',
-            'How long cached rates are treated as fresh.',
-            1,
-            168,
-            1,
-            6
-        );
 
         const webSearchEnabledRow = new Adw.SwitchRow({
             title: 'Web search actions',
             subtitle: 'Append search actions at the end for non-empty queries.',
         });
         settings.bind('web-search-enabled', webSearchEnabledRow, 'active', Gio.SettingsBindFlags.DEFAULT);
-        smartGroup.add(webSearchEnabledRow);
+        searchGroup.add(webSearchEnabledRow);
 
         addSpinRow(
-            smartGroup,
+            searchGroup,
             settings,
             'web-search-max-actions',
             'Max web actions',
@@ -390,27 +284,20 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             1
         );
 
-        const servicesRow = addStringRow(
-            smartGroup,
-            settings,
-            'web-search-services-json',
-            'Web search services (JSON)',
-            'Use https URL templates with %s placeholder. Example: https://www.google.com/search?q=%s'
-        );
-
-        const servicesHelpRow = new Adw.ActionRow({
-            title: 'How to add a provider',
-            subtitle: 'Add an object with name + urlTemplate. Replace query with %s, then save.',
+        const providersHeaderRow = new Adw.ActionRow({
+            title: 'Web providers',
+            subtitle: 'Each row uses a provider name and an HTTPS URL template with %s.',
         });
-        servicesHelpRow.set_activatable(false);
-        smartGroup.add(servicesHelpRow);
+        const addProviderButton = new Gtk.Button({label: 'Add provider'});
+        providersHeaderRow.add_suffix(addProviderButton);
+        searchGroup.add(providersHeaderRow);
 
-        const validationRow = new Adw.ActionRow({
-            title: 'Config status',
-            subtitle: 'Checking web search services…',
+        const providerStatusRow = new Adw.ActionRow({
+            title: 'Provider status',
+            subtitle: 'Checking configured providers…',
         });
-        validationRow.set_activatable(false);
-        smartGroup.add(validationRow);
+        providerStatusRow.set_activatable(false);
+        searchGroup.add(providerStatusRow);
 
         const defaultsRow = new Adw.ActionRow({
             title: 'Reset web search defaults',
@@ -421,54 +308,240 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
             settings.set_string('web-search-services-json', JSON.stringify(DEFAULT_WEB_SEARCH_SERVICES));
         });
         defaultsRow.add_suffix(defaultsButton);
-        smartGroup.add(defaultsRow);
+        searchGroup.add(defaultsRow);
 
-        const updateWebSearchValidation = () => {
-            const raw = settings.get_string('web-search-services-json');
-            let parsed;
-            try {
-                parsed = JSON.parse(raw);
-            } catch (_) {
-                validationRow.set_subtitle('Invalid JSON. Falling back to default providers.');
-                return;
-            }
+        addStringArrayRow(
+            searchGroup,
+            settings,
+            'indexed-folders',
+            'Indexed folders (comma-separated)',
+            'Example: /home/user/Documents, /home/user/Downloads'
+        );
 
-            if (!Array.isArray(parsed)) {
-                validationRow.set_subtitle('JSON must be an array of service objects.');
-                return;
-            }
+        let webSearchServices = parseWebSearchServices(
+            settings.get_string('web-search-services-json'),
+            {fallbackToDefaults: false}
+        );
+        let providerRows = [];
 
-            const valid = [];
-            const invalid = [];
-            for (const row of parsed) {
-                const checked = validateWebSearchService(row);
-                if (checked.valid)
-                    valid.push(checked.value);
-                else
-                    invalid.push(checked.reason);
-            }
-
-            if (valid.length === 0) {
-                validationRow.set_subtitle('No valid providers found. Ensure https URL templates include %s.');
-                return;
-            }
-
-            if (invalid.length > 0) {
-                validationRow.set_subtitle(`Loaded ${valid.length} provider(s). Ignored ${invalid.length} invalid row(s).`);
-                return;
-            }
-
-            const serviceList = parseWebSearchServices(raw, {fallbackToDefaults: false})
-                .map(service => service.name)
-                .join(', ');
-            validationRow.set_subtitle(`Loaded ${valid.length} provider(s): ${serviceList}`);
+        const providerErrorLabel = reason => {
+            if (reason === 'name-missing')
+                return 'Provider name is required.';
+            if (reason === 'template-missing-placeholder')
+                return 'URL must contain %s placeholder.';
+            if (reason === 'template-invalid-url')
+                return 'URL must be a valid template.';
+            if (reason === 'template-non-https')
+                return 'URL must use HTTPS.';
+            return 'Invalid provider settings.';
         };
 
-        servicesRow.connect('changed', updateWebSearchValidation);
-        settings.connect('changed::web-search-services-json', updateWebSearchValidation);
-        updateWebSearchValidation();
+        const previewSearchUrl = (urlTemplate, sampleQuery = 'hop launcher') => {
+            const template = (urlTemplate ?? '').toString().trim();
+            if (!template)
+                return 'Enter a URL template to preview.';
+            if (!template.includes('%s'))
+                return 'Add %s in the template to insert the search query.';
+            try {
+                return template.replaceAll('%s', encodeURIComponent(sampleQuery));
+            } catch (_) {
+                return 'Template preview unavailable.';
+            }
+        };
 
-        page.add(smartGroup);
+        const updateProviderStatus = () => {
+            if (webSearchServices.length === 0) {
+                providerStatusRow.set_subtitle('No providers configured. Add at least one row.');
+                return;
+            }
+
+            const names = webSearchServices.map(service => service.name).join(', ');
+            providerStatusRow.set_subtitle(`Loaded ${webSearchServices.length} provider(s): ${names}`);
+        };
+
+        const saveWebSearchServices = nextServices => {
+            const json = serializeWebSearchServices(nextServices, {fallbackToDefaults: false});
+            settings.set_string('web-search-services-json', json);
+        };
+
+        const rebuildProviderRows = () => {
+            for (const row of providerRows)
+                searchGroup.remove(row);
+            providerRows = [];
+
+            webSearchServices.forEach((service, index) => {
+                const row = new Adw.ExpanderRow({
+                    title: `Provider ${index + 1}: ${service.name}`,
+                    subtitle: service.urlTemplate,
+                });
+                row.set_enable_expansion(true);
+                row.set_expanded(false);
+
+                const nameEntry = new Gtk.Entry({text: service.name});
+                nameEntry.set_placeholder_text('Provider name');
+                nameEntry.set_hexpand(true);
+                const nameRow = new Adw.ActionRow({title: 'Name'});
+                nameRow.set_activatable(false);
+                nameRow.add_suffix(nameEntry);
+
+                const urlEntry = new Gtk.Entry({text: service.urlTemplate});
+                urlEntry.set_placeholder_text('https://example.com/search?q=%s');
+                urlEntry.set_hexpand(true);
+                urlEntry.set_width_chars(32);
+                const urlRow = new Adw.ActionRow({title: 'URL template'});
+                urlRow.set_activatable(false);
+                urlRow.add_suffix(urlEntry);
+
+                const keywordEntry = new Gtk.Entry({text: service.keyword ?? ''});
+                keywordEntry.set_placeholder_text('Optional quick keyword (example: g)');
+                keywordEntry.set_hexpand(true);
+                const keywordRow = new Adw.ActionRow({title: 'Keyword (optional)'});
+                keywordRow.set_activatable(false);
+                keywordRow.add_suffix(keywordEntry);
+
+                const helperRow = new Adw.ActionRow({
+                    title: 'Template helper',
+                    subtitle: 'Insert %s as query placeholder.',
+                });
+                helperRow.set_activatable(false);
+                const insertPlaceholderButton = new Gtk.Button({label: 'Insert %s'});
+                insertPlaceholderButton.connect('clicked', () => {
+                    const current = urlEntry.get_text();
+                    if (current.includes('%s'))
+                        return;
+                    if (!current.trim()) {
+                        urlEntry.set_text('https://example.com/search?q=%s');
+                        return;
+                    }
+                    urlEntry.set_text(`${current}${current.includes('?') ? '&' : '?'}q=%s`);
+                });
+                helperRow.add_suffix(insertPlaceholderButton);
+
+                const previewRow = new Adw.ActionRow({
+                    title: 'Preview URL',
+                    subtitle: previewSearchUrl(service.urlTemplate),
+                });
+                previewRow.set_activatable(false);
+                urlEntry.connect('changed', entry => {
+                    previewRow.set_subtitle(previewSearchUrl(entry.get_text()));
+                });
+
+                const moveUpButton = new Gtk.Button({label: 'Up'});
+                moveUpButton.set_sensitive(index > 0);
+                moveUpButton.connect('clicked', () => {
+                    if (index <= 0)
+                        return;
+                    const next = [...webSearchServices];
+                    const [item] = next.splice(index, 1);
+                    next.splice(index - 1, 0, item);
+                    saveWebSearchServices(next);
+                });
+
+                const moveDownButton = new Gtk.Button({label: 'Down'});
+                moveDownButton.set_sensitive(index < webSearchServices.length - 1);
+                moveDownButton.connect('clicked', () => {
+                    if (index >= webSearchServices.length - 1)
+                        return;
+                    const next = [...webSearchServices];
+                    const [item] = next.splice(index, 1);
+                    next.splice(index + 1, 0, item);
+                    saveWebSearchServices(next);
+                });
+
+                const saveButton = new Gtk.Button({label: 'Save'});
+                saveButton.connect('clicked', () => {
+                    const checked = validateWebSearchService({
+                        ...service,
+                        name: nameEntry.get_text(),
+                        urlTemplate: urlEntry.get_text(),
+                        keyword: keywordEntry.get_text(),
+                    });
+                    if (!checked.valid) {
+                        providerStatusRow.set_subtitle(providerErrorLabel(checked.reason));
+                        return;
+                    }
+
+                    const next = webSearchServices.map((entry, entryIndex) =>
+                        entryIndex === index ? checked.value : entry
+                    );
+                    saveWebSearchServices(next);
+                });
+
+                const deleteButton = new Gtk.Button({label: 'Delete'});
+                deleteButton.connect('clicked', () => {
+                    const next = webSearchServices.filter((_, entryIndex) => entryIndex !== index);
+                    saveWebSearchServices(next);
+                });
+
+                const actionsRow = new Adw.ActionRow({title: 'Actions'});
+                actionsRow.set_activatable(false);
+                actionsRow.add_suffix(moveUpButton);
+                actionsRow.add_suffix(moveDownButton);
+                actionsRow.add_suffix(saveButton);
+                actionsRow.add_suffix(deleteButton);
+
+                row.add_row(nameRow);
+                row.add_row(urlRow);
+                row.add_row(keywordRow);
+                row.add_row(helperRow);
+                row.add_row(previewRow);
+                row.add_row(actionsRow);
+                providerRows.push(row);
+                searchGroup.add(row);
+            });
+
+            updateProviderStatus();
+        };
+
+        addProviderButton.connect('clicked', () => {
+            const next = [
+                ...webSearchServices,
+                {
+                    name: 'New provider',
+                    urlTemplate: 'https://example.com/search?q=%s',
+                    enabled: true,
+                    keyword: '',
+                },
+            ];
+            saveWebSearchServices(next);
+        });
+
+        settings.connect('changed::web-search-services-json', () => {
+            webSearchServices = parseWebSearchServices(
+                settings.get_string('web-search-services-json'),
+                {fallbackToDefaults: false}
+            );
+            rebuildProviderRows();
+        });
+
+        rebuildProviderRows();
+        page.add(searchGroup);
+
+        const integrationsGroup = new Adw.PreferencesGroup({
+            title: 'Integrations',
+            description: 'Online provider behavior and cache freshness.',
+        });
+
+        const currencyRefreshRow = new Adw.SwitchRow({
+            title: 'Currency online refresh',
+            subtitle: 'When enabled, currency rates may be refreshed online in future updates.',
+        });
+        settings.bind('currency-refresh-enabled', currencyRefreshRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        integrationsGroup.add(currencyRefreshRow);
+
+        addSpinRow(
+            integrationsGroup,
+            settings,
+            'currency-rate-ttl-hours',
+            'Currency cache TTL (hours)',
+            'How long cached rates are treated as fresh.',
+            1,
+            168,
+            1,
+            6
+        );
+
+        page.add(integrationsGroup);
 
         const personalizationGroup = new Adw.PreferencesGroup({
             title: 'Personalization',
@@ -607,6 +680,20 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         rebuildAliasRows();
         page.add(personalizationGroup);
+
+        const advancedRankingGroup = new Adw.PreferencesGroup({
+            title: 'Advanced ranking',
+            description: 'Tie-break priorities when fuzzy scores are equal.',
+        });
+
+        addSpinRow(advancedRankingGroup, settings, 'weight-windows', 'Window weight', 'Prefer open windows when scores tie.', 0, 100, 1, 5);
+        addSpinRow(advancedRankingGroup, settings, 'weight-apps', 'App weight', 'Prefer apps over recents when scores tie.', 0, 100, 1, 5);
+        addSpinRow(advancedRankingGroup, settings, 'weight-recents', 'Recent weight', 'Boost for recents provider results.', 0, 100, 1, 5);
+        addSpinRow(advancedRankingGroup, settings, 'weight-files', 'File weight', 'Boost for indexed file matches.', 0, 100, 1, 5);
+        addSpinRow(advancedRankingGroup, settings, 'weight-emoji', 'Emoji weight', 'Boost for emoji matches.', 0, 100, 1, 5);
+        addSpinRow(advancedRankingGroup, settings, 'weight-utility', 'Utility weight', 'Boost for calculator/currency/time rows.', 0, 100, 1, 5);
+
+        page.add(advancedRankingGroup);
 
         window.add(page);
     }
