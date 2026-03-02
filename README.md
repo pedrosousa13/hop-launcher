@@ -120,6 +120,22 @@ Open preferences:
 gnome-extensions prefs hop-launcher@hoplauncher.app
 ```
 
+## Versioning
+
+Extension package version is stored in `metadata.json` (`version`) and must increase for updates.
+
+Bump locally before release packaging:
+
+```bash
+./scripts/bump-version.sh
+```
+
+Validate version metadata:
+
+```bash
+./scripts/bump-version.sh --check
+```
+
 ## Packaging for release
 
 Create a zip file in `dist/`:
