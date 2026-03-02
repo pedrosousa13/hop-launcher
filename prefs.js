@@ -4,7 +4,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
-import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import {
     interpretKeybindingPress,
     resolveTypedAccelerator,
@@ -598,6 +598,31 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         rebuildProviderRows();
         page.add(webSearchGroup);
+
+        const privacyGroup = new Adw.PreferencesGroup({
+            title: _('Network & Privacy'),
+            description: _('Most searches stay on-device. Optional Weather and Web Search features can send your query text to external services.'),
+        });
+
+        privacyGroup.add(new Adw.ActionRow({
+            title: _('Weather provider'),
+            subtitle: _('When Weather is enabled, location text from weather queries is sent to Open-Meteo geocoding and forecast endpoints.'),
+            activatable: false,
+        }));
+
+        privacyGroup.add(new Adw.ActionRow({
+            title: _('Web search actions'),
+            subtitle: _('When Web Search is enabled, selecting a search action opens your configured provider URL with the current query.'),
+            activatable: false,
+        }));
+
+        privacyGroup.add(new Adw.ActionRow({
+            title: _('Disable network-backed features'),
+            subtitle: _('Use Main features to turn off Weather and Web Search at any time.'),
+            activatable: false,
+        }));
+
+        page.add(privacyGroup);
 
         const integrationsGroup = new Adw.PreferencesGroup({
             title: 'Integrations',

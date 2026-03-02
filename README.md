@@ -83,6 +83,17 @@ Rules:
 - Include `%s` exactly where the query should be inserted.
 - Queries are URL-encoded automatically.
 
+
+## Network & privacy
+
+Hop Launcher keeps most search behavior local to GNOME Shell.
+
+Optional features that can send query text off-device:
+- **Weather provider** (`weather <location>`, `wx <location>`, `<location> weather`) sends location text to Open-Meteo geocoding and forecast APIs.
+- **Web search actions** open your configured HTTPS search provider URLs with the current query URL-encoded into the template.
+
+You can disable either feature in Preferences under **Main features** at any time.
+
 ## Fast dev loop
 
 After any code change:
@@ -107,6 +118,22 @@ Open preferences:
 
 ```bash
 gnome-extensions prefs hop-launcher@hoplauncher.app
+```
+
+## Versioning
+
+Extension package version is stored in `metadata.json` (`version`) and must increase for updates.
+
+Bump locally before release packaging:
+
+```bash
+./scripts/bump-version.sh
+```
+
+Validate version metadata:
+
+```bash
+./scripts/bump-version.sh --check
 ```
 
 ## Packaging for release

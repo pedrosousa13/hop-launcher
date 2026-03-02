@@ -5,6 +5,8 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "install:local": "bash ./scripts/install-local.sh",
-    "package": "bash ./scripts/package-extension.sh"
+    "package": "bash ./scripts/package-extension.sh",
+    "version:bump": "bash ./scripts/bump-version.sh",
+    "version:check": "bash ./scripts/bump-version.sh --check"
   }
 }
