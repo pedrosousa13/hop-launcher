@@ -83,6 +83,17 @@ Rules:
 - Include `%s` exactly where the query should be inserted.
 - Queries are URL-encoded automatically.
 
+
+## Network & privacy
+
+Hop Launcher keeps most search behavior local to GNOME Shell.
+
+Optional features that can send query text off-device:
+- **Weather provider** (`weather <location>`, `wx <location>`, `<location> weather`) sends location text to Open-Meteo geocoding and forecast APIs.
+- **Web search actions** open your configured HTTPS search provider URLs with the current query URL-encoded into the template.
+
+You can disable either feature in Preferences under **Main features** at any time.
+
 ## Fast dev loop
 
 After any code change:
