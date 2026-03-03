@@ -40,7 +40,7 @@ From this repo root:
 ```
 
 That script:
-- syncs your working tree to `~/.local/share/gnome-shell/extensions/hop-launcher@hoplauncher.app`
+- syncs your working tree to `~/.local/share/gnome-shell/extensions/hop-launcher`
 - compiles GSettings schemas
 - disables + re-enables the extension
 
@@ -117,24 +117,12 @@ journalctl --user -f /usr/bin/gnome-shell
 Open preferences:
 
 ```bash
-gnome-extensions prefs hop-launcher@hoplauncher.app
+gnome-extensions prefs hop-launcher
 ```
 
 ## Versioning
 
-Extension package version is stored in `metadata.json` (`version`) and must increase for updates.
-
-Bump locally before release packaging:
-
-```bash
-./scripts/bump-version.sh
-```
-
-Validate version metadata:
-
-```bash
-./scripts/bump-version.sh --check
-```
+For GNOME 45+, extensions.gnome.org manages extension versions. This repository does not use a `metadata.json` `version` field.
 
 ## Packaging for release
 
@@ -142,6 +130,19 @@ Create a zip file in `dist/`:
 
 ```bash
 ./scripts/package-extension.sh
+```
+
+Equivalent npm script:
+
+```bash
+npm run package
+```
+
+Publish a GitHub Release with the zip attached by pushing a version tag:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
 ```
 
 ## Repository layout
@@ -155,7 +156,7 @@ Create a zip file in `dist/`:
 - `lib/providers/apps.js`
 - `lib/providers/windows.js`
 - `lib/providers/recents.js`
-- `schemas/org.hoplauncher.app.gschema.xml`
+- `schemas/org.gnome.shell.extensions.hop-launcher.gschema.xml`
 - `scripts/install-local.sh`
 - `scripts/package-extension.sh`
 - `tests/fuzzy.test.mjs`
@@ -204,4 +205,12 @@ A staff-level performance and security review is documented in `docs/PERFORMANCE
 A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
 - `npm test` (fuzzy matcher tests)
 - `glib-compile-schemas --strict --dry-run schemas`
-- `bash -n scripts/install-local.sh scripts/reload-shell.sh scripts/package-extension.sh`
+- `bash scripts/bump-version.sh --check`
+- `bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh`
+- `npm run package`
+- uploads the generated `dist/*.zip` as a downloadable CI artifact
+
+A release workflow is included at `.github/workflows/release.yml` and runs on `v*` tags (and manual dispatch):
+- re-runs tests/validations
+- builds the zip
+- creates a GitHub Release and attaches the zip

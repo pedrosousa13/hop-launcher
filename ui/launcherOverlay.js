@@ -5,6 +5,7 @@ import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 
 import {rankResults} from '../lib/fuzzy.js';
 import {extractQueryRoute} from '../lib/queryRouter.js';
@@ -27,26 +28,34 @@ const MAX_TRANSLUCENCY = 100;
 const KEY_ALIASES = 'custom-aliases-json';
 const KEY_LEARNING_STORE = 'launch-learning-json';
 const KEY_LEARNING_ENABLED = 'learning-enabled';
+const OVERLAY_GTYPE_NAME = `HopLauncherOverlay${Math.floor(Date.now() / 1000)}${Math.floor(Math.random() * 100000)}`;
 const COPY_HINT_ICON = {
     relativePath: 'assets/icons/lucide/copy.svg',
     fallbackIconName: 'edit-copy-symbolic',
 };
+const SHELL_MAJOR = Number.parseInt((Config.PACKAGE_VERSION ?? '0').split('.')[0], 10) || 0;
 
-export const LauncherOverlay = GObject.registerClass(
+export const LauncherOverlay = GObject.registerClass({
+    GTypeName: OVERLAY_GTYPE_NAME,
+},
 class LauncherOverlay extends St.BoxLayout {
     _init(settings, providers, extensionPath = '') {
-        super._init({
+        const boxLayoutProps = {
             style_class: 'hop-launcher-overlay',
             reactive: true,
             can_focus: true,
             track_hover: true,
-            vertical: true,
             visible: false,
             opacity: 0,
             scale_x: 0.98,
             scale_y: 0.98,
             translation_y: -SLIDE_Y,
-        });
+        };
+        if (SHELL_MAJOR >= 47)
+            boxLayoutProps.orientation = Clutter.Orientation.VERTICAL;
+        else
+            boxLayoutProps.vertical = true;
+        super._init(boxLayoutProps);
 
         this._settings = settings;
         this._providers = providers;
@@ -54,7 +63,6 @@ class LauncherOverlay extends St.BoxLayout {
         this._signals = [];
         this._debounceSourceId = null;
         this._idleSearchSourceId = null;
-        this._stageKeyFocusChangedId = null;
         this._stageCapturedEventId = null;
         this._stageButtonPressId = null;
         this._selectedIndex = 0;
@@ -217,19 +225,19 @@ class LauncherOverlay extends St.BoxLayout {
 
     _cancelPendingSearch() {
         if (this._debounceSourceId) {
-            GLib.source_remove(this._debounceSourceId);
+            GLib.Source.remove(this._debounceSourceId);
             this._debounceSourceId = null;
         }
 
         if (this._idleSearchSourceId) {
-            GLib.source_remove(this._idleSearchSourceId);
+            GLib.Source.remove(this._idleSearchSourceId);
             this._idleSearchSourceId = null;
         }
     }
 
     _queueSearch() {
         if (this._debounceSourceId) {
-            GLib.source_remove(this._debounceSourceId);
+            GLib.Source.remove(this._debounceSourceId);
             this._debounceSourceId = null;
         }
 
@@ -250,7 +258,7 @@ class LauncherOverlay extends St.BoxLayout {
         if (!normalizedQuery) {
             this._typedQuery = '';
             if (this._idleSearchSourceId) {
-                GLib.source_remove(this._idleSearchSourceId);
+                GLib.Source.remove(this._idleSearchSourceId);
                 this._idleSearchSourceId = null;
             }
             this._results = [];
@@ -281,7 +289,7 @@ class LauncherOverlay extends St.BoxLayout {
         }
 
         if (this._idleSearchSourceId)
-            GLib.source_remove(this._idleSearchSourceId);
+            GLib.Source.remove(this._idleSearchSourceId);
 
         this._idleSearchSourceId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
             this._idleSearchSourceId = null;
@@ -385,7 +393,10 @@ class LauncherOverlay extends St.BoxLayout {
 
             const secondaryText = (result.secondaryText ?? '').toString();
             const hasSecondaryText = secondaryText.trim().length > 0;
-            const text = new St.BoxLayout({vertical: true, x_expand: true});
+            const text = new St.BoxLayout({
+                vertical: true,
+                x_expand: true,
+            });
             text.add_child(new St.Label({text: result.primaryText ?? ''}));
             if (hasSecondaryText) {
                 text.add_child(new St.Label({text: secondaryText, style_class: 'dim-label'}));
@@ -543,18 +554,6 @@ class LauncherOverlay extends St.BoxLayout {
     }
 
     _ensureAutoCloseWatch() {
-        if (this._stageKeyFocusChangedId)
-            return;
-
-        this._stageKeyFocusChangedId = global.stage.connect('notify::key-focus', () => {
-            if (!this.visible)
-                return;
-
-            const focus = global.stage.get_key_focus();
-            if (!focus || !this.contains(focus))
-                this.close();
-        });
-
         this._stageCapturedEventId = global.stage.connect('captured-event', (_stage, event) => {
             if (!this.visible)
                 return Clutter.EVENT_PROPAGATE;
@@ -583,11 +582,6 @@ class LauncherOverlay extends St.BoxLayout {
     }
 
     _disconnectAutoCloseWatch() {
-        if (this._stageKeyFocusChangedId) {
-            global.stage.disconnect(this._stageKeyFocusChangedId);
-            this._stageKeyFocusChangedId = null;
-        }
-
         if (this._stageCapturedEventId) {
             global.stage.disconnect(this._stageCapturedEventId);
             this._stageCapturedEventId = null;
@@ -655,19 +649,30 @@ class LauncherOverlay extends St.BoxLayout {
         return Clutter.EVENT_PROPAGATE;
     }
 
-    destroyOverlay() {
+    _teardown() {
         this._cancelPendingSearch();
         this._disconnectAutoCloseWatch();
 
-        for (const id of this._signals)
-            this._input.clutter_text.disconnect(id);
+        if (this._input?.clutter_text) {
+            for (const id of this._signals)
+                this._input.clutter_text.disconnect(id);
+        }
         this._signals = [];
-        for (const id of this._settingsSignals)
-            this._settings.disconnect(id);
+        if (this._settings) {
+            for (const id of this._settingsSignals)
+                this._settings.disconnect(id);
+        }
         this._settingsSignals = [];
         this._hintGIconCache.clear();
+    }
 
+    destroyOverlay() {
         this.destroy();
+    }
+
+    destroy() {
+        this._teardown();
+        super.destroy();
     }
 
     _copyText(text) {

@@ -71,3 +71,23 @@ test('TimezoneProvider default city dataset resolves boston', async () => {
     assert.equal(resolved.length, 1);
     assert.match(resolved[0].secondaryText, /America\/New_York/);
 });
+
+test('destroy prevents late update callbacks from inflight timezone lookup', async () => {
+    let resolveLookup;
+    const cityLookupLoader = async () => new Promise(resolve => {
+        resolveLookup = resolve;
+    });
+    const provider = new TimezoneProvider({cityLookupLoader, timeoutMs: 3000});
+    let updates = 0;
+    provider.setUpdateCallback(() => {
+        updates++;
+    });
+
+    provider.getResults('new-town', 'timezone');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    provider.destroy();
+    resolveLookup?.({'new-town': 'America/New_York'});
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.equal(updates, 0);
+});

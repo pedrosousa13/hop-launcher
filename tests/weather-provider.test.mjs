@@ -212,3 +212,23 @@ test('uses soup fallback when fetch is unavailable', async () => {
         globalThis.fetch = originalFetch;
     }
 });
+
+test('destroy prevents late update callbacks from inflight weather requests', async () => {
+    let resolveRequest;
+    const requestJson = () => new Promise(resolve => {
+        resolveRequest = resolve;
+    });
+    const provider = new WeatherProvider({requestJson, timeoutMs: 3000});
+    let updates = 0;
+    provider.setUpdateCallback(() => {
+        updates++;
+    });
+
+    provider.getResults('weather tokyo', 'weather');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    provider.destroy();
+    resolveRequest?.({results: []});
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.equal(updates, 0);
+});

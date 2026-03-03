@@ -2,11 +2,17 @@
 set -euo pipefail
 umask 077
 
-UUID="hop-launcher@hoplauncher.app"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+METADATA_FILE="${ROOT_DIR}/metadata.json"
+UUID="$(sed -n 's/^[[:space:]]*"uuid"[[:space:]]*:[[:space:]]*"\([^"]\+\)".*/\1/p' "${METADATA_FILE}" | head -n 1)"
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 EXT_DIR="${DATA_HOME}/gnome-shell/extensions/${UUID}"
 TMP_DIR=""
+
+if [[ -z "${UUID}" ]]; then
+  echo "Failed to read extension uuid from ${METADATA_FILE}." >&2
+  exit 1
+fi
 
 cleanup() {
   if [[ -n "${TMP_DIR}" ]] && [[ -d "${TMP_DIR}" ]]; then
@@ -20,7 +26,7 @@ extension_discoverable() {
 }
 
 diagnose_discovery_failure() {
-  echo "=== hop-launcher discovery diagnostics ===" >&2
+  echo "=== ${UUID} discovery diagnostics ===" >&2
   echo "Desktop user: $(whoami 2>/dev/null || echo unknown) (uid $(id -u 2>/dev/null || echo unknown))" >&2
   echo "XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-unset}" >&2
   echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unset}" >&2
@@ -100,7 +106,7 @@ if ! extension_discoverable; then
     (
       cd "${ROOT_DIR}"
       zip -qr "${ZIP_FILE}" \
-        metadata.json extension.js prefs.js stylesheet.css \
+        metadata.json extension.js prefs.js stylesheet.css LICENSE \
         lib ui schemas README.md \
         -x '*.git*' -x 'dist/*' -x 'scripts/*' -x 'tests/*' -x 'package.json' -x 'package-lock.json'
     )

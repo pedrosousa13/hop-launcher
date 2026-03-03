@@ -163,7 +163,7 @@ function formatLearningTimestamp(ms) {
 
 export default class HopLauncherPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
-        const settings = this.getSettings('org.hoplauncher.app');
+        const settings = this.getSettings('org.gnome.shell.extensions.hop-launcher');
 
         const page = new Adw.PreferencesPage({title: 'Hop Launcher'});
 

@@ -23,16 +23,23 @@ import {buildProviderFeatureMap} from './lib/providerFeatureMap.js';
 
 const KEY_TOGGLE = 'toggle-launcher';
 
+// Promisification mutates GJS prototypes globally, so keep it at module scope and do it once.
 Gio._promisify(Soup.Session.prototype, 'send_and_read_async', 'send_and_read_finish');
 
-function createSoupRequestJson() {
-    const session = new Soup.Session({
-        user_agent: 'hop-launcher/1.0',
-    });
-
+function createSoupRequestJson(session, cancellable, isDestroyed) {
     return async url => {
+        if (isDestroyed())
+            throw new Error('weather canceled');
+
         const message = Soup.Message.new('GET', url);
-        const bytes = await session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, null);
+        const bytes = await session.send_and_read_async(
+            message,
+            GLib.PRIORITY_DEFAULT,
+            cancellable
+        );
+        if (isDestroyed())
+            throw new Error('weather canceled');
+
         const status = Number(message.status_code ?? message.get_status?.());
         if (!Number.isFinite(status) || status < 200 || status >= 300)
             throw new Error(`weather http ${status}`);
@@ -47,7 +54,13 @@ function createSoupRequestJson() {
 
 export default class HopLauncherExtension extends Extension {
     enable() {
-        this._settings = this.getSettings('org.hoplauncher.app');
+        this._destroyed = false;
+        this._requestCancellable = new Gio.Cancellable();
+        this._soupSession = new Soup.Session({
+            user_agent: 'hop-launcher/1.0',
+        });
+
+        this._settings = this.getSettings('org.gnome.shell.extensions.hop-launcher');
         const openUrl = url => {
             try {
                 Gio.AppInfo.launch_default_for_uri(url, null);
@@ -65,7 +78,11 @@ export default class HopLauncherExtension extends Extension {
             timezone: new TimezoneProvider(),
             currency: new CurrencyProvider(this._settings),
             weather: new WeatherProvider({
-                soupRequestJson: createSoupRequestJson(),
+                requestJson: createSoupRequestJson(
+                    this._soupSession,
+                    this._requestCancellable,
+                    () => this._destroyed
+                ),
             }),
             webSearch: new WebSearchProvider(this._settings, {openUrl}),
         });
@@ -83,7 +100,7 @@ export default class HopLauncherExtension extends Extension {
             KEY_TOGGLE,
             this._settings,
             Meta.KeyBindingFlags.NONE,
-            Shell.ActionMode.ALL,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
             () => this._toggle()
         );
 
@@ -95,6 +112,10 @@ export default class HopLauncherExtension extends Extension {
     }
 
     disable() {
+        this._destroyed = true;
+        this._requestCancellable?.cancel();
+        this._soupSession?.abort();
+
         if (this._overlayVisualSettingIds?.length) {
             for (const id of this._overlayVisualSettingIds)
                 this._settings.disconnect(id);
@@ -113,7 +134,7 @@ export default class HopLauncherExtension extends Extension {
             this._overlay = null;
         }
 
-        for (const provider of this._providers) {
+        for (const provider of this._providers ?? []) {
             try {
                 provider.destroy?.();
             } catch (error) {
@@ -122,6 +143,8 @@ export default class HopLauncherExtension extends Extension {
         }
 
         this._providers = [];
+        this._requestCancellable = null;
+        this._soupSession = null;
         this._settings = null;
     }
 

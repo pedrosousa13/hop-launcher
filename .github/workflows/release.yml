@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (example: v1.2.3)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install JS dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run tests and validations
+        run: |
+          npm test
+          glib-compile-schemas --strict --dry-run schemas
+          bash scripts/bump-version.sh --check
+          bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh
+
+      - name: Build distributable zip
+        run: npm run package
+
+      - name: Resolve release asset path
+        id: asset
+        shell: bash
+        run: |
+          asset_path="$(ls dist/*.zip | head -n 1)"
+          if [[ -z "${asset_path}" ]]; then
+            echo "No zip file found in dist/." >&2
+            exit 1
+          fi
+          echo "asset_path=${asset_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hop-launcher-zip
+          path: ${{ steps.asset.outputs.asset_path }}
+          if-no-files-found: error
+
+      - name: Create GitHub release and upload zip
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          files: ${{ steps.asset.outputs.asset_path }}
+          generate_release_notes: true

@@ -23,14 +23,20 @@ test('metadata declares support for GNOME Shell 48+', () => {
 test('install script UUID matches metadata uuid', () => {
   const metadata = readMetadata();
   const script = readInstallScript();
-  const match = script.match(/UUID="([^"]+)"/);
-  assert.ok(match, 'install-local.sh must define UUID');
-  assert.equal(match[1], metadata.uuid);
+  assert.match(script, /METADATA_FILE="\$\{ROOT_DIR\}\/metadata\.json"/);
+  assert.match(script, /UUID="\$\(sed -n .*"\$\{METADATA_FILE\}".*\| head -n 1\)"/s);
+  assert.ok(script.includes('EXT_DIR="${DATA_HOME}/gnome-shell/extensions/${UUID}"'));
+  assert.equal(metadata.uuid, 'hop-launcher@hoplauncher.app');
 });
 
-test('metadata uses hoplauncher.app identity and website', () => {
+test('metadata uses GNOME extension schema namespace and repo URL', () => {
   const metadata = readMetadata();
   assert.equal(metadata.uuid, 'hop-launcher@hoplauncher.app');
-  assert.equal(metadata.url, 'https://hoplauncher.app');
-  assert.equal(metadata['settings-schema'], 'org.hoplauncher.app');
+  assert.equal(metadata.url, 'https://github.com/pedrosousa13/hop-launcher');
+  assert.equal(metadata['settings-schema'], 'org.gnome.shell.extensions.hop-launcher');
+});
+
+test('metadata omits deprecated version field', () => {
+  const metadata = readMetadata();
+  assert.equal(Object.hasOwn(metadata, 'version'), false);
 });

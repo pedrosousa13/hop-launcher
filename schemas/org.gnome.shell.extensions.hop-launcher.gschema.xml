@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.hoplauncher.app" path="/org/hoplauncher/app/">
+  <schema id="org.gnome.shell.extensions.hop-launcher" path="/org/gnome/shell/extensions/hop-launcher/">
     <key name="toggle-launcher" type="as">
       <default>[]</default>
       <summary>Toggle launcher keybinding</summary>
