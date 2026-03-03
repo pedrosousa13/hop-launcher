@@ -11,6 +11,20 @@ test('HopdProvider returns no rows for empty query', () => {
     assert.deepEqual(provider.getResults('', 'all'), []);
 });
 
+test('HopdProvider ignores non-utility queries', () => {
+    let calls = 0;
+    const provider = new HopdProvider({
+        requestIpc: async () => {
+            calls++;
+            return {result: {results: []}};
+        },
+    });
+
+    const rows = provider.getResults('firefox', 'all');
+    assert.deepEqual(rows, []);
+    assert.equal(calls, 0);
+});
+
 test('HopdProvider returns pending row then cached hopd rows', async () => {
     const calls = [];
     const provider = new HopdProvider({
