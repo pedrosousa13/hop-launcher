@@ -205,7 +205,6 @@ A staff-level performance and security review is documented in `docs/PERFORMANCE
 A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
 - `npm test` (fuzzy matcher tests)
 - `glib-compile-schemas --strict --dry-run schemas`
-- `bash scripts/bump-version.sh --check`
 - `bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh`
 - `npm run package`
 - uploads the generated `dist/*.zip` as a downloadable CI artifact

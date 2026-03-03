@@ -35,7 +35,6 @@ jobs:
         run: |
           npm test
           glib-compile-schemas --strict --dry-run schemas
-          bash scripts/bump-version.sh --check
           bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh
 
       - name: Build distributable zip

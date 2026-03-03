@@ -14,6 +14,14 @@ function readInstallScript() {
   return fs.readFileSync(path.join(rootDir, 'scripts/install-local.sh'), 'utf8');
 }
 
+function readCiWorkflow() {
+  return fs.readFileSync(path.join(rootDir, '.github/workflows/ci.yml'), 'utf8');
+}
+
+function readReleaseWorkflow() {
+  return fs.readFileSync(path.join(rootDir, '.github/workflows/release.yml'), 'utf8');
+}
+
 test('metadata declares support for GNOME Shell 48+', () => {
   const metadata = readMetadata();
   const majorVersions = (metadata['shell-version'] ?? []).map(v => Number.parseInt(String(v), 10));
@@ -39,4 +47,12 @@ test('metadata uses GNOME extension schema namespace and repo URL', () => {
 test('metadata omits deprecated version field', () => {
   const metadata = readMetadata();
   assert.equal(Object.hasOwn(metadata, 'version'), false);
+});
+
+test('CI workflows do not require metadata.version checks', () => {
+  const ci = readCiWorkflow();
+  const release = readReleaseWorkflow();
+  assert.equal(ci.includes('scripts/bump-version.sh --check'), false);
+  assert.equal(ci.includes('scripts/bump-version.sh --check-bump-against'), false);
+  assert.equal(release.includes('scripts/bump-version.sh --check'), false);
 });
