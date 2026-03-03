@@ -7,6 +7,8 @@ use std::rc::Rc;
 use gtk::gio;
 #[cfg(feature = "gtk_ui")]
 use gtk::prelude::*;
+#[cfg(feature = "gtk_ui")]
+use adw::prelude::*;
 
 #[cfg(feature = "gtk_ui")]
 use gtk4 as gtk;
