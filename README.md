@@ -138,11 +138,10 @@ Equivalent npm script:
 npm run package
 ```
 
-Publish a GitHub Release with the zip attached by pushing a version tag:
+Publish a GitHub Release with the zip attached by pushing to `main`:
 
 ```bash
-git tag v1.2.3
-git push origin v1.2.3
+git push origin main
 ```
 
 ## Repository layout
@@ -209,7 +208,7 @@ A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
 - `npm run package`
 - uploads the generated `dist/*.zip` as a downloadable CI artifact
 
-A release workflow is included at `.github/workflows/release.yml` and runs on `v*` tags (and manual dispatch):
+A release workflow is included at `.github/workflows/release.yml` and runs on pushes to `main` (and manual dispatch):
 - re-runs tests/validations
 - builds the zip
 - creates a GitHub Release and attaches the zip
