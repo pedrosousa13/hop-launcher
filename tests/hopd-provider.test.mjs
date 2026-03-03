@@ -40,13 +40,13 @@ test('HopdProvider returns pending row then cached hopd rows', async () => {
         },
     });
 
-    const pending = provider.getResults('weather', 'all');
+    const pending = provider.getResults('weather berlin', 'all');
     assert.equal(pending.length, 1);
     assert.match(pending[0].primaryText, /Searching via hopd/i);
 
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    const cached = provider.getResults('weather', 'all');
+    const cached = provider.getResults('weather berlin', 'all');
     assert.equal(cached.length, 1);
     assert.equal(cached[0].kind, 'utility');
     assert.equal(cached[0].primaryText, 'Weather');
@@ -72,9 +72,9 @@ test('HopdProvider execute action forwards actions.execute IPC request', async (
         },
     });
 
-    provider.getResults('emoji', 'all');
+    provider.getResults('emoji smile', 'all');
     await new Promise(resolve => setTimeout(resolve, 0));
-    const rows = provider.getResults('emoji', 'all');
+    const rows = provider.getResults('emoji smile', 'all');
     assert.equal(rows.length, 1);
     assert.equal(typeof rows[0].execute, 'function');
 
@@ -93,9 +93,9 @@ test('HopdProvider returns error row when IPC fails', async () => {
         },
     });
 
-    provider.getResults('timezone', 'all');
+    provider.getResults('time zurich', 'all');
     await new Promise(resolve => setTimeout(resolve, 0));
-    const rows = provider.getResults('timezone', 'all');
+    const rows = provider.getResults('time zurich', 'all');
     assert.equal(rows.length, 1);
     assert.match(rows[0].primaryText, /hopd unavailable/i);
 });
