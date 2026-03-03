@@ -48,12 +48,7 @@ impl HopdServer {
             },
             "search.query" => IpcResponse {
                 id: request.id,
-                result: json!({
-                    "results": [],
-                    "telemetry": {
-                        "elapsed_ms": 0,
-                    }
-                }),
+                result: json!(build_search_result(&request.params)),
                 error: None,
             },
             "actions.execute" => IpcResponse {
@@ -117,4 +112,108 @@ impl HopdServer {
 
 fn default_params() -> Value {
     json!({})
+}
+
+fn build_search_result(params: &Value) -> Value {
+    let query = params
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(8);
+
+    let mut matches: Vec<(i32, Value)> = catalog_items()
+        .into_iter()
+        .filter_map(|item| {
+            let title = item["title"]
+                .as_str()
+                .unwrap_or_default()
+                .to_lowercase();
+            let keywords = item["keywords"]
+                .as_str()
+                .unwrap_or_default()
+                .to_lowercase();
+
+            if query.is_empty() || title.contains(&query) || keywords.contains(&query) {
+                let score = score_item(&query, &title, &keywords, item["kind"].as_str().unwrap_or_default());
+                Some((score, item))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    matches.sort_by(|left, right| right.0.cmp(&left.0));
+    let results: Vec<Value> = matches
+        .into_iter()
+        .take(limit.max(1))
+        .map(|(_, item)| {
+            json!({
+                "id": item["id"],
+                "kind": item["kind"],
+                "title": item["title"],
+            })
+        })
+        .collect();
+
+    json!({
+        "results": results,
+        "telemetry": {
+            "elapsed_ms": 0,
+        }
+    })
+}
+
+fn score_item(query: &str, title: &str, keywords: &str, kind: &str) -> i32 {
+    let mut score = 0;
+    if !query.is_empty() && title == query {
+        score += 300;
+    }
+    if title.contains(query) {
+        score += 100;
+    }
+    if keywords.contains(query) {
+        score += 70;
+    }
+    if query.is_empty() {
+        score += 10;
+    }
+    score + kind_priority(kind)
+}
+
+fn kind_priority(kind: &str) -> i32 {
+    match kind {
+        "weather" => 30,
+        "timezone" => 20,
+        "emoji" => 10,
+        _ => 0,
+    }
+}
+
+fn catalog_items() -> Vec<Value> {
+    vec![
+        json!({
+            "id": "utility:weather",
+            "kind": "weather",
+            "title": "Weather",
+            "keywords": "weather forecast temperature"
+        }),
+        json!({
+            "id": "utility:timezone",
+            "kind": "timezone",
+            "title": "Timezone",
+            "keywords": "timezone world clock time"
+        }),
+        json!({
+            "id": "utility:emoji",
+            "kind": "emoji",
+            "title": "Emoji",
+            "keywords": "emoji picker symbols"
+        }),
+    ]
 }
