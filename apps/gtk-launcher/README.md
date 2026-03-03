@@ -11,4 +11,14 @@ cargo run --features gtk_ui
 ```
 
 `cargo run` without features prints a scaffold message (no GTK system dependency required).
-Use `--features gtk_ui` to launch the native GTK/libadwaita window.
+Use `--features gtk_ui` to launch the native GTK/libadwaita app.
+
+## Phase 1 behavior
+
+- Background-style app process with a toggleable launcher window.
+- Fallback accelerator: `Ctrl+Space` (`<Primary>space`) registered as app action.
+- Query typing calls `hopd` `search.query`.
+- Enter (or row activation) calls `hopd` `actions.execute`.
+
+This phase focuses on standalone usability and IPC integration.
+True compositor-wide global shortcut behavior is planned for the next phase.
