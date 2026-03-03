@@ -52,7 +52,7 @@ async fn handle_client(stream: UnixStream, server: std::sync::Arc<HopdServer>) -
             Ok(payload) => payload,
             Err(error) => {
                 format!(
-                    "{{\"id\":\"\",\"result\":null,\"error\":{{\"code\":-32700,\"message\":\"{}\"}}}}",
+                    "{{\"id\":null,\"result\":null,\"error\":{{\"code\":-32700,\"message\":\"{}\"}}}}",
                     error
                 )
             }
