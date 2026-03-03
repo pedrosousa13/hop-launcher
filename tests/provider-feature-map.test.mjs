@@ -15,6 +15,7 @@ test('buildProviderFeatureMap returns expected provider keys and ordering', () =
         currency: 'currency-provider',
         weather: 'weather-provider',
         webSearch: 'web-search-provider',
+        hopd: 'hopd-provider',
     });
 
     assert.deepEqual(mapping, [
@@ -28,5 +29,6 @@ test('buildProviderFeatureMap returns expected provider keys and ordering', () =
         ['currency-provider', 'feature-currency-enabled'],
         ['weather-provider', 'feature-weather-enabled'],
         ['web-search-provider', 'feature-web-search-enabled'],
+        ['hopd-provider', 'feature-hopd-enabled'],
     ]);
 });
