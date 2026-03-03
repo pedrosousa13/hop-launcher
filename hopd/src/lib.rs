@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -29,17 +30,22 @@ pub struct IpcResponse {
 #[derive(Debug, Default)]
 pub struct HopdServer {
     config: RwLock<HashMap<String, Value>>,
+    total_requests: AtomicU64,
 }
 
 impl HopdServer {
     pub fn new() -> Self {
         Self {
             config: RwLock::new(HashMap::new()),
+            total_requests: AtomicU64::new(0),
         }
     }
 
     pub async fn handle_json_line(&self, line: &str) -> Result<String, serde_json::Error> {
         let request: IpcRequest = serde_json::from_str(line)?;
+        if request.method != "metrics.snapshot" {
+            self.total_requests.fetch_add(1, Ordering::Relaxed);
+        }
         let response = match request.method.as_str() {
             "health.ping" => IpcResponse {
                 id: request.id,
@@ -96,6 +102,13 @@ impl HopdServer {
                     error: None,
                 }
             }
+            "metrics.snapshot" => IpcResponse {
+                id: request.id,
+                result: json!({
+                    "total_requests": self.total_requests.load(Ordering::Relaxed),
+                }),
+                error: None,
+            },
             _ => IpcResponse {
                 id: request.id,
                 result: Value::Null,
