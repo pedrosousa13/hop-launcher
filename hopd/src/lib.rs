@@ -49,7 +49,11 @@ impl HopdServer {
         let response = match request.method.as_str() {
             "health.ping" => IpcResponse {
                 id: request.id,
-                result: json!({"ok": true}),
+                result: json!({
+                    "ok": true,
+                    "service": "hopd",
+                    "protocol_version": 1
+                }),
                 error: None,
             },
             "search.query" => IpcResponse {
