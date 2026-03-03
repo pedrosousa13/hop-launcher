@@ -15,6 +15,8 @@ async fn handles_health_ping_request() {
     let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
     assert_eq!(parsed.id, "1");
     assert_eq!(parsed.result["ok"], true);
+    assert_eq!(parsed.result["service"], "hopd");
+    assert!(parsed.result["protocol_version"].is_number());
 }
 
 #[test]
