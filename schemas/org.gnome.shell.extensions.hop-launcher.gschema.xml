@@ -66,6 +66,11 @@
       <summary>Web search provider enabled</summary>
       <description>Show configured web search provider actions.</description>
     </key>
+    <key name="feature-hopd-enabled" type="b">
+      <default>false</default>
+      <summary>hopd daemon provider enabled</summary>
+      <description>Route utility-intent queries through the external hopd daemon.</description>
+    </key>
     <key name="open-animation-ms" type="i">
       <default>140</default>
       <summary>Open animation duration</summary>

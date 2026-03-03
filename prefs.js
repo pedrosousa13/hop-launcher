@@ -286,6 +286,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         addSwitchRow(featuresGroup, settings, 'feature-timezone-enabled', 'Timezone', 'Timezone clock/conversion results.');
         addSwitchRow(featuresGroup, settings, 'feature-weather-enabled', 'Weather', 'Weather lookup results.');
         addSwitchRow(featuresGroup, settings, 'feature-web-search-enabled', 'Web search', 'Appended web search actions.');
+        addSwitchRow(featuresGroup, settings, 'feature-hopd-enabled', 'hopd daemon', 'Route utility intents through cross-Linux hopd.');
         page.add(featuresGroup);
 
         const searchGroup = new Adw.PreferencesGroup({

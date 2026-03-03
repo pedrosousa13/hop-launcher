@@ -128,14 +128,14 @@ export default class HopLauncherExtension extends Extension {
                 ),
             }),
             webSearch: new WebSearchProvider(this._settings, {openUrl}),
+            hopd: new HopdProvider({
+                requestIpc: createHopdRequestIpc(resolveHopdSocketPath(), () => this._destroyed),
+                limit: this._settings.get_int('max-results'),
+            }),
         });
         this._providers = providers.map(([provider, key]) =>
             makeSettingsGatedProvider(provider, this._settings, key)
         );
-        this._providers.push(new HopdProvider({
-            requestIpc: createHopdRequestIpc(resolveHopdSocketPath(), () => this._destroyed),
-            limit: this._settings.get_int('max-results'),
-        }));
 
         this._overlay = new LauncherOverlay(this._settings, this._providers, this.path);
         Main.layoutManager.addChrome(this._overlay);
