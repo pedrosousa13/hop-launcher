@@ -46,6 +46,38 @@ async fn handles_search_query_with_empty_result_set() {
 }
 
 #[tokio::test]
+async fn search_query_returns_ranked_results_when_matches_exist() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2b","method":"search.query","params":{"query":"weather","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected at least one result");
+    assert_eq!(results[0]["kind"], "weather");
+    assert_eq!(results[0]["title"], "Weather");
+}
+
+#[tokio::test]
+async fn search_query_respects_limit() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2c","method":"search.query","params":{"query":"e","limit":1}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1);
+}
+
+#[tokio::test]
 async fn handles_actions_execute_acknowledgement() {
     let server = HopdServer::new();
     let response = server
