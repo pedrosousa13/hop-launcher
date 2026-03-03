@@ -1,0 +1,46 @@
+# hopd Local Install Guide
+
+## Prerequisites
+
+- Rust toolchain (`cargo`) installed
+- `systemctl --user` available
+- Optional: `socat` for quick socket checks
+
+## Install / Update
+
+From repository root:
+
+```bash
+npm run install:hopd:local
+```
+
+What this does:
+
+1. Builds `hopd` in release mode.
+2. Installs binary to `~/.local/bin/hopd`.
+3. Installs `~/.config/systemd/user/hopd.service`.
+4. Reloads user units and enables/starts `hopd.service`.
+
+## Useful options
+
+```bash
+# Preview commands without changing your system
+./scripts/install-hopd-local.sh --dry-run
+
+# Install unit without auto-starting service
+./scripts/install-hopd-local.sh --no-enable
+```
+
+## Verify daemon
+
+```bash
+systemctl --user status hopd.service
+```
+
+If `socat` is installed:
+
+```bash
+echo '{"id":"1","method":"health.ping"}' | socat - UNIX-CONNECT:${XDG_RUNTIME_DIR}/hopd.sock
+```
+
+Expected response contains `"ok":true`.

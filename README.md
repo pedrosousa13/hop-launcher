@@ -114,6 +114,16 @@ Watch GNOME Shell logs in another terminal:
 journalctl --user -f /usr/bin/gnome-shell
 ```
 
+## hopd local install (cross-Linux daemon work)
+
+Install or update the new Rust daemon locally:
+
+```bash
+npm run install:hopd:local
+```
+
+See full guide: `docs/HOPD_LOCAL_INSTALL.md`.
+
 Open preferences:
 
 ```bash
