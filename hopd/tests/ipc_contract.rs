@@ -118,6 +118,29 @@ async fn supports_config_set_and_get_roundtrip() {
 }
 
 #[tokio::test]
+async fn exposes_metrics_snapshot_with_request_count() {
+    let server = HopdServer::new();
+    let _ = server
+        .handle_json_line(r#"{"id":"m1","method":"health.ping"}"#)
+        .await
+        .expect("health response");
+    let _ = server
+        .handle_json_line(r#"{"id":"m2","method":"search.query","params":{"query":"weather","limit":2}}"#)
+        .await
+        .expect("search response");
+
+    let response = server
+        .handle_json_line(r#"{"id":"m3","method":"metrics.snapshot"}"#)
+        .await
+        .expect("metrics response");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    assert_eq!(parsed.id, "m3");
+    assert_eq!(parsed.result["total_requests"], 2);
+    assert!(parsed.error.is_none());
+}
+
+#[tokio::test]
 async fn returns_error_for_unknown_method() {
     let server = HopdServer::new();
     let response = server
