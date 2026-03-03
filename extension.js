@@ -18,6 +18,7 @@ import {EmojiProvider} from './lib/providers/emoji.js';
 import {FilesProvider} from './lib/providers/files.js';
 import {WeatherProvider} from './lib/providers/weather.js';
 import {WebSearchProvider} from './lib/providers/webSearch.js';
+import {HopdProvider} from './lib/providers/hopd.js';
 import {makeSettingsGatedProvider} from './lib/providerToggleWrapper.js';
 import {buildProviderFeatureMap} from './lib/providerFeatureMap.js';
 
@@ -49,6 +50,48 @@ function createSoupRequestJson(session, cancellable, isDestroyed) {
             ? payload
             : new TextDecoder().decode(payload);
         return JSON.parse(json);
+    };
+}
+
+function resolveHopdSocketPath() {
+    const explicitPath = (GLib.getenv('HOPD_SOCKET') ?? '').trim();
+    if (explicitPath)
+        return explicitPath;
+
+    const runtimeDir = (GLib.getenv('XDG_RUNTIME_DIR') ?? '').trim();
+    if (runtimeDir)
+        return GLib.build_filenamev([runtimeDir, 'hopd.sock']);
+
+    return '/tmp/hopd.sock';
+}
+
+function createHopdRequestIpc(socketPath, isDestroyed) {
+    return async payload => {
+        if (isDestroyed())
+            throw new Error('hopd canceled');
+
+        const client = new Gio.SocketClient();
+        const address = Gio.UnixSocketAddress.new(socketPath);
+        const connection = client.connect(address, null);
+        try {
+            const request = JSON.stringify(payload);
+            const output = connection.get_output_stream();
+            output.write_all(new TextEncoder().encode(`${request}\n`), null);
+
+            const input = new Gio.DataInputStream({
+                base_stream: connection.get_input_stream(),
+            });
+            const [line] = input.read_line_utf8(null);
+            if (!line)
+                throw new Error('hopd empty response');
+            return JSON.parse(line);
+        } finally {
+            try {
+                connection.close(null);
+            } catch (_) {
+                // ignore close failures
+            }
+        }
     };
 }
 
@@ -89,6 +132,10 @@ export default class HopLauncherExtension extends Extension {
         this._providers = providers.map(([provider, key]) =>
             makeSettingsGatedProvider(provider, this._settings, key)
         );
+        this._providers.push(new HopdProvider({
+            requestIpc: createHopdRequestIpc(resolveHopdSocketPath(), () => this._destroyed),
+            limit: this._settings.get_int('max-results'),
+        }));
 
         this._overlay = new LauncherOverlay(this._settings, this._providers, this.path);
         Main.layoutManager.addChrome(this._overlay);

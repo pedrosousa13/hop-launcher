@@ -2,15 +2,19 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn socket_path() -> String {
-    let millis = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
-        .as_millis();
-    format!("/tmp/hopd-test-{}-{}.sock", std::process::id(), millis)
+        .as_nanos();
+    let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("/tmp/hopd-test-{}-{}-{}.sock", std::process::id(), nanos, seq)
 }
 
 fn spawn_hopd(path: &str) -> Child {
