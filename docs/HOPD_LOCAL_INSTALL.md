@@ -44,3 +44,11 @@ echo '{"id":"1","method":"health.ping"}' | socat - UNIX-CONNECT:${XDG_RUNTIME_DI
 ```
 
 Expected response contains `"ok":true`.
+
+## Enable in GNOME extension
+
+After installing and starting `hopd`, open Hop Launcher preferences and enable:
+
+- `Main features` -> `hopd daemon`
+
+`hopd` integration is off by default. Once enabled, utility-intent queries (weather/timezone/emoji routes) can be served by the daemon.
