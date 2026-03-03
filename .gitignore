@@ -1,4 +1,5 @@
 docs/plans/*.md
 
 # Rust
-hopd/target/
+crates/hopd/target/
+apps/gtk-launcher/target/

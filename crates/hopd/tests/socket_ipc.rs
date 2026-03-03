@@ -49,6 +49,25 @@ fn send_line(path: &str, line: &str) -> serde_json::Value {
     serde_json::from_str(response.trim()).expect("parse json response")
 }
 
+fn send_lines_in_single_connection(path: &str, lines: &[&str]) -> Vec<serde_json::Value> {
+    let mut stream = UnixStream::connect(path).expect("connect socket");
+    for line in lines {
+        stream.write_all(line.as_bytes()).expect("write request");
+        stream.write_all(b"\n").expect("write newline");
+    }
+    stream.flush().expect("flush request bytes");
+
+    let mut reader = BufReader::new(stream);
+    let mut responses = Vec::new();
+    for _ in lines {
+        let mut response = String::new();
+        reader.read_line(&mut response).expect("read response");
+        responses.push(serde_json::from_str(response.trim()).expect("parse json response"));
+    }
+
+    responses
+}
+
 #[test]
 fn daemon_serves_health_ping_over_socket() {
     let path = socket_path();
@@ -73,6 +92,59 @@ fn daemon_returns_standard_parse_error_for_invalid_json() {
     let response = send_line(&path, r#"{"id":"bad","method":"health.ping""#);
     assert!(response["id"].is_null());
     assert_eq!(response["error"]["code"], -32700);
+
+    let _ = child.kill();
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn daemon_handles_search_and_metrics_over_socket() {
+    let path = socket_path();
+    let mut child = spawn_hopd(&path);
+    wait_for_socket(&path);
+
+    let responses = send_lines_in_single_connection(
+        &path,
+        &[
+            r#"{"id":"s2","method":"search.query","params":{"query":"weather emoji","limit":5}}"#,
+            r#"{"id":"s3","method":"metrics.snapshot"}"#,
+        ],
+    );
+
+    assert_eq!(responses[0]["id"], "s2");
+    assert!(responses[0]["result"]["results"].is_array());
+    let results = responses[0]["result"]["results"].as_array().expect("results array");
+    assert!(results.iter().any(|row| row["kind"] == "weather"));
+    assert!(results.iter().any(|row| row["kind"] == "emoji"));
+
+    assert_eq!(responses[1]["id"], "s3");
+    assert_eq!(responses[1]["result"]["total_requests"], 1);
+
+    let _ = child.kill();
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn daemon_supports_config_roundtrip_over_socket() {
+    let path = socket_path();
+    let mut child = spawn_hopd(&path);
+    wait_for_socket(&path);
+
+    let responses = send_lines_in_single_connection(
+        &path,
+        &[
+            r#"{"id":"s4","method":"config.set","params":{"key":"features.weather","value":false}}"#,
+            r#"{"id":"s5","method":"config.get","params":{"key":"features.weather"}}"#,
+        ],
+    );
+
+    assert_eq!(responses[0]["id"], "s4");
+    assert_eq!(responses[0]["result"]["ok"], true);
+    assert!(responses[0]["error"].is_null());
+
+    assert_eq!(responses[1]["id"], "s5");
+    assert_eq!(responses[1]["result"]["value"], false);
+    assert!(responses[1]["error"].is_null());
 
     let _ = child.kill();
     let _ = std::fs::remove_file(path);

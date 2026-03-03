@@ -80,6 +80,39 @@ async fn search_query_respects_limit() {
 }
 
 #[tokio::test]
+async fn search_query_aggregates_multiple_providers() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2d","method":"search.query","params":{"query":"weather emoji","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(results.iter().any(|row| row["kind"] == "weather"));
+    assert!(results.iter().any(|row| row["kind"] == "emoji"));
+}
+
+#[tokio::test]
+async fn search_query_handles_timezone_intent_for_city_phrase() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2e","method":"search.query","params":{"query":"time tokyo","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected timezone result");
+    assert_eq!(results[0]["kind"], "timezone");
+    assert_eq!(results[0]["title"], "Time in Tokyo");
+}
+
+#[tokio::test]
 async fn handles_actions_execute_acknowledgement() {
     let server = HopdServer::new();
     let response = server
