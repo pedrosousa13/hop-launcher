@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "test:hopd": "cargo test --manifest-path hopd/Cargo.toml",
+    "test:hopd": "cargo test --manifest-path ../../crates/hopd/Cargo.toml",
     "install:hopd:local": "bash ./scripts/install-hopd-local.sh",
     "install:local": "bash ./scripts/install-local.sh",
     "package": "bash ./scripts/package-extension.sh",

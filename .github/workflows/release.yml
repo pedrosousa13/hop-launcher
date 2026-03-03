@@ -21,26 +21,38 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: apps/gnome-extension/package-lock.json
 
       - name: Install JS dependencies
         run: npm ci --ignore-scripts
+        working-directory: apps/gnome-extension
 
-      - name: Run tests and validations
+      - name: Run GNOME extension tests and validations
         run: |
           npm test
           glib-compile-schemas --strict --dry-run schemas
           bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh
+        working-directory: apps/gnome-extension
+
+      - name: Run hopd tests
+        run: cargo test
+        working-directory: crates/hopd
+
+      - name: Run GTK launcher tests
+        run: cargo test
+        working-directory: apps/gtk-launcher
 
       - name: Build distributable zip
         run: npm run package
+        working-directory: apps/gnome-extension
 
       - name: Resolve release asset path
         id: asset
         shell: bash
         run: |
-          asset_path="$(ls dist/*.zip | head -n 1)"
+          asset_path="$(ls apps/gnome-extension/dist/*.zip | head -n 1)"
           if [[ -z "${asset_path}" ]]; then
-            echo "No zip file found in dist/." >&2
+            echo "No zip file found in apps/gnome-extension/dist/." >&2
             exit 1
           fi
           echo "asset_path=${asset_path}" >> "$GITHUB_OUTPUT"

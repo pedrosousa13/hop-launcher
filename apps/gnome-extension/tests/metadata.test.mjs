@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = path.resolve(rootDir, '..', '..');
 
 function readMetadata() {
   const raw = fs.readFileSync(path.join(rootDir, 'metadata.json'), 'utf8');
@@ -15,11 +16,11 @@ function readInstallScript() {
 }
 
 function readCiWorkflow() {
-  return fs.readFileSync(path.join(rootDir, '.github/workflows/ci.yml'), 'utf8');
+  return fs.readFileSync(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
 }
 
 function readReleaseWorkflow() {
-  return fs.readFileSync(path.join(rootDir, '.github/workflows/release.yml'), 'utf8');
+  return fs.readFileSync(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8');
 }
 
 test('metadata declares support for GNOME Shell 48+', () => {

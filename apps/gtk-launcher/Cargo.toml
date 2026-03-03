@@ -1,0 +1,13 @@
+[package]
+name = "hop-launcher-gtk"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+gtk_ui = ["dep:gtk4", "dep:libadwaita"]
+
+[dependencies]
+serde_json = "1.0"
+gtk4 = { version = "0.9", optional = true }
+libadwaita = { version = "0.7", optional = true }

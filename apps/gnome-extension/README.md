@@ -33,7 +33,7 @@ A polished command palette for GNOME Shell 45+ on Wayland.
 
 ## Super-quick local test (recommended)
 
-From this repo root:
+From this folder (`apps/gnome-extension`):
 
 ```bash
 ./scripts/install-local.sh
@@ -116,7 +116,7 @@ journalctl --user -f /usr/bin/gnome-shell
 
 ## hopd local install (cross-Linux daemon work)
 
-Install or update the new Rust daemon locally:
+Install or update the Rust daemon locally:
 
 ```bash
 npm run install:hopd:local
@@ -127,7 +127,7 @@ See full guide: `docs/HOPD_LOCAL_INSTALL.md`.
 Open preferences:
 
 ```bash
-gnome-extensions prefs hop-launcher
+gnome-extensions prefs hop-launcher@hoplauncher.app
 ```
 
 ## Versioning
@@ -154,7 +154,7 @@ Publish a GitHub Release with the zip attached by pushing to `main`:
 git push origin main
 ```
 
-## Repository layout
+## Extension folder layout
 
 - `metadata.json`
 - `extension.js`
@@ -211,14 +211,14 @@ A staff-level performance and security review is documented in `docs/PERFORMANCE
 
 ## CI checks (GitHub Actions)
 
-A CI workflow is included at `.github/workflows/ci.yml` and runs on push/PR:
+A CI workflow is included at `../../.github/workflows/ci.yml` and runs on push/PR:
 - `npm test` (fuzzy matcher tests)
 - `glib-compile-schemas --strict --dry-run schemas`
 - `bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh`
 - `npm run package`
 - uploads the generated `dist/*.zip` as a downloadable CI artifact
 
-A release workflow is included at `.github/workflows/release.yml` and runs on pushes to `main` (and manual dispatch):
+A release workflow is included at `../../.github/workflows/release.yml` and runs on pushes to `main` (and manual dispatch):
 - re-runs tests/validations
 - builds the zip
 - creates a GitHub Release and attaches the zip

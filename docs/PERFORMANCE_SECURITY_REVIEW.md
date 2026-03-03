@@ -79,7 +79,7 @@ Reviewed runtime paths in:
 
 ## Manual validation checklist
 
-1. Run `./scripts/install-local.sh`.
+1. Run `./apps/gnome-extension/scripts/install-local.sh`.
 2. Toggle launcher with `Super+Space` repeatedly (20+ cycles).
 3. Type quickly in launcher and verify no visual stalls.
 4. Verify `w ` and `a ` prefixes.

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOPD_DIR="$ROOT_DIR/hopd"
+HOPD_DIR="$ROOT_DIR/../../crates/hopd"
 INSTALL_BIN_DIR="${HOME}/.local/bin"
 INSTALL_BIN_PATH="${INSTALL_BIN_DIR}/hopd"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"

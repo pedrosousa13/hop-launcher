@@ -11,6 +11,7 @@
 From repository root:
 
 ```bash
+cd apps/gnome-extension
 npm run install:hopd:local
 ```
 
@@ -25,6 +26,7 @@ What this does:
 
 ```bash
 # Preview commands without changing your system
+cd apps/gnome-extension
 ./scripts/install-hopd-local.sh --dry-run
 
 # Install unit without auto-starting service

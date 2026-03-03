@@ -6,7 +6,7 @@ on:
     branches: [main, master, work]
 
 jobs:
-  test:
+  gnome-extension:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,25 +19,51 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: apps/gnome-extension/package-lock.json
 
       - name: Install JS dependencies
         run: npm ci --ignore-scripts
+        working-directory: apps/gnome-extension
 
       - name: Run fuzzy matcher tests
         run: npm test
+        working-directory: apps/gnome-extension
 
       - name: Validate GSettings schema
         run: glib-compile-schemas --strict --dry-run schemas
+        working-directory: apps/gnome-extension
 
       - name: Validate helper scripts syntax
         run: bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh
+        working-directory: apps/gnome-extension
 
       - name: Build distributable zip
         run: npm run package
+        working-directory: apps/gnome-extension
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: hop-launcher-zip
-          path: dist/*.zip
+          path: apps/gnome-extension/dist/*.zip
           if-no-files-found: error
+
+  hopd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run hopd tests
+        run: cargo test
+        working-directory: crates/hopd
+
+  gtk-launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run GTK launcher tests
+        run: cargo test
+        working-directory: apps/gtk-launcher
