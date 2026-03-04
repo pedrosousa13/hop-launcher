@@ -431,6 +431,22 @@ fn install_css() {
 .hop-launcher-title-text {
   font-weight: 600;
 }
+
+.hop-launcher-icon {
+  margin-end: 2px;
+}
+
+.hop-launcher-icon-app {
+  padding: 2px;
+  border-radius: 9px;
+  background: alpha(@view_bg_color, 0.20);
+}
+
+.hop-launcher-icon-window {
+  padding: 1px;
+  border-radius: 7px;
+  background: alpha(@view_bg_color, 0.12);
+}
 "#;
 
     let provider = gtk::CssProvider::new();
@@ -504,6 +520,12 @@ fn refresh_results(
             for row in &rows {
                 let icon = build_result_icon(row);
                 icon.set_pixel_size(icon_size_for_row(row));
+                icon.add_css_class("hop-launcher-icon");
+                if row.kind == "app" {
+                    icon.add_css_class("hop-launcher-icon-app");
+                } else if row.kind == "window" {
+                    icon.add_css_class("hop-launcher-icon-window");
+                }
                 let title = gtk::Label::builder()
                     .xalign(0.0)
                     .label(&row.title)
