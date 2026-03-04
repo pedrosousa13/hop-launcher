@@ -60,11 +60,14 @@ impl HopdServer {
                 }),
                 error: None,
             },
-            "search.query" => IpcResponse {
-                id: request.id,
-                result: json!(build_search_result(&request.params)),
-                error: None,
-            },
+            "search.query" => {
+                let config = self.config.read().await.clone();
+                IpcResponse {
+                    id: request.id,
+                    result: json!(build_search_result(&request.params, &config)),
+                    error: None,
+                }
+            }
             "actions.execute" => IpcResponse {
                 id: request.id,
                 result: actions::execute(&request.params),
@@ -132,7 +135,7 @@ fn default_params() -> Value {
     json!({})
 }
 
-fn build_search_result(params: &Value) -> Value {
+fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value {
     let query = params
         .get("query")
         .and_then(Value::as_str)
@@ -149,11 +152,17 @@ fn build_search_result(params: &Value) -> Value {
         .and_then(Value::as_str)
         .unwrap_or("all");
 
+    let rank = RankSettings::from_config(config);
     let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query, mode)
         .into_iter()
         .filter_map(|item| {
-            let score = score_item(&query, &item);
-            if score > 0 {
+            let score = score_item(&query, &item, &rank);
+            let is_match = if query.is_empty() {
+                score > 0
+            } else {
+                score >= rank.min_fuzzy_score
+            };
+            if is_match {
                 Some((score, item))
             } else {
                 None
@@ -184,6 +193,66 @@ fn build_search_result(params: &Value) -> Value {
             "elapsed_ms": 0,
         }
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RankSettings {
+    weight_windows: i32,
+    weight_apps: i32,
+    weight_recents: i32,
+    weight_files: i32,
+    weight_emoji: i32,
+    weight_utility: i32,
+    min_fuzzy_score: i32,
+}
+
+impl Default for RankSettings {
+    fn default() -> Self {
+        Self {
+            weight_windows: 30,
+            weight_apps: 20,
+            weight_recents: 10,
+            weight_files: 12,
+            weight_emoji: 8,
+            weight_utility: 6,
+            min_fuzzy_score: 30,
+        }
+    }
+}
+
+impl RankSettings {
+    fn from_config(config: &HashMap<String, Value>) -> Self {
+        let default = Self::default();
+        Self {
+            weight_windows: config_int(config, "ranking.weight_windows", default.weight_windows, -200, 200),
+            weight_apps: config_int(config, "ranking.weight_apps", default.weight_apps, -200, 200),
+            weight_recents: config_int(config, "ranking.weight_recents", default.weight_recents, -200, 200),
+            weight_files: config_int(config, "ranking.weight_files", default.weight_files, -200, 200),
+            weight_emoji: config_int(config, "ranking.weight_emoji", default.weight_emoji, -200, 200),
+            weight_utility: config_int(config, "ranking.weight_utility", default.weight_utility, -200, 200),
+            min_fuzzy_score: config_int(
+                config,
+                "ranking.min_fuzzy_score",
+                default.min_fuzzy_score,
+                0,
+                400,
+            ),
+        }
+    }
+}
+
+fn config_int(
+    config: &HashMap<String, Value>,
+    key: &str,
+    fallback: i32,
+    min: i32,
+    max: i32,
+) -> i32 {
+    config
+        .get(key)
+        .and_then(Value::as_i64)
+        .map(|value| value.clamp(min as i64, max as i64) as i32)
+        .unwrap_or(fallback)
 }
 
 fn diversify_matches(matches: Vec<(i32, SearchItem)>, limit: usize) -> Vec<(i32, SearchItem)> {
@@ -263,7 +332,7 @@ fn aggregate_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
     items
 }
 
-fn score_item(query: &str, item: &SearchItem) -> i32 {
+fn score_item(query: &str, item: &SearchItem, rank: &RankSettings) -> i32 {
     let title = item.title.to_lowercase();
     let keywords = item.keywords.to_lowercase();
     let mut score = 0;
@@ -287,16 +356,21 @@ fn score_item(query: &str, item: &SearchItem) -> i32 {
         }
     }
 
-    score + kind_priority(item.kind.as_str())
+    if !query.is_empty() && score <= 0 {
+        return 0;
+    }
+
+    score + kind_priority(item.kind.as_str(), rank)
 }
 
-fn kind_priority(kind: &str) -> i32 {
+fn kind_priority(kind: &str, rank: &RankSettings) -> i32 {
     match kind {
-        "calculator" => 35,
-        "currency" => 32,
-        "weather" => 30,
-        "timezone" => 20,
-        "emoji" => 10,
+        "window" => rank.weight_windows,
+        "app" => rank.weight_apps,
+        "recent" => rank.weight_recents,
+        "file" => rank.weight_files,
+        "emoji" => rank.weight_emoji,
+        "calculator" | "currency" | "weather" | "timezone" | "utility" => rank.weight_utility,
         _ => 0,
     }
 }

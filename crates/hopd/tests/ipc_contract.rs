@@ -226,6 +226,35 @@ async fn supports_config_set_and_get_roundtrip() {
 }
 
 #[tokio::test]
+async fn ranking_config_affects_search_order() {
+    let server = HopdServer::new();
+    let _ = server
+        .handle_json_line(
+            r#"{"id":"rw1","method":"config.set","params":{"key":"ranking.weight_windows","value":120}}"#,
+        )
+        .await
+        .expect("set weight windows");
+    let _ = server
+        .handle_json_line(
+            r#"{"id":"rw2","method":"config.set","params":{"key":"ranking.weight_apps","value":0}}"#,
+        )
+        .await
+        .expect("set weight apps");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"rw3","method":"search.query","params":{"query":"workspace","limit":3}}"#,
+        )
+        .await
+        .expect("search response");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected ranked rows");
+    assert_eq!(results[0]["kind"], "window");
+}
+
+#[tokio::test]
 async fn exposes_metrics_snapshot_with_request_count() {
     let server = HopdServer::new();
     let _ = server

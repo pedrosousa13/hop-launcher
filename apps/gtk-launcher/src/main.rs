@@ -53,6 +53,13 @@ struct LauncherUiSettings {
     feature_recents_enabled: bool,
     feature_settings_enabled: bool,
     feature_utility_enabled: bool,
+    weight_windows: i32,
+    weight_apps: i32,
+    weight_recents: i32,
+    weight_files: i32,
+    weight_emoji: i32,
+    weight_utility: i32,
+    min_fuzzy_score: i32,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -68,6 +75,13 @@ impl Default for LauncherUiSettings {
             feature_recents_enabled: true,
             feature_settings_enabled: true,
             feature_utility_enabled: true,
+            weight_windows: 30,
+            weight_apps: 20,
+            weight_recents: 10,
+            weight_files: 12,
+            weight_emoji: 8,
+            weight_utility: 6,
+            min_fuzzy_score: 30,
         }
     }
 }
@@ -132,6 +146,41 @@ fn load_ui_settings() -> LauncherUiSettings {
         .get("feature_utility_enabled")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(default.feature_utility_enabled);
+    let weight_windows = json
+        .get("weight_windows")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_windows);
+    let weight_apps = json
+        .get("weight_apps")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_apps);
+    let weight_recents = json
+        .get("weight_recents")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_recents);
+    let weight_files = json
+        .get("weight_files")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_files);
+    let weight_emoji = json
+        .get("weight_emoji")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_emoji);
+    let weight_utility = json
+        .get("weight_utility")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_utility);
+    let min_fuzzy_score = json
+        .get("min_fuzzy_score")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(0, 400) as i32)
+        .unwrap_or(default.min_fuzzy_score);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -143,6 +192,13 @@ fn load_ui_settings() -> LauncherUiSettings {
         feature_recents_enabled,
         feature_settings_enabled,
         feature_utility_enabled,
+        weight_windows,
+        weight_apps,
+        weight_recents,
+        weight_files,
+        weight_emoji,
+        weight_utility,
+        min_fuzzy_score,
     }
 }
 
@@ -164,10 +220,44 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "feature_recents_enabled": settings.feature_recents_enabled,
         "feature_settings_enabled": settings.feature_settings_enabled,
         "feature_utility_enabled": settings.feature_utility_enabled,
+        "weight_windows": settings.weight_windows,
+        "weight_apps": settings.weight_apps,
+        "weight_recents": settings.weight_recents,
+        "weight_files": settings.weight_files,
+        "weight_emoji": settings.weight_emoji,
+        "weight_utility": settings.weight_utility,
+        "min_fuzzy_score": settings.min_fuzzy_score,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
     fs::write(path, encoded).map_err(|error| format!("write settings failed: {error}"))
+}
+
+#[cfg(feature = "gtk_ui")]
+fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
+    let values = [
+        ("ui.overlay_opacity_percent", serde_json::json!(settings.overlay_opacity_percent)),
+        ("ui.max_results", serde_json::json!(settings.max_results)),
+        ("ui.frameless_window", serde_json::json!(settings.frameless_window)),
+        ("features.apps", serde_json::json!(settings.feature_apps_enabled)),
+        ("features.windows", serde_json::json!(settings.feature_windows_enabled)),
+        ("features.files", serde_json::json!(settings.feature_files_enabled)),
+        ("features.recents", serde_json::json!(settings.feature_recents_enabled)),
+        ("features.settings", serde_json::json!(settings.feature_settings_enabled)),
+        ("features.utility", serde_json::json!(settings.feature_utility_enabled)),
+        ("ranking.weight_windows", serde_json::json!(settings.weight_windows)),
+        ("ranking.weight_apps", serde_json::json!(settings.weight_apps)),
+        ("ranking.weight_recents", serde_json::json!(settings.weight_recents)),
+        ("ranking.weight_files", serde_json::json!(settings.weight_files)),
+        ("ranking.weight_emoji", serde_json::json!(settings.weight_emoji)),
+        ("ranking.weight_utility", serde_json::json!(settings.weight_utility)),
+        ("ranking.min_fuzzy_score", serde_json::json!(settings.min_fuzzy_score)),
+    ];
+    for (key, value) in values {
+        if let Err(error) = config_set(socket_path, key, value) {
+            eprintln!("failed to sync setting {key} to hopd: {error}");
+        }
+    }
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -290,6 +380,7 @@ fn run() {
         if let Err(error) = start_control_listener(default_control_socket_path(), toggle_tx) {
             eprintln!("failed to start control listener: {}", error);
         }
+        sync_settings_to_hopd(&socket_path, &ui_settings.borrow());
 
         {
             let list = list.clone();
@@ -711,6 +802,10 @@ fn open_settings_window(
         .title("Providers")
         .description("Toggle result categories shown by the launcher.")
         .build();
+    let ranking = adw::PreferencesGroup::builder()
+        .title("Ranking")
+        .description("Adjust provider weights and fuzzy threshold.")
+        .build();
 
     let opacity_row = adw::ActionRow::builder()
         .title("Launcher translucency (%)")
@@ -882,9 +977,95 @@ fn open_settings_window(
         |state, value| state.feature_utility_enabled = value,
     );
 
+    add_integer_spin_row(
+        &ranking,
+        "Window weight",
+        "Additional score applied to window matches.",
+        settings.borrow().weight_windows,
+        -200,
+        200,
+        "ranking.weight_windows",
+        settings.clone(),
+        socket_path,
+        |state, value| state.weight_windows = value,
+    );
+    add_integer_spin_row(
+        &ranking,
+        "App weight",
+        "Additional score applied to app matches.",
+        settings.borrow().weight_apps,
+        -200,
+        200,
+        "ranking.weight_apps",
+        settings.clone(),
+        socket_path,
+        |state, value| state.weight_apps = value,
+    );
+    add_integer_spin_row(
+        &ranking,
+        "Recent weight",
+        "Additional score applied to recent file matches.",
+        settings.borrow().weight_recents,
+        -200,
+        200,
+        "ranking.weight_recents",
+        settings.clone(),
+        socket_path,
+        |state, value| state.weight_recents = value,
+    );
+    add_integer_spin_row(
+        &ranking,
+        "File weight",
+        "Additional score applied to file matches.",
+        settings.borrow().weight_files,
+        -200,
+        200,
+        "ranking.weight_files",
+        settings.clone(),
+        socket_path,
+        |state, value| state.weight_files = value,
+    );
+    add_integer_spin_row(
+        &ranking,
+        "Emoji weight",
+        "Additional score applied to emoji matches.",
+        settings.borrow().weight_emoji,
+        -200,
+        200,
+        "ranking.weight_emoji",
+        settings.clone(),
+        socket_path,
+        |state, value| state.weight_emoji = value,
+    );
+    add_integer_spin_row(
+        &ranking,
+        "Utility weight",
+        "Additional score applied to utility matches.",
+        settings.borrow().weight_utility,
+        -200,
+        200,
+        "ranking.weight_utility",
+        settings.clone(),
+        socket_path,
+        |state, value| state.weight_utility = value,
+    );
+    add_integer_spin_row(
+        &ranking,
+        "Min fuzzy score",
+        "Minimum score required for non-empty search results.",
+        settings.borrow().min_fuzzy_score,
+        0,
+        400,
+        "ranking.min_fuzzy_score",
+        settings.clone(),
+        socket_path,
+        |state, value| state.min_fuzzy_score = value,
+    );
+
     page.add(&appearance);
     page.add(&behavior);
     page.add(&providers);
+    page.add(&ranking);
     prefs.add(&page);
     prefs.present();
 }
@@ -921,6 +1102,55 @@ fn add_provider_switch_row(
                 eprintln!("failed to save launcher settings: {error}");
             }
             if let Err(error) = config_set(&socket_path, &hopd_key, serde_json::json!(widget.is_active())) {
+                eprintln!("failed to sync setting to hopd: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    group.add(&row);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn add_integer_spin_row(
+    group: &adw::PreferencesGroup,
+    title: &str,
+    subtitle: &str,
+    initial_value: i32,
+    min: i32,
+    max: i32,
+    hopd_key: &str,
+    settings: Rc<RefCell<LauncherUiSettings>>,
+    socket_path: &str,
+    apply_value: fn(&mut LauncherUiSettings, i32),
+) {
+    let row = adw::ActionRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .build();
+    let adjustment = gtk::Adjustment::new(
+        initial_value as f64,
+        min as f64,
+        max as f64,
+        1.0,
+        5.0,
+        0.0,
+    );
+    let spin = gtk::SpinButton::new(Some(&adjustment), 1.0, 0);
+    spin.set_valign(gtk::Align::Center);
+    row.add_suffix(&spin);
+    row.set_activatable_widget(Some(&spin));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let hopd_key = hopd_key.to_string();
+        spin.connect_value_changed(move |widget| {
+            let mut next = settings.borrow().clone();
+            let value = widget.value_as_int().clamp(min, max);
+            apply_value(&mut next, value);
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) = config_set(&socket_path, &hopd_key, serde_json::json!(value)) {
                 eprintln!("failed to sync setting to hopd: {error}");
             }
             *settings.borrow_mut() = next;
