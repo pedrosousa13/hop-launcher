@@ -79,7 +79,7 @@ struct LauncherUiSettings {
 impl Default for LauncherUiSettings {
     fn default() -> Self {
         Self {
-            overlay_opacity_percent: 94,
+            overlay_opacity_percent: 96,
             max_results: 12,
             frameless_window: true,
             feature_apps_enabled: true,
@@ -161,7 +161,7 @@ fn load_ui_settings() -> LauncherUiSettings {
     let overlay = json
         .get("overlay_opacity_percent")
         .and_then(serde_json::Value::as_i64)
-        .map(|v| v.clamp(70, 100) as i32)
+        .map(|v| v.clamp(80, 100) as i32)
         .unwrap_or(default.overlay_opacity_percent);
     let max_results = json
         .get("max_results")
@@ -1177,7 +1177,7 @@ fn open_settings_window(
         .build();
     let opacity_adjustment = gtk::Adjustment::new(
         settings.borrow().overlay_opacity_percent as f64,
-        70.0,
+        80.0,
         100.0,
         1.0,
         5.0,
@@ -1194,7 +1194,7 @@ fn open_settings_window(
         let settings_status = settings_status.clone();
         opacity_spin.connect_value_changed(move |spin| {
             let mut next = settings.borrow().clone();
-            next.overlay_opacity_percent = spin.value_as_int().clamp(70, 100);
+            next.overlay_opacity_percent = spin.value_as_int().clamp(80, 100);
             parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
             if let Err(error) = save_ui_settings(&next) {
                 set_settings_feedback(
@@ -1814,12 +1814,16 @@ fn open_settings_window(
         let settings_status = settings_status.clone();
         let parent = parent.clone();
         let prefs = prefs.clone();
+        let app = app.clone();
         import_button.connect_clicked(move |_| {
             let settings = settings.clone();
             let socket_path = socket_path.clone();
             let settings_status = settings_status.clone();
             let parent = parent.clone();
-            open_json_file(&prefs, "Import Hop Launcher Settings", move |path| {
+            let prefs_for_dialog = prefs.clone();
+            let prefs_for_close = prefs.clone();
+            let app = app.clone();
+            open_json_file(&prefs_for_dialog, "Import Hop Launcher Settings", move |path| {
                 let imported = match load_settings_from_path(&path) {
                     Ok(value) => value,
                     Err(error) => {
@@ -1849,6 +1853,8 @@ fn open_settings_window(
                     &format!("Imported profile from {}", path.display()),
                     false,
                 );
+                prefs_for_close.close();
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
             });
         });
     }
@@ -1864,6 +1870,8 @@ fn open_settings_window(
         let socket_path = socket_path.to_string();
         let settings_status = settings_status.clone();
         let parent = parent.clone();
+        let prefs = prefs.clone();
+        let app = app.clone();
         reset_button.connect_clicked(move |_| {
             let next = LauncherUiSettings::default();
             parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
@@ -1877,9 +1885,11 @@ fn open_settings_window(
             *settings.borrow_mut() = next;
             set_settings_feedback(
                 &settings_status,
-                "Settings reset to defaults (reopen settings to refresh controls)",
+                "Settings reset to defaults",
                 false,
             );
+            prefs.close();
+            open_settings_window(&app, &parent, settings.clone(), &socket_path);
         });
     }
     profile.add(&import_row);
@@ -2119,7 +2129,7 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
     let overlay = json
         .get("overlay_opacity_percent")
         .and_then(serde_json::Value::as_i64)
-        .map(|v| v.clamp(70, 100) as i32)
+        .map(|v| v.clamp(80, 100) as i32)
         .unwrap_or(default.overlay_opacity_percent);
     let max_results = json
         .get("max_results")
@@ -2448,6 +2458,16 @@ fn filter_results_by_settings(
 
 #[cfg(feature = "gtk_ui")]
 fn build_result_icon(row: &LauncherResult) -> gtk::Image {
+    if row.kind == "app" {
+        if let Some(desktop_id) = row.id.strip_prefix("app:") {
+            if let Some(app_info) = gio::DesktopAppInfo::new(desktop_id) {
+                if let Some(icon) = app_info.icon() {
+                    return gtk::Image::from_gicon(&icon);
+                }
+            }
+        }
+    }
+
     let raw = row.icon.trim();
     if !raw.is_empty() {
         if Path::new(raw).is_absolute() {
