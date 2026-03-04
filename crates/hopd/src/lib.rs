@@ -162,9 +162,9 @@ fn build_search_result(params: &Value) -> Value {
         .collect();
 
     matches.sort_by(|left, right| right.0.cmp(&left.0));
-    let results: Vec<Value> = matches
+    let ordered = diversify_matches(matches, limit.max(1));
+    let results: Vec<Value> = ordered
         .into_iter()
-        .take(limit.max(1))
         .map(|(score, item)| {
             json!({
                 "id": item.id,
@@ -184,6 +184,37 @@ fn build_search_result(params: &Value) -> Value {
             "elapsed_ms": 0,
         }
     })
+}
+
+fn diversify_matches(matches: Vec<(i32, SearchItem)>, limit: usize) -> Vec<(i32, SearchItem)> {
+    if matches.is_empty() || limit == 0 {
+        return Vec::new();
+    }
+
+    let mut selected: Vec<(i32, SearchItem)> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_kinds: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (score, item) in &matches {
+        if selected.len() >= limit {
+            break;
+        }
+        if seen_kinds.insert(item.kind.clone()) {
+            seen_ids.insert(item.id.clone());
+            selected.push((*score, item.clone()));
+        }
+    }
+
+    for (score, item) in matches {
+        if selected.len() >= limit {
+            break;
+        }
+        if seen_ids.insert(item.id.clone()) {
+            selected.push((score, item));
+        }
+    }
+
+    selected
 }
 
 #[derive(Debug, Clone)]
