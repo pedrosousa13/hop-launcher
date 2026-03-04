@@ -298,6 +298,8 @@ fn build_wayland_status_payload(
 ) -> serde_json::Value {
     let native_probe =
         probe_wayland_native_backend(compositor, sway_socket, hyprland_signature, runtime_dir);
+    let recommended_binding =
+        recommended_wayland_binding(compositor, native_probe.backend_mode, native_probe.socket_path.as_deref());
     json!({
         "session_type": session_type,
         "backend": "wayland",
@@ -308,8 +310,30 @@ fn build_wayland_status_payload(
         "native_backend_ready": native_probe.ready,
         "native_backend_socket": native_probe.socket_path,
         "native_backend_error": native_probe.error,
+        "recommended_binding": recommended_binding,
         "next_step": wayland_next_step_hint(compositor),
     })
+}
+
+fn recommended_wayland_binding(
+    compositor: &str,
+    backend_mode: &str,
+    socket_path: Option<&str>,
+) -> Option<String> {
+    if compositor == "sway" && backend_mode == "sway_tick" {
+        return Some(format!(
+            "bindsym Ctrl+Shift+ampersand exec swaymsg -q -t send_tick {}",
+            SWAY_TICK_TOGGLE_PAYLOAD
+        ));
+    }
+    if compositor == "hyprland" && backend_mode == "hyprland_event" {
+        return Some(format!(
+            "bind = CTRL SHIFT, ampersand, exec, hyprctl dispatch event {}",
+            HYPRLAND_TOGGLE_EVENT
+        ));
+    }
+
+    socket_path.map(|path| format!("~/.local/bin/hop-hotkeyd trigger --socket {}", path))
 }
 
 fn probe_wayland_native_backend(
@@ -1043,6 +1067,10 @@ mod tests {
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], true);
         assert_eq!(payload["wayland_backend_mode"], "sway_tick");
+        assert!(payload["recommended_binding"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("send_tick"));
         fs::remove_file(&socket_path).ok();
         fs::remove_dir_all(&base).ok();
     }
@@ -1064,6 +1092,10 @@ mod tests {
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], true);
         assert_eq!(payload["wayland_backend_mode"], "hyprland_event");
+        assert!(payload["recommended_binding"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("dispatch event"));
         fs::remove_file(&socket_path).ok();
         fs::remove_dir_all(&base).ok();
     }
@@ -1079,10 +1111,25 @@ mod tests {
         );
         assert_eq!(payload["global_hotkey_supported"], false);
         assert_eq!(payload["wayland_backend_mode"], "fallback");
+        assert!(payload["recommended_binding"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("hop-hotkeyd trigger --socket /tmp/does-not-exist.sock"));
         assert!(payload["native_backend_error"]
             .as_str()
             .unwrap_or_default()
             .contains("socket metadata check failed"));
+    }
+
+    #[test]
+    fn recommended_wayland_binding_uses_fallback_socket_when_native_unavailable() {
+        let binding = recommended_wayland_binding(
+            "unknown",
+            "fallback",
+            Some("/tmp/hop-launcher-control.sock"),
+        )
+        .expect("fallback should provide command");
+        assert!(binding.contains("hop-hotkeyd trigger --socket /tmp/hop-launcher-control.sock"));
     }
 
     #[test]
