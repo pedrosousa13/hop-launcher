@@ -35,3 +35,8 @@ test('manual gtk test script includes hop-hotkeyd trigger hint', () => {
   const script = readScript();
   assert.match(script, /hop-hotkeyd trigger/);
 });
+
+test('manual gtk test script includes setup-shortcut guidance', () => {
+  const script = readScript();
+  assert.match(script, /setup-shortcut/);
+});

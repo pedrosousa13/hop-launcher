@@ -99,6 +99,8 @@ systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
 
 echo "hotkey backend status:"
 ~/.local/bin/hop-hotkeyd status --socket "$CONTROL_SOCKET_PATH" || true
+echo "hotkey shortcut setup preview:"
+~/.local/bin/hop-hotkeyd setup-shortcut --socket "$CONTROL_SOCKET_PATH" --dry-run || true
 echo "hotkey binding snippets:"
 ~/.local/bin/hop-hotkeyd print-bindings || true
 echo "hotkey diagnostics:"
@@ -113,6 +115,7 @@ echo "- Sway: bind Ctrl+Shift+& to `swaymsg -q -t send_tick hop-launcher-toggle`
 echo "- Hyprland: bind Ctrl+Shift+& to `hyprctl dispatch event hop-launcher-toggle`."
 echo "- KDE bridge test: qdbus org.kde.kglobalaccel /component/hoplauncher org.kde.kglobalaccel.Component.invokeShortcut hop-launcher-toggle"
 echo "- GNOME bridge test: gdbus emit --session --object-path /io/github/hop/Hotkeyd --signal io.github.hop.Hotkeyd.Toggle hop-launcher-toggle"
+echo "- Optional shortcut setup helper: ~/.local/bin/hop-hotkeyd setup-shortcut --socket $CONTROL_SOCKET_PATH"
 echo "- Wayland fallback: ~/.local/bin/hop-hotkeyd trigger --socket $CONTROL_SOCKET_PATH"
 echo "- Wayland bindings helper: ~/.local/bin/hop-hotkeyd print-bindings"
 echo "- Optional readiness probe: ~/.local/bin/hop-hotkeyd doctor --socket $CONTROL_SOCKET_PATH --wait-seconds 5 --interval-ms 200"

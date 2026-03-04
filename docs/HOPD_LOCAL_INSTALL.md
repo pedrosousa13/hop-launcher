@@ -22,6 +22,8 @@ What this does:
 3. Installs binaries to `~/.local/bin/hopd` and `~/.local/bin/hop-hotkeyd`.
 4. Installs `~/.config/systemd/user/hopd.service` and `~/.config/systemd/user/hop-hotkeyd.service`.
 5. Reloads user units and enables/starts both services.
+6. On GNOME sessions, attempts to configure a custom keybinding for `hop-hotkeyd trigger`.
+7. On KDE sessions, prints KGlobalAccel helper guidance and probe command hints.
 
 ## Useful options
 
@@ -32,6 +34,9 @@ cd apps/gnome-extension
 
 # Install unit without auto-starting service
 ./scripts/install-hopd-local.sh --no-enable
+
+# Override default shortcut capture key
+HOP_LAUNCHER_SHORTCUT='<Super>space' ./scripts/install-hopd-local.sh
 ```
 
 ## Verify daemons
@@ -39,6 +44,13 @@ cd apps/gnome-extension
 ```bash
 systemctl --user status hopd.service
 systemctl --user status hop-hotkeyd.service
+```
+
+Shortcut setup helper:
+
+```bash
+~/.local/bin/hop-hotkeyd setup-shortcut
+~/.local/bin/hop-hotkeyd setup-shortcut --dry-run
 ```
 
 If `socat` is installed:

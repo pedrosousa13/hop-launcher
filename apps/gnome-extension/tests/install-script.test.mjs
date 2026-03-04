@@ -69,3 +69,21 @@ test('install script prints compositor binding helper guidance', () => {
   assert.match(script, /print-bindings/);
   assert.match(script, /compositor-specific/i);
 });
+
+test('install script supports configurable global shortcut env override', () => {
+  const script = fs.readFileSync(path.join(rootDir, 'scripts/install-hopd-local.sh'), 'utf8');
+  assert.match(script, /HOP_LAUNCHER_SHORTCUT/);
+});
+
+test('install script configures GNOME custom keybinding for hop-hotkeyd trigger', () => {
+  const script = fs.readFileSync(path.join(rootDir, 'scripts/install-hopd-local.sh'), 'utf8');
+  assert.match(script, /org\.gnome\.settings-daemon\.plugins\.media-keys/);
+  assert.match(script, /custom-keybindings/);
+  assert.match(script, /hop-hotkeyd trigger --socket/);
+});
+
+test('install script includes KDE shortcut helper guidance', () => {
+  const script = fs.readFileSync(path.join(rootDir, 'scripts/install-hopd-local.sh'), 'utf8');
+  assert.match(script, /KDE/i);
+  assert.match(script, /qdbus|qdbus6/);
+});

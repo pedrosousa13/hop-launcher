@@ -30,6 +30,12 @@ const GNOME_BRIDGE_MEMBER: &str = "Toggle";
 enum Command {
     Run,
     Trigger { socket_path: String },
+    SetupShortcut {
+        compositor: Option<String>,
+        shortcut: String,
+        socket_path: String,
+        dry_run: bool,
+    },
     Status {
         socket_path: String,
         compositor: Option<String>,
@@ -48,7 +54,7 @@ enum Command {
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd setup-shortcut [--compositor <name>] [--shortcut <accel>] [--socket <path>] [--dry-run]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +104,49 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
         return Ok(Command::Status {
             socket_path,
             compositor,
+        });
+    }
+    if args[1] == "setup-shortcut" {
+        let mut compositor: Option<String> = None;
+        let mut shortcut = "<Super>space".to_string();
+        let mut socket_path = default_control_socket_path();
+        let mut dry_run = false;
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--compositor" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--compositor requires a value".to_string());
+                    }
+                    compositor = Some(args[i].to_ascii_lowercase());
+                }
+                "--shortcut" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--shortcut requires a value".to_string());
+                    }
+                    shortcut = args[i].clone();
+                }
+                "--socket" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--socket requires a value".to_string());
+                    }
+                    socket_path = args[i].clone();
+                }
+                "--dry-run" => {
+                    dry_run = true;
+                }
+                unknown => return Err(format!("unknown argument: {}", unknown)),
+            }
+            i += 1;
+        }
+        return Ok(Command::SetupShortcut {
+            compositor,
+            shortcut,
+            socket_path,
+            dry_run,
         });
     }
     if args[1] == "doctor" {
@@ -216,6 +265,28 @@ fn run() -> Result<(), String> {
     let command = parse_command(&args)?;
     match command {
         Command::Trigger { socket_path } => send_toggle(&socket_path, "hotkey-trigger"),
+        Command::SetupShortcut {
+            compositor,
+            shortcut,
+            socket_path,
+            dry_run,
+        } => {
+            let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
+            let resolved = compositor.unwrap_or_else(|| {
+                if session_type.eq_ignore_ascii_case("wayland") {
+                    detect_wayland_compositor(
+                        &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+                        &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+                        &env::var("SWAYSOCK").unwrap_or_default(),
+                        &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
+                    )
+                    .to_string()
+                } else {
+                    "x11".to_string()
+                }
+            });
+            setup_shortcut(&resolved, &shortcut, &socket_path, dry_run)
+        }
         Command::Status {
             socket_path,
             compositor,
@@ -577,6 +648,133 @@ fn command_exists_in_path(command_name: &str) -> bool {
         }
     }
     false
+}
+
+fn run_external_command(dry_run: bool, program: &str, args: &[&str]) -> Result<(), String> {
+    if dry_run {
+        println!("dry-run: {} {}", program, args.join(" "));
+        return Ok(());
+    }
+
+    let status = ProcessCommand::new(program)
+        .args(args)
+        .status()
+        .map_err(|error| format!("failed to start {}: {}", program, error))?;
+    if !status.success() {
+        return Err(format!("{} exited with {}", program, status));
+    }
+    Ok(())
+}
+
+fn read_command_stdout(program: &str, args: &[&str]) -> Result<String, String> {
+    let output = ProcessCommand::new(program)
+        .args(args)
+        .output()
+        .map_err(|error| format!("failed to start {}: {}", program, error))?;
+    if !output.status.success() {
+        return Err(format!("{} exited with {}", program, output.status));
+    }
+    String::from_utf8(output.stdout).map_err(|error| format!("{} output decode failed: {}", program, error))
+}
+
+fn append_gsettings_array_path(current: &str, path: &str) -> String {
+    let desired = format!("'{}'", path);
+    if current.contains(&desired) {
+        return current.to_string();
+    }
+    if current.trim() == "@as []" || current.trim() == "[]" {
+        return format!("[{}]", desired);
+    }
+    let trimmed = current.trim();
+    if let Some(prefix) = trimmed.strip_suffix(']') {
+        return format!("{}, {}]", prefix, desired);
+    }
+    format!("[{}]", desired)
+}
+
+fn setup_shortcut(
+    compositor: &str,
+    shortcut: &str,
+    socket_path: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    match compositor {
+        "gnome" => setup_gnome_shortcut(shortcut, socket_path, dry_run),
+        "kde" => setup_kde_shortcut(shortcut, socket_path, dry_run),
+        "x11" => {
+            println!("x11 uses built-in key grab; setup-shortcut is not required.");
+            Ok(())
+        }
+        other => Err(format!(
+            "shortcut setup not implemented for compositor '{}'; use `hop-hotkeyd print-bindings --compositor {}`",
+            other, other
+        )),
+    }
+}
+
+fn setup_gnome_shortcut(shortcut: &str, socket_path: &str, dry_run: bool) -> Result<(), String> {
+    if !command_exists_in_path("gsettings") {
+        return Err("gsettings is not available in PATH".to_string());
+    }
+    let binding_path =
+        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/hop-launcher-hotkeyd/";
+    let schema = "org.gnome.settings-daemon.plugins.media-keys";
+    let key = "custom-keybindings";
+    let entry_schema = format!(
+        "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{}",
+        binding_path
+    );
+    let current = if dry_run {
+        "@as []".to_string()
+    } else {
+        read_command_stdout("gsettings", &["get", schema, key])?
+    };
+    let updated = append_gsettings_array_path(current.trim(), binding_path);
+    let home = env::var("HOME").unwrap_or_else(|_| "~".to_string());
+    let command = format!("{}/.local/bin/hop-hotkeyd trigger --socket {}", home, socket_path);
+    let binding = format!("['{}']", shortcut);
+
+    run_external_command(dry_run, "gsettings", &["set", schema, key, updated.as_str()])?;
+    run_external_command(
+        dry_run,
+        "gsettings",
+        &["set", entry_schema.as_str(), "name", "Hop Launcher"],
+    )?;
+    run_external_command(
+        dry_run,
+        "gsettings",
+        &["set", entry_schema.as_str(), "command", command.as_str()],
+    )?;
+    run_external_command(
+        dry_run,
+        "gsettings",
+        &["set", entry_schema.as_str(), "binding", binding.as_str()],
+    )?;
+
+    println!(
+        "configured gnome shortcut {} -> ~/.local/bin/hop-hotkeyd trigger --socket {}",
+        shortcut, socket_path
+    );
+    Ok(())
+}
+
+fn setup_kde_shortcut(shortcut: &str, socket_path: &str, dry_run: bool) -> Result<(), String> {
+    let trigger_command = format!("~/.local/bin/hop-hotkeyd trigger --socket {}", socket_path);
+    if command_exists_in_path("qdbus6") || command_exists_in_path("qdbus") {
+        println!(
+            "kde shortcut setup: assign '{}' to command: {}",
+            shortcut, trigger_command
+        );
+        println!(
+            "kde trigger probe: qdbus org.kde.kglobalaccel /component/hoplauncher org.kde.kglobalaccel.Component.invokeShortcut {}",
+            KDE_TOGGLE_ACTION
+        );
+        if dry_run {
+            println!("dry-run: no KDE setting was modified.");
+        }
+        return Ok(());
+    }
+    Err("kde setup requires qdbus or qdbus6 in PATH".to_string())
 }
 
 fn detect_wayland_compositor(
@@ -1216,6 +1414,79 @@ mod tests {
                 compositor: None,
             }
         );
+    }
+
+    #[test]
+    fn parse_setup_shortcut_defaults() {
+        let args = vec!["hop-hotkeyd".to_string(), "setup-shortcut".to_string()];
+        let command = parse_command(&args).expect("setup-shortcut should parse");
+        assert_eq!(
+            command,
+            Command::SetupShortcut {
+                compositor: None,
+                shortcut: "<Super>space".to_string(),
+                socket_path: default_control_socket_path(),
+                dry_run: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_setup_shortcut_with_options() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "setup-shortcut".to_string(),
+            "--compositor".to_string(),
+            "gnome".to_string(),
+            "--shortcut".to_string(),
+            "<Super>Return".to_string(),
+            "--socket".to_string(),
+            "/tmp/hop.sock".to_string(),
+            "--dry-run".to_string(),
+        ];
+        let command = parse_command(&args).expect("setup-shortcut should parse");
+        assert_eq!(
+            command,
+            Command::SetupShortcut {
+                compositor: Some("gnome".to_string()),
+                shortcut: "<Super>Return".to_string(),
+                socket_path: "/tmp/hop.sock".to_string(),
+                dry_run: true,
+            }
+        );
+    }
+
+    #[test]
+    fn append_gsettings_array_path_handles_empty_array_forms() {
+        let path =
+            "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/hop-launcher-hotkeyd/";
+        assert_eq!(
+            append_gsettings_array_path("@as []", path),
+            format!("['{}']", path)
+        );
+        assert_eq!(
+            append_gsettings_array_path("[]", path),
+            format!("['{}']", path)
+        );
+    }
+
+    #[test]
+    fn append_gsettings_array_path_appends_when_missing() {
+        let path =
+            "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/hop-launcher-hotkeyd/";
+        let existing = "['/org/example/a/']";
+        let updated = append_gsettings_array_path(existing, path);
+        assert!(updated.contains("'/org/example/a/'"));
+        assert!(updated.contains(path));
+    }
+
+    #[test]
+    fn append_gsettings_array_path_is_idempotent() {
+        let path =
+            "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/hop-launcher-hotkeyd/";
+        let existing = format!("['{}']", path);
+        let updated = append_gsettings_array_path(&existing, path);
+        assert_eq!(updated, existing);
     }
 
     #[test]

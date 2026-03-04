@@ -51,6 +51,11 @@ npm run install:hopd:local
 
 This installs both `hopd` and `hop-hotkeyd` user services.
 See `docs/HOPD_LOCAL_INSTALL.md` for full details.
+You can override default shortcut during install with:
+
+```bash
+HOP_LAUNCHER_SHORTCUT='<Super>space' npm run install:hopd:local
+```
 
 ## One-command local GTK manual test
 
@@ -98,6 +103,12 @@ Check detected backend/capabilities with:
 
 ```bash
 ~/.local/bin/hop-hotkeyd status
+```
+
+Configure desktop-native shortcut wiring (GNOME/KDE helpers) with:
+
+```bash
+~/.local/bin/hop-hotkeyd setup-shortcut
 ```
 
 For non-default control sockets:

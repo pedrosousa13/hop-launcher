@@ -27,6 +27,7 @@ This plan is fully implemented, and the branch has progressed beyond the origina
   - `hop-hotkeyd doctor --strict` for CI/script fail-fast behavior
 - Added compositor-aware tooling:
   - `hop-hotkeyd print-bindings` (+ `--compositor`, `--socket`)
+  - `hop-hotkeyd setup-shortcut` (+ `--compositor`, `--shortcut`, `--socket`, `--dry-run`)
   - `status` and `doctor` now support `--compositor` override for testing
   - `status` now supports `--socket` override and embeds control probe results
   - `status` now emits `recommended_binding` for detected mode
@@ -48,7 +49,8 @@ This plan is fully implemented, and the branch has progressed beyond the origina
   - `docs/HOTKEYD_STATUS_SCHEMA.md` for `status` and `doctor` outputs
 - Updated manual and installer guidance:
   - `scripts/run-gtk-manual-test.sh` now prints richer hotkey diagnostics
-  - installer output includes binding helper guidance
+  - installer now supports shortcut override (`HOP_LAUNCHER_SHORTCUT`) and GNOME custom-keybinding setup
+  - installer output includes KDE bridge helper and dependency hints
 
 ### Recent Continuation Commits (Newest First)
 

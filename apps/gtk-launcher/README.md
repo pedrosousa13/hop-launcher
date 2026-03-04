@@ -42,6 +42,12 @@ Inspect active backend mode/capabilities with:
 ~/.local/bin/hop-hotkeyd status
 ```
 
+Configure compositor shortcut wiring (GNOME/KDE helper path) with:
+
+```bash
+~/.local/bin/hop-hotkeyd setup-shortcut
+```
+
 If your control socket path is customized:
 
 ```bash
