@@ -60,7 +60,7 @@ fn run_daemon_mode() -> Result<(), String> {
         Ok(backend) => {
             eprintln!("hop-hotkeyd backend: {:?}", backend);
             match backend {
-                hop_hotkeyd::BackendMode::X11 => run_x11_hotkey_loop(default_control_socket_path()),
+                hop_hotkeyd::BackendMode::X11 => run_x11_daemon_loop(default_control_socket_path()),
                 hop_hotkeyd::BackendMode::Wayland => run_wayland_fallback(),
             }
         }
@@ -69,6 +69,29 @@ fn run_daemon_mode() -> Result<(), String> {
             run_wayland_fallback()
         }
     }
+}
+
+fn run_x11_daemon_loop(socket_path: String) -> Result<(), String> {
+    let mut attempt: u32 = 0;
+    loop {
+        match run_x11_hotkey_loop(socket_path.clone()) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let delay = reconnect_backoff_secs(attempt);
+                eprintln!(
+                    "x11 hotkey loop error: {}. reconnecting in {}s",
+                    error, delay
+                );
+                thread::sleep(Duration::from_secs(delay));
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn reconnect_backoff_secs(attempt: u32) -> u64 {
+    let capped = attempt.min(6);
+    1u64 << capped
 }
 
 fn run_wayland_fallback() -> Result<(), String> {
@@ -320,5 +343,14 @@ mod tests {
         assert_eq!(mod_index_to_mask(4), Some(ModMask::M2));
         assert_eq!(mod_index_to_mask(7), Some(ModMask::M5));
         assert_eq!(mod_index_to_mask(9), None);
+    }
+
+    #[test]
+    fn reconnect_backoff_caps_growth() {
+        assert_eq!(reconnect_backoff_secs(0), 1);
+        assert_eq!(reconnect_backoff_secs(1), 2);
+        assert_eq!(reconnect_backoff_secs(2), 4);
+        assert_eq!(reconnect_backoff_secs(6), 64);
+        assert_eq!(reconnect_backoff_secs(20), 64);
     }
 }
