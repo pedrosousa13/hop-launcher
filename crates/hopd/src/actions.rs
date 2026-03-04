@@ -88,6 +88,28 @@ fn command_for_result_id_with_desktop(
         if window_id.is_empty() {
             return None;
         }
+        if let Some(hypr_id) = window_id.strip_prefix("hypr:") {
+            if hypr_id.is_empty() {
+                return None;
+            }
+            return Some((
+                "hyprctl".to_string(),
+                vec![
+                    "dispatch".to_string(),
+                    "focuswindow".to_string(),
+                    format!("address:{hypr_id}"),
+                ],
+            ));
+        }
+        if let Some(sway_id) = window_id.strip_prefix("sway:") {
+            if sway_id.is_empty() {
+                return None;
+            }
+            return Some((
+                "swaymsg".to_string(),
+                vec![format!("[con_id={sway_id}]"), "focus".to_string()],
+            ));
+        }
         return Some((
             "wmctrl".to_string(),
             vec!["-ia".to_string(), window_id.to_string()],
@@ -136,6 +158,29 @@ mod tests {
             .expect("window command");
         assert_eq!(resolved.0, "wmctrl");
         assert_eq!(resolved.1, vec!["-ia".to_string(), "0x04200004".to_string()]);
+    }
+
+    #[test]
+    fn resolves_hypr_window_result_id_to_hyprctl_focus_command() {
+        let resolved = command_for_result_id_with_desktop("window:hypr:0x04200004", "GNOME")
+            .expect("hypr window command");
+        assert_eq!(resolved.0, "hyprctl");
+        assert_eq!(
+            resolved.1,
+            vec![
+                "dispatch".to_string(),
+                "focuswindow".to_string(),
+                "address:0x04200004".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolves_sway_window_result_id_to_swaymsg_focus_command() {
+        let resolved = command_for_result_id_with_desktop("window:sway:42", "GNOME")
+            .expect("sway window command");
+        assert_eq!(resolved.0, "swaymsg");
+        assert_eq!(resolved.1, vec!["[con_id=42]".to_string(), "focus".to_string()]);
     }
 
     #[test]
