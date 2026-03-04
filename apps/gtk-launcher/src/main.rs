@@ -519,12 +519,11 @@ fn run() {
             .build();
         header.append(&title);
         header.append(&settings_button);
-        let hints = build_mode_hints();
-
         let entry = gtk::Entry::builder()
             .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji, calculations, currency…")
             .build();
         entry.add_css_class("hop-launcher-entry");
+        let hints = build_mode_hints(&entry);
         let status = gtk::Label::builder()
             .xalign(0.0)
             .build();
@@ -2289,27 +2288,39 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
 }
 
 #[cfg(feature = "gtk_ui")]
-fn build_mode_hints() -> gtk::Box {
+fn mode_hint_specs() -> [(&'static str, &'static str); 10] {
+    [
+        ("Apps", "a "),
+        ("Windows", "w "),
+        ("Files", "f "),
+        ("Recents", "r "),
+        ("Settings", "settings "),
+        ("Weather", "weather "),
+        ("Timezones", "time in "),
+        ("Emoji", "emoji "),
+        ("Calculator", "2+2"),
+        ("Currency", "12 usd to chf"),
+    ]
+}
+
+#[cfg(feature = "gtk_ui")]
+fn build_mode_hints(entry: &gtk::Entry) -> gtk::Box {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(6)
         .build();
     row.add_css_class("hop-launcher-hints");
 
-    for text in [
-        "a apps",
-        "w windows",
-        "f files",
-        "r recents",
-        "settings",
-        "weather",
-        "time in",
-        "emoji",
-        "2+2",
-        "12 usd to chf",
-    ] {
-        let chip = gtk::Label::builder().label(text).build();
+    for (label, query) in mode_hint_specs() {
+        let chip = gtk::Button::with_label(label);
+        chip.add_css_class("flat");
         chip.add_css_class("hop-launcher-hint-chip");
+        let entry = entry.clone();
+        chip.connect_clicked(move |_| {
+            entry.set_text(query);
+            entry.set_position(-1);
+            entry.grab_focus();
+        });
         row.append(&chip);
     }
 
