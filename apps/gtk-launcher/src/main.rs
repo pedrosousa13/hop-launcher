@@ -153,7 +153,9 @@ fn run() {
             let status = status.clone();
             let results = results.clone();
             let socket_path = socket_path.clone();
-            entry.connect_activate(move |_| {
+            let window = window.clone();
+            let entry = entry.clone();
+            entry.clone().connect_activate(move |_| {
                 if let Some(row) = list.selected_row() {
                     let index = row.index() as usize;
                     if let Some(result_id) = selected_result_id(&results.borrow(), index) {
@@ -163,6 +165,8 @@ fn run() {
                             ))));
                         } else {
                             status.set_text(&render_status_text(QueryState::Executed));
+                            window.hide();
+                            entry.set_text("");
                         }
                     }
                 }
@@ -173,20 +177,44 @@ fn run() {
             let list = list.clone();
             let window = window.clone();
             let controller = gtk::EventControllerKey::new();
-            controller.connect_key_pressed(move |_, key, _, _| match key {
-                gtk::gdk::Key::Down => {
-                    move_selection(&list, 1);
-                    true.into()
+            controller.connect_key_pressed(move |_, key, _, state| {
+                let is_ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                let is_shift = state.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+                match key {
+                    gtk::gdk::Key::Down => {
+                        move_selection(&list, 1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::Up => {
+                        move_selection(&list, -1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::j if is_ctrl => {
+                        move_selection(&list, 1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::k if is_ctrl => {
+                        move_selection(&list, -1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::Tab if is_shift => {
+                        move_selection(&list, -1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::ISO_Left_Tab => {
+                        move_selection(&list, -1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::Tab => {
+                        move_selection(&list, 1);
+                        true.into()
+                    }
+                    gtk::gdk::Key::Escape => {
+                        window.hide();
+                        true.into()
+                    }
+                    _ => false.into(),
                 }
-                gtk::gdk::Key::Up => {
-                    move_selection(&list, -1);
-                    true.into()
-                }
-                gtk::gdk::Key::Escape => {
-                    window.hide();
-                    true.into()
-                }
-                _ => false.into(),
             });
             entry.add_controller(controller);
         }
@@ -196,6 +224,8 @@ fn run() {
             let status = status.clone();
             let results = results.clone();
             let socket_path = socket_path.clone();
+            let window = window.clone();
+            let entry = entry.clone();
             list.connect_row_activated(move |_, row| {
                 let index = row.index() as usize;
                 if let Some(result_id) = selected_result_id(&results.borrow(), index) {
@@ -205,6 +235,8 @@ fn run() {
                         ))));
                     } else {
                         status.set_text(&render_status_text(QueryState::Executed));
+                        window.hide();
+                        entry.set_text("");
                     }
                 }
             });
