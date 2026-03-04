@@ -14,21 +14,31 @@ Current shippable pieces in this repository:
 
 This is the path for Ubuntu/Debian users.
 
-### A1) Build `.deb` packages
+### A1) Build `.deb` packages (native Debian tooling)
 
-The simplest maintainer path for Rust binaries is `cargo-deb`.
+This repository now includes `debian/` packaging skeletons in:
+
+- `crates/hopd/debian`
+- `crates/hop-hotkeyd/debian`
+
+Build commands:
 
 ```bash
-cargo install cargo-deb
-
 cd crates/hopd
-cargo deb
+dpkg-buildpackage -us -uc -b
 
 cd ../hop-hotkeyd
-cargo deb
+dpkg-buildpackage -us -uc -b
 ```
 
-Expected output: `target/debian/*.deb` in each crate.
+Expected output: `.deb` files in the parent directory of each crate.
+
+Required build dependencies on Debian/Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential debhelper dh-cargo cargo rustc dpkg-dev
+```
 
 ### A2) Publish via APT (two common methods)
 
@@ -93,3 +103,9 @@ Useful references:
 - Sign packages/repositories with a dedicated release GPG key.
 - Rotate keys on compromise and publish fingerprint in project docs.
 - Keep CI secrets minimal and scoped to release only.
+
+## Repository-maintainer note
+
+If you prefer quicker local iteration over full Debian policy packaging,
+`cargo-deb` is still useful. The `debian/` skeleton here is meant for
+`dpkg-buildpackage` compatibility and long-term APT publication flow.

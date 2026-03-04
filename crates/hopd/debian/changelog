@@ -1,0 +1,5 @@
+hopd (0.1.0-1) unstable; urgency=medium
+
+  * Initial Debian packaging for hopd.
+
+ -- Hop Launcher Maintainers <maintainers@hop-launcher.invalid>  Wed, 04 Mar 2026 16:00:00 +0000

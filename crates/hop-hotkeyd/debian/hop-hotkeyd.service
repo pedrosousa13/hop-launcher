@@ -1,0 +1,15 @@
+[Unit]
+Description=Hop Launcher Global Hotkey Agent (hop-hotkeyd)
+Wants=graphical-session.target
+After=graphical-session.target dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hop-hotkeyd
+Restart=on-failure
+RestartSec=1
+Environment=HOP_LAUNCHER_CONTROL_SOCKET=%t/hop-launcher-control.sock
+Environment=XDG_RUNTIME_DIR=%t
+
+[Install]
+WantedBy=default.target

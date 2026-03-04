@@ -1,0 +1,15 @@
+Source: hop-hotkeyd
+Section: utils
+Priority: optional
+Maintainer: Hop Launcher Maintainers <maintainers@hop-launcher.invalid>
+Build-Depends: debhelper-compat (= 13), dh-cargo, cargo, rustc
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/pedrosousa13/hop-launcher
+
+Package: hop-hotkeyd
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, ${cargo:Depends}
+Description: Hop Launcher global hotkey daemon and bridge agent
+ hop-hotkeyd captures or bridges global shortcut events and sends launcher
+ toggle requests to the GTK control socket.

@@ -1,0 +1,2 @@
+target/release/hop-hotkeyd usr/bin/
+debian/hop-hotkeyd.service usr/lib/systemd/user/
