@@ -47,6 +47,12 @@ struct LauncherUiSettings {
     overlay_opacity_percent: i32,
     max_results: u32,
     frameless_window: bool,
+    feature_apps_enabled: bool,
+    feature_windows_enabled: bool,
+    feature_files_enabled: bool,
+    feature_recents_enabled: bool,
+    feature_settings_enabled: bool,
+    feature_utility_enabled: bool,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -56,6 +62,12 @@ impl Default for LauncherUiSettings {
             overlay_opacity_percent: 94,
             max_results: 12,
             frameless_window: true,
+            feature_apps_enabled: true,
+            feature_windows_enabled: true,
+            feature_files_enabled: true,
+            feature_recents_enabled: true,
+            feature_settings_enabled: true,
+            feature_utility_enabled: true,
         }
     }
 }
@@ -96,11 +108,41 @@ fn load_ui_settings() -> LauncherUiSettings {
         .get("frameless_window")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(default.frameless_window);
+    let feature_apps_enabled = json
+        .get("feature_apps_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_apps_enabled);
+    let feature_windows_enabled = json
+        .get("feature_windows_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_windows_enabled);
+    let feature_files_enabled = json
+        .get("feature_files_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_files_enabled);
+    let feature_recents_enabled = json
+        .get("feature_recents_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_recents_enabled);
+    let feature_settings_enabled = json
+        .get("feature_settings_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_settings_enabled);
+    let feature_utility_enabled = json
+        .get("feature_utility_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_utility_enabled);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
         max_results,
         frameless_window: frameless,
+        feature_apps_enabled,
+        feature_windows_enabled,
+        feature_files_enabled,
+        feature_recents_enabled,
+        feature_settings_enabled,
+        feature_utility_enabled,
     }
 }
 
@@ -116,6 +158,12 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "overlay_opacity_percent": settings.overlay_opacity_percent,
         "max_results": settings.max_results,
         "frameless_window": settings.frameless_window,
+        "feature_apps_enabled": settings.feature_apps_enabled,
+        "feature_windows_enabled": settings.feature_windows_enabled,
+        "feature_files_enabled": settings.feature_files_enabled,
+        "feature_recents_enabled": settings.feature_recents_enabled,
+        "feature_settings_enabled": settings.feature_settings_enabled,
+        "feature_utility_enabled": settings.feature_utility_enabled,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -251,8 +299,16 @@ fn run() {
             let ui_settings = ui_settings.clone();
             entry.connect_changed(move |entry| {
                 let query = entry.text().to_string();
-                let max_results = ui_settings.borrow().max_results;
-                refresh_results(&list, &status, &results, &socket_path, max_results, &query);
+                let current_settings = ui_settings.borrow().clone();
+                refresh_results(
+                    &list,
+                    &status,
+                    &results,
+                    &socket_path,
+                    current_settings.max_results,
+                    &current_settings,
+                    &query,
+                );
             });
         }
 
@@ -389,6 +445,7 @@ fn run() {
             &results,
             &socket_path,
             ui_settings.borrow().max_results,
+            &ui_settings.borrow(),
             "",
         );
 
@@ -650,6 +707,10 @@ fn open_settings_window(
         .title("Behavior")
         .description("Result density and interaction defaults.")
         .build();
+    let providers = adw::PreferencesGroup::builder()
+        .title("Providers")
+        .description("Toggle result categories shown by the launcher.")
+        .build();
 
     let opacity_row = adw::ActionRow::builder()
         .title("Launcher translucency (%)")
@@ -760,10 +821,112 @@ fn open_settings_window(
     }
     behavior.add(&results_row);
 
+    add_provider_switch_row(
+        &providers,
+        "Apps",
+        "Installed application results.",
+        settings.borrow().feature_apps_enabled,
+        "features.apps",
+        settings.clone(),
+        socket_path,
+        |state, value| state.feature_apps_enabled = value,
+    );
+    add_provider_switch_row(
+        &providers,
+        "Windows",
+        "Open window results.",
+        settings.borrow().feature_windows_enabled,
+        "features.windows",
+        settings.clone(),
+        socket_path,
+        |state, value| state.feature_windows_enabled = value,
+    );
+    add_provider_switch_row(
+        &providers,
+        "Files",
+        "File search results.",
+        settings.borrow().feature_files_enabled,
+        "features.files",
+        settings.clone(),
+        socket_path,
+        |state, value| state.feature_files_enabled = value,
+    );
+    add_provider_switch_row(
+        &providers,
+        "Recents",
+        "Recent document results.",
+        settings.borrow().feature_recents_enabled,
+        "features.recents",
+        settings.clone(),
+        socket_path,
+        |state, value| state.feature_recents_enabled = value,
+    );
+    add_provider_switch_row(
+        &providers,
+        "Settings",
+        "System and launcher settings results.",
+        settings.borrow().feature_settings_enabled,
+        "features.settings",
+        settings.clone(),
+        socket_path,
+        |state, value| state.feature_settings_enabled = value,
+    );
+    add_provider_switch_row(
+        &providers,
+        "Utilities",
+        "Weather, timezone, emoji, calculator, and currency results.",
+        settings.borrow().feature_utility_enabled,
+        "features.utility",
+        settings.clone(),
+        socket_path,
+        |state, value| state.feature_utility_enabled = value,
+    );
+
     page.add(&appearance);
     page.add(&behavior);
+    page.add(&providers);
     prefs.add(&page);
     prefs.present();
+}
+
+#[cfg(feature = "gtk_ui")]
+fn add_provider_switch_row(
+    group: &adw::PreferencesGroup,
+    title: &str,
+    subtitle: &str,
+    initial_state: bool,
+    hopd_key: &str,
+    settings: Rc<RefCell<LauncherUiSettings>>,
+    socket_path: &str,
+    apply_value: fn(&mut LauncherUiSettings, bool),
+) {
+    let row = adw::ActionRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .build();
+    let toggle = gtk::Switch::builder()
+        .active(initial_state)
+        .valign(gtk::Align::Center)
+        .build();
+    row.add_suffix(&toggle);
+    row.set_activatable_widget(Some(&toggle));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let hopd_key = hopd_key.to_string();
+        toggle.connect_active_notify(move |widget| {
+            let mut next = settings.borrow().clone();
+            apply_value(&mut next, widget.is_active());
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) = config_set(&socket_path, &hopd_key, serde_json::json!(widget.is_active())) {
+                eprintln!("failed to sync setting to hopd: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    group.add(&row);
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -801,6 +964,7 @@ fn refresh_results(
     results: &Rc<RefCell<Vec<LauncherResult>>>,
     socket_path: &str,
     max_results: u32,
+    ui_settings: &LauncherUiSettings,
     query: &str,
 ) {
     while let Some(child) = list.first_child() {
@@ -811,6 +975,7 @@ fn refresh_results(
     let mode_label = search_query_mode(query).to_ascii_uppercase();
     match search(socket_path, query, max_results) {
         Ok(rows) => {
+            let rows = filter_results_by_settings(rows, ui_settings);
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
             for row in &rows {
@@ -905,6 +1070,31 @@ fn refresh_results(
             ))));
         }
     }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn is_kind_enabled(kind: &str, settings: &LauncherUiSettings) -> bool {
+    match kind {
+        "app" => settings.feature_apps_enabled,
+        "window" => settings.feature_windows_enabled,
+        "file" => settings.feature_files_enabled,
+        "recent" => settings.feature_recents_enabled,
+        "setting" => settings.feature_settings_enabled,
+        "weather" | "timezone" | "emoji" | "utility" | "calculator" | "currency" => {
+            settings.feature_utility_enabled
+        }
+        _ => true,
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn filter_results_by_settings(
+    rows: Vec<LauncherResult>,
+    settings: &LauncherUiSettings,
+) -> Vec<LauncherResult> {
+    rows.into_iter()
+        .filter(|row| is_kind_enabled(&row.kind, settings))
+        .collect()
 }
 
 #[cfg(feature = "gtk_ui")]
