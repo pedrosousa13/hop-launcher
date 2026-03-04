@@ -568,6 +568,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_doctor_rejects_zero_interval() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "doctor".to_string(),
+            "--interval-ms".to_string(),
+            "0".to_string(),
+        ];
+        let result = parse_command(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_doctor_rejects_non_integer_wait() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "doctor".to_string(),
+            "--wait-seconds".to_string(),
+            "abc".to_string(),
+        ];
+        let result = parse_command(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn variants_include_lock_modifier_combinations() {
         let variants = hotkey_modifier_variants(ModMask::M2);
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT)));

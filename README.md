@@ -73,3 +73,9 @@ Check detected backend/capabilities with:
 ```bash
 ~/.local/bin/hop-hotkeyd status
 ```
+
+Run structured diagnostics (with optional wait/retry) with:
+
+```bash
+~/.local/bin/hop-hotkeyd doctor --wait-seconds 5 --interval-ms 200
+```
