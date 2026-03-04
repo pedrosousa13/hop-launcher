@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
+mod actions;
 pub mod kde_adapter;
+mod providers;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct IpcRequest {
@@ -65,10 +67,7 @@ impl HopdServer {
             },
             "actions.execute" => IpcResponse {
                 id: request.id,
-                result: json!({
-                    "ok": true,
-                    "executed": true,
-                }),
+                result: actions::execute(&request.params),
                 error: None,
             },
             "config.set" => {
@@ -145,8 +144,12 @@ fn build_search_result(params: &Value) -> Value {
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
         .unwrap_or(8);
+    let mode = params
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("all");
 
-    let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query)
+    let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query, mode)
         .into_iter()
         .filter_map(|item| {
             let score = score_item(&query, &item);
@@ -193,13 +196,34 @@ struct SearchItem {
     keywords: String,
 }
 
-fn aggregate_provider_items(query: &str) -> Vec<SearchItem> {
-    let mut items = Vec::new();
-    items.extend(weather_provider(query));
-    items.extend(timezone_provider(query));
-    items.extend(emoji_provider(query));
-    if items.is_empty() && query.chars().count() <= 2 {
-        items.extend(default_catalog_items());
+impl SearchItem {
+    fn new(id: &str, kind: &str, title: &str, subtitle: &str, icon: &str, keywords: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            title: title.to_string(),
+            subtitle: subtitle.to_string(),
+            icon: icon.to_string(),
+            keywords: keywords.to_string(),
+        }
+    }
+}
+
+fn aggregate_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
+    let mut items = providers::collect_provider_items(query, mode);
+    match mode {
+        "weather" => items.extend(weather_provider(query)),
+        "timezone" => items.extend(timezone_provider(query)),
+        "emoji" => items.extend(emoji_provider(query)),
+        "apps" | "windows" | "files" | "recents" | "settings" => {}
+        _ => {
+            items.extend(weather_provider(query));
+            items.extend(timezone_provider(query));
+            items.extend(emoji_provider(query));
+            if items.is_empty() && query.chars().count() <= 2 {
+                items.extend(default_catalog_items());
+            }
+        }
     }
     items
 }
@@ -355,6 +379,14 @@ fn default_catalog_items() -> Vec<SearchItem> {
             subtitle: "Utility".to_string(),
             icon: "face-smile-symbolic".to_string(),
             keywords: "emoji picker symbols".to_string(),
+        },
+        SearchItem {
+            id: "utility:catalog".to_string(),
+            kind: "utility".to_string(),
+            title: "Utilities".to_string(),
+            subtitle: "Launcher utility results".to_string(),
+            icon: "system-search-symbolic".to_string(),
+            keywords: "utility calculator conversion".to_string(),
         },
     ]
 }
