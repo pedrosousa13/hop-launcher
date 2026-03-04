@@ -34,8 +34,7 @@ use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
     default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
     search_query_mode,
-    selected_result_id, start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult,
-    QueryState,
+    start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
 };
 
 fn main() {
@@ -263,11 +262,18 @@ fn run() {
             let socket_path = socket_path.clone();
             let window = window.clone();
             let entry = entry.clone();
+            let app = app.clone();
+            let ui_settings = ui_settings.clone();
             entry.clone().connect_activate(move |_| {
                 if let Some(row) = list.selected_row() {
                     let index = row.index() as usize;
-                    if let Some(result_id) = selected_result_id(&results.borrow(), index) {
-                        if let Err(error) = execute(&socket_path, result_id) {
+                    if let Some(result) = results.borrow().get(index).cloned() {
+                        if result.id == "hop-launcher-settings" {
+                            open_settings_window(&app, &window, ui_settings.clone());
+                            status.set_text("Opened launcher settings");
+                            return;
+                        }
+                        if let Err(error) = execute(&socket_path, &result.id) {
                             status.set_text(&render_status_text(QueryState::Error(format!(
                                 "execute failed: {error}"
                             ))));
@@ -340,10 +346,17 @@ fn run() {
             let socket_path = socket_path.clone();
             let window = window.clone();
             let entry = entry.clone();
+            let app = app.clone();
+            let ui_settings = ui_settings.clone();
             list.connect_row_activated(move |_, row| {
                 let index = row.index() as usize;
-                if let Some(result_id) = selected_result_id(&results.borrow(), index) {
-                    if let Err(error) = execute(&socket_path, result_id) {
+                if let Some(result) = results.borrow().get(index).cloned() {
+                    if result.id == "hop-launcher-settings" {
+                        open_settings_window(&app, &window, ui_settings.clone());
+                        status.set_text("Opened launcher settings");
+                        return;
+                    }
+                    if let Err(error) = execute(&socket_path, &result.id) {
                         status.set_text(&render_status_text(QueryState::Error(format!(
                             "execute failed: {error}"
                         ))));

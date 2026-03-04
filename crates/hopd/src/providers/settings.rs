@@ -5,6 +5,14 @@ pub fn results(query: &str) -> Vec<SearchItem> {
 
     let mut catalog = vec![
         SearchItem::new(
+            "hop-launcher-settings",
+            "setting",
+            "Hop Launcher Settings",
+            "Launcher preferences",
+            "preferences-system-symbolic",
+            "settings preferences launcher hotkey translucency results",
+        ),
+        SearchItem::new(
             "setting:bluetooth",
             "setting",
             "Bluetooth Settings",
@@ -53,4 +61,18 @@ pub fn results(query: &str) -> Vec<SearchItem> {
 
 fn current_desktop() -> String {
     std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn includes_hop_launcher_settings_row() {
+        let rows = results("settings");
+        assert!(
+            rows.iter().any(|row| row.id == "hop-launcher-settings"),
+            "expected launcher settings row"
+        );
+    }
 }
