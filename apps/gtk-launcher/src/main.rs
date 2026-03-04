@@ -437,6 +437,33 @@ fn set_settings_feedback(status_label: &gtk::Label, message: &str, is_error: boo
 }
 
 #[cfg(feature = "gtk_ui")]
+fn validate_indexed_folders(folders: &[String]) -> Result<(), String> {
+    use std::path::Path;
+
+    let mut invalid = Vec::new();
+    for folder in folders {
+        let path = Path::new(folder);
+        if !path.is_absolute() {
+            invalid.push(format!("{folder} (not absolute)"));
+            continue;
+        }
+        if !path.exists() {
+            invalid.push(format!("{folder} (missing)"));
+            continue;
+        }
+        if !path.is_dir() {
+            invalid.push(format!("{folder} (not directory)"));
+        }
+    }
+
+    if invalid.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("Invalid indexed folders: {}", invalid.join(", ")))
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
 fn run() {
     adw::init().expect("failed to initialize libadwaita");
     install_css();
@@ -1500,6 +1527,10 @@ fn open_settings_window(
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
                 .collect::<Vec<String>>();
+            if let Err(error) = validate_indexed_folders(&folders) {
+                set_settings_feedback(&settings_status, &error, true);
+                return;
+            }
             let mut next = settings.borrow().clone();
             next.indexed_folders = folders;
             if let Err(error) = save_ui_settings(&next) {
