@@ -94,6 +94,19 @@ fn command_for_result_id_with_desktop(
         ));
     }
 
+    if let Some(utility_key) = result_id.strip_prefix("utility:") {
+        if utility_key.is_empty() {
+            return None;
+        }
+        let url = match utility_key {
+            "weather" => "https://wttr.in",
+            "timezone" => "https://time.is",
+            "emoji" => "https://emojipedia.org",
+            _ => return None,
+        };
+        return Some(("xdg-open".to_string(), vec![url.to_string()]));
+    }
+
     None
 }
 
@@ -142,5 +155,13 @@ mod tests {
         let response = execute(&payload);
         assert_eq!(response["execution_status"], "unresolved");
         assert_eq!(response["error_message"], "unsupported result id");
+    }
+
+    #[test]
+    fn resolves_utility_weather_to_browser_command() {
+        let resolved = command_for_result_id_with_desktop("utility:weather", "GNOME")
+            .expect("utility command");
+        assert_eq!(resolved.0, "xdg-open");
+        assert_eq!(resolved.1, vec!["https://wttr.in".to_string()]);
     }
 }
