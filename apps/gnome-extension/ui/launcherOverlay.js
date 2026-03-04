@@ -276,7 +276,8 @@ class LauncherOverlay extends St.BoxLayout {
             : new Map();
         const scoreBoost = item =>
             (aliasContext.boosts.get(item) ?? 0) +
-            (learningBoosts.get(item) ?? 0);
+            (learningBoosts.get(item) ?? 0) +
+            (Number(item.priorityBoost) || 0);
         this._typedQuery = normalizedQuery;
         const maxResults = this._settings.get_int('max-results');
 

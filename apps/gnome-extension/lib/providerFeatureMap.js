@@ -4,6 +4,7 @@ export function buildProviderFeatureMap(providers) {
         [providers.apps, 'feature-apps-enabled'],
         [providers.recents, 'feature-files-enabled'],
         [providers.files, 'feature-files-enabled'],
+        [providers.settings, 'feature-apps-enabled'],
         [providers.emoji, 'feature-emoji-enabled'],
         [providers.calculator, 'feature-calculator-enabled'],
         [providers.timezone, 'feature-timezone-enabled'],

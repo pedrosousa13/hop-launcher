@@ -40,6 +40,10 @@ export function extractQueryRoute(rawQuery) {
         return {mode: 'apps', query: q.slice(2)};
     if (qLower.startsWith('f '))
         return {mode: 'files', query: q.slice(2)};
+    if (qLower.startsWith('settings '))
+        return {mode: 'settings', query: q.slice(9)};
+    if (qLower.startsWith('prefs '))
+        return {mode: 'settings', query: q.slice(6)};
     if (qLower.startsWith(':emoji '))
         return {mode: 'emoji', query: q.slice(7)};
     if (qLower.startsWith('emoji '))

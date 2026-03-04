@@ -19,6 +19,7 @@ import {FilesProvider} from './lib/providers/files.js';
 import {WeatherProvider} from './lib/providers/weather.js';
 import {WebSearchProvider} from './lib/providers/webSearch.js';
 import {HopdProvider} from './lib/providers/hopd.js';
+import {SettingsProvider} from './lib/providers/settings.js';
 import {makeSettingsGatedProvider} from './lib/providerToggleWrapper.js';
 import {buildProviderFeatureMap} from './lib/providerFeatureMap.js';
 
@@ -128,6 +129,15 @@ export default class HopLauncherExtension extends Extension {
                 ),
             }),
             webSearch: new WebSearchProvider(this._settings, {openUrl}),
+            settings: new SettingsProvider({
+                openHopSettings: () => this.openPreferences(),
+                launchDesktopApp: desktopId => {
+                    const app = Shell.AppSystem.get_default().lookup_app(desktopId);
+                    if (!app)
+                        return;
+                    app.activate();
+                },
+            }),
             hopd: new HopdProvider({
                 requestIpc: createHopdRequestIpc(resolveHopdSocketPath(), () => this._destroyed),
                 limit: this._settings.get_int('max-results'),

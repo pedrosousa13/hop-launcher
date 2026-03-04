@@ -7,6 +7,14 @@ test('prefix f routes to files mode', () => {
     assert.deepEqual(extractQueryRoute('f report'), {mode: 'files', query: 'report'});
 });
 
+test('settings keyword routes to settings mode', () => {
+    assert.deepEqual(extractQueryRoute('settings launcher'), {mode: 'settings', query: 'launcher'});
+});
+
+test('prefs keyword routes to settings mode', () => {
+    assert.deepEqual(extractQueryRoute('prefs hotkeys'), {mode: 'settings', query: 'hotkeys'});
+});
+
 test('prefix emoji routes to emoji mode', () => {
     assert.deepEqual(extractQueryRoute(':emoji smile'), {mode: 'emoji', query: 'smile'});
 });
