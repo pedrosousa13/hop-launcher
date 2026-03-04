@@ -1687,6 +1687,140 @@ fn open_settings_window(
         .title("Reset to defaults")
         .subtitle("Restore all launcher settings to default values.")
         .build();
+    let export_row = adw::ActionRow::builder()
+        .title("Export profile")
+        .subtitle("Save launcher settings to a JSON file.")
+        .build();
+    let export_button = gtk::Button::builder()
+        .label("Export")
+        .valign(gtk::Align::Center)
+        .build();
+    export_row.add_suffix(&export_button);
+    export_row.set_activatable_widget(Some(&export_button));
+    {
+        let settings = settings.clone();
+        let settings_status = settings_status.clone();
+        let prefs = prefs.clone();
+        export_button.connect_clicked(move |_| {
+            let settings = settings.clone();
+            let settings_status = settings_status.clone();
+            select_json_file(
+                &prefs,
+                "Export Hop Launcher Settings",
+                "Save",
+                Some("hop-launcher-settings.json"),
+                move |path| {
+                    let payload = serde_json::json!({
+                        "overlay_opacity_percent": settings.borrow().overlay_opacity_percent,
+                        "max_results": settings.borrow().max_results,
+                        "frameless_window": settings.borrow().frameless_window,
+                        "feature_apps_enabled": settings.borrow().feature_apps_enabled,
+                        "feature_windows_enabled": settings.borrow().feature_windows_enabled,
+                        "feature_files_enabled": settings.borrow().feature_files_enabled,
+                        "feature_recents_enabled": settings.borrow().feature_recents_enabled,
+                        "feature_settings_enabled": settings.borrow().feature_settings_enabled,
+                        "feature_utility_enabled": settings.borrow().feature_utility_enabled,
+                        "weight_windows": settings.borrow().weight_windows,
+                        "weight_apps": settings.borrow().weight_apps,
+                        "weight_recents": settings.borrow().weight_recents,
+                        "weight_files": settings.borrow().weight_files,
+                        "weight_emoji": settings.borrow().weight_emoji,
+                        "weight_utility": settings.borrow().weight_utility,
+                        "min_fuzzy_score": settings.borrow().min_fuzzy_score,
+                        "animations_enabled": settings.borrow().animations_enabled,
+                        "open_animation_ms": settings.borrow().open_animation_ms,
+                        "close_animation_ms": settings.borrow().close_animation_ms,
+                        "debounce_ms": settings.borrow().debounce_ms,
+                        "density_mode": settings.borrow().density_mode,
+                        "indexed_folders": settings.borrow().indexed_folders,
+                        "learning_enabled": settings.borrow().learning_enabled,
+                        "currency_refresh_enabled": settings.borrow().currency_refresh_enabled,
+                        "currency_rate_ttl_hours": settings.borrow().currency_rate_ttl_hours,
+                        "web_search_enabled": settings.borrow().web_search_enabled,
+                        "web_search_max_actions": settings.borrow().web_search_max_actions
+                    });
+                    let encoded = match serde_json::to_string_pretty(&payload) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            set_settings_feedback(
+                                &settings_status,
+                                &format!("Export encode failed: {error}"),
+                                true,
+                            );
+                            return;
+                        }
+                    };
+                    if let Err(error) = std::fs::write(&path, encoded) {
+                        set_settings_feedback(
+                            &settings_status,
+                            &format!("Export write failed: {error}"),
+                            true,
+                        );
+                        return;
+                    }
+                    set_settings_feedback(
+                        &settings_status,
+                        &format!("Exported profile to {}", path.display()),
+                        false,
+                    );
+                },
+            );
+        });
+    }
+    let import_row = adw::ActionRow::builder()
+        .title("Import profile")
+        .subtitle("Load launcher settings from a JSON file.")
+        .build();
+    let import_button = gtk::Button::builder()
+        .label("Import")
+        .valign(gtk::Align::Center)
+        .build();
+    import_row.add_suffix(&import_button);
+    import_row.set_activatable_widget(Some(&import_button));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
+        let parent = parent.clone();
+        let prefs = prefs.clone();
+        import_button.connect_clicked(move |_| {
+            let settings = settings.clone();
+            let socket_path = socket_path.clone();
+            let settings_status = settings_status.clone();
+            let parent = parent.clone();
+            open_json_file(&prefs, "Import Hop Launcher Settings", move |path| {
+                let imported = match load_settings_from_path(&path) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        set_settings_feedback(
+                            &settings_status,
+                            &format!("Import failed: {error}"),
+                            true,
+                        );
+                        return;
+                    }
+                };
+                parent.set_opacity(imported.overlay_opacity_percent as f64 / 100.0);
+                parent.set_decorated(!imported.frameless_window);
+                apply_density_class(&parent, &imported.density_mode);
+                if let Err(error) = save_ui_settings(&imported) {
+                    set_settings_feedback(
+                        &settings_status,
+                        &format!("Import save failed: {error}"),
+                        true,
+                    );
+                    return;
+                }
+                sync_settings_to_hopd(&socket_path, &imported);
+                *settings.borrow_mut() = imported;
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Imported profile from {}", path.display()),
+                    false,
+                );
+            });
+        });
+    }
     let reset_button = gtk::Button::builder()
         .label("Reset")
         .valign(gtk::Align::Center)
@@ -1717,6 +1851,8 @@ fn open_settings_window(
             );
         });
     }
+    profile.add(&import_row);
+    profile.add(&export_row);
     profile.add(&reset_row);
     page.add(&advanced);
     page.add(&profile);
@@ -1822,6 +1958,293 @@ fn add_integer_spin_row(
         });
     }
     group.add(&row);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn select_json_file(
+    parent: &adw::PreferencesWindow,
+    title: &str,
+    accept_label: &str,
+    initial_name: Option<&str>,
+    on_selected: impl Fn(std::path::PathBuf) + 'static,
+) {
+    let dialog = gtk::FileChooserNative::builder()
+        .title(title)
+        .transient_for(parent)
+        .accept_label(accept_label)
+        .modal(true)
+        .build();
+    dialog.set_action(gtk::FileChooserAction::Save);
+    if let Some(name) = initial_name {
+        dialog.set_current_name(name);
+    }
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("JSON files"));
+    filter.add_pattern("*.json");
+    dialog.add_filter(&filter);
+    dialog.connect_response(move |chooser, response| {
+        if response == gtk::ResponseType::Accept {
+            if let Some(file) = chooser.file() {
+                if let Some(path) = file.path() {
+                    on_selected(path);
+                }
+            }
+        }
+    });
+    dialog.show();
+}
+
+#[cfg(feature = "gtk_ui")]
+fn open_json_file(
+    parent: &adw::PreferencesWindow,
+    title: &str,
+    on_selected: impl Fn(std::path::PathBuf) + 'static,
+) {
+    let dialog = gtk::FileChooserNative::builder()
+        .title(title)
+        .transient_for(parent)
+        .accept_label("Open")
+        .modal(true)
+        .build();
+    dialog.set_action(gtk::FileChooserAction::Open);
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("JSON files"));
+    filter.add_pattern("*.json");
+    dialog.add_filter(&filter);
+    dialog.connect_response(move |chooser, response| {
+        if response == gtk::ResponseType::Accept {
+            if let Some(file) = chooser.file() {
+                if let Some(path) = file.path() {
+                    on_selected(path);
+                }
+            }
+        }
+    });
+    dialog.show();
+}
+
+#[cfg(feature = "gtk_ui")]
+fn load_settings_from_path(path: &std::path::Path) -> Result<LauncherUiSettings, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("read file failed: {error}"))?;
+    let json = serde_json::from_str::<serde_json::Value>(&raw)
+        .map_err(|error| format!("parse json failed: {error}"))?;
+    let default = LauncherUiSettings::default();
+    let merged = serde_json::json!({
+        "overlay_opacity_percent": json.get("overlay_opacity_percent").cloned().unwrap_or(serde_json::json!(default.overlay_opacity_percent)),
+        "max_results": json.get("max_results").cloned().unwrap_or(serde_json::json!(default.max_results)),
+        "frameless_window": json.get("frameless_window").cloned().unwrap_or(serde_json::json!(default.frameless_window)),
+        "feature_apps_enabled": json.get("feature_apps_enabled").cloned().unwrap_or(serde_json::json!(default.feature_apps_enabled)),
+        "feature_windows_enabled": json.get("feature_windows_enabled").cloned().unwrap_or(serde_json::json!(default.feature_windows_enabled)),
+        "feature_files_enabled": json.get("feature_files_enabled").cloned().unwrap_or(serde_json::json!(default.feature_files_enabled)),
+        "feature_recents_enabled": json.get("feature_recents_enabled").cloned().unwrap_or(serde_json::json!(default.feature_recents_enabled)),
+        "feature_settings_enabled": json.get("feature_settings_enabled").cloned().unwrap_or(serde_json::json!(default.feature_settings_enabled)),
+        "feature_utility_enabled": json.get("feature_utility_enabled").cloned().unwrap_or(serde_json::json!(default.feature_utility_enabled)),
+        "weight_windows": json.get("weight_windows").cloned().unwrap_or(serde_json::json!(default.weight_windows)),
+        "weight_apps": json.get("weight_apps").cloned().unwrap_or(serde_json::json!(default.weight_apps)),
+        "weight_recents": json.get("weight_recents").cloned().unwrap_or(serde_json::json!(default.weight_recents)),
+        "weight_files": json.get("weight_files").cloned().unwrap_or(serde_json::json!(default.weight_files)),
+        "weight_emoji": json.get("weight_emoji").cloned().unwrap_or(serde_json::json!(default.weight_emoji)),
+        "weight_utility": json.get("weight_utility").cloned().unwrap_or(serde_json::json!(default.weight_utility)),
+        "min_fuzzy_score": json.get("min_fuzzy_score").cloned().unwrap_or(serde_json::json!(default.min_fuzzy_score)),
+        "animations_enabled": json.get("animations_enabled").cloned().unwrap_or(serde_json::json!(default.animations_enabled)),
+        "open_animation_ms": json.get("open_animation_ms").cloned().unwrap_or(serde_json::json!(default.open_animation_ms)),
+        "close_animation_ms": json.get("close_animation_ms").cloned().unwrap_or(serde_json::json!(default.close_animation_ms)),
+        "debounce_ms": json.get("debounce_ms").cloned().unwrap_or(serde_json::json!(default.debounce_ms)),
+        "density_mode": json.get("density_mode").cloned().unwrap_or(serde_json::json!(default.density_mode)),
+        "indexed_folders": json.get("indexed_folders").cloned().unwrap_or(serde_json::json!(default.indexed_folders)),
+        "learning_enabled": json.get("learning_enabled").cloned().unwrap_or(serde_json::json!(default.learning_enabled)),
+        "currency_refresh_enabled": json.get("currency_refresh_enabled").cloned().unwrap_or(serde_json::json!(default.currency_refresh_enabled)),
+        "currency_rate_ttl_hours": json.get("currency_rate_ttl_hours").cloned().unwrap_or(serde_json::json!(default.currency_rate_ttl_hours)),
+        "web_search_enabled": json.get("web_search_enabled").cloned().unwrap_or(serde_json::json!(default.web_search_enabled)),
+        "web_search_max_actions": json.get("web_search_max_actions").cloned().unwrap_or(serde_json::json!(default.web_search_max_actions))
+    });
+    let encoded = serde_json::to_string(&merged).map_err(|error| format!("encode failed: {error}"))?;
+    let temp_path = settings_file_path().ok_or_else(|| "missing config dir".to_string())?;
+    let parent = temp_path
+        .parent()
+        .ok_or_else(|| "missing config dir".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|error| format!("create settings dir failed: {error}"))?;
+    let probe_path = parent.join(".import-probe.json");
+    std::fs::write(&probe_path, encoded).map_err(|error| format!("write import probe failed: {error}"))?;
+    let settings = load_ui_settings_from_path(&probe_path);
+    let _ = std::fs::remove_file(&probe_path);
+    Ok(settings)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return LauncherUiSettings::default();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return LauncherUiSettings::default();
+    };
+    let _ = json;
+    // Reuse existing loader by temporarily overriding the default path behavior through direct parse.
+    // This keeps normalization behavior in one place.
+    // Small helper: write to default path parser not needed; parse manually through copy of loader logic.
+    let default = LauncherUiSettings::default();
+    let overlay = json
+        .get("overlay_opacity_percent")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(70, 100) as i32)
+        .unwrap_or(default.overlay_opacity_percent);
+    let max_results = json
+        .get("max_results")
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v.clamp(4, 24) as u32)
+        .unwrap_or(default.max_results);
+    let frameless = json
+        .get("frameless_window")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.frameless_window);
+    let feature_apps_enabled = json
+        .get("feature_apps_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_apps_enabled);
+    let feature_windows_enabled = json
+        .get("feature_windows_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_windows_enabled);
+    let feature_files_enabled = json
+        .get("feature_files_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_files_enabled);
+    let feature_recents_enabled = json
+        .get("feature_recents_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_recents_enabled);
+    let feature_settings_enabled = json
+        .get("feature_settings_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_settings_enabled);
+    let feature_utility_enabled = json
+        .get("feature_utility_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.feature_utility_enabled);
+    let weight_windows = json
+        .get("weight_windows")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_windows);
+    let weight_apps = json
+        .get("weight_apps")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_apps);
+    let weight_recents = json
+        .get("weight_recents")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_recents);
+    let weight_files = json
+        .get("weight_files")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_files);
+    let weight_emoji = json
+        .get("weight_emoji")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_emoji);
+    let weight_utility = json
+        .get("weight_utility")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(-200, 200) as i32)
+        .unwrap_or(default.weight_utility);
+    let min_fuzzy_score = json
+        .get("min_fuzzy_score")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(0, 400) as i32)
+        .unwrap_or(default.min_fuzzy_score);
+    let animations_enabled = json
+        .get("animations_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.animations_enabled);
+    let open_animation_ms = json
+        .get("open_animation_ms")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 500) as i32)
+        .unwrap_or(default.open_animation_ms);
+    let close_animation_ms = json
+        .get("close_animation_ms")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 500) as i32)
+        .unwrap_or(default.close_animation_ms);
+    let debounce_ms = json
+        .get("debounce_ms")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(0, 500) as i32)
+        .unwrap_or(default.debounce_ms);
+    let density_mode = json
+        .get("density_mode")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_density_mode)
+        .unwrap_or(default.density_mode);
+    let indexed_folders = json
+        .get("indexed_folders")
+        .and_then(serde_json::Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(|path| path.trim().to_string())
+                .filter(|path| !path.is_empty())
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or(default.indexed_folders);
+    let learning_enabled = json
+        .get("learning_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.learning_enabled);
+    let currency_refresh_enabled = json
+        .get("currency_refresh_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.currency_refresh_enabled);
+    let currency_rate_ttl_hours = json
+        .get("currency_rate_ttl_hours")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 168) as i32)
+        .unwrap_or(default.currency_rate_ttl_hours);
+    let web_search_enabled = json
+        .get("web_search_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.web_search_enabled);
+    let web_search_max_actions = json
+        .get("web_search_max_actions")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 10) as i32)
+        .unwrap_or(default.web_search_max_actions);
+
+    LauncherUiSettings {
+        overlay_opacity_percent: overlay,
+        max_results,
+        frameless_window: frameless,
+        feature_apps_enabled,
+        feature_windows_enabled,
+        feature_files_enabled,
+        feature_recents_enabled,
+        feature_settings_enabled,
+        feature_utility_enabled,
+        weight_windows,
+        weight_apps,
+        weight_recents,
+        weight_files,
+        weight_emoji,
+        weight_utility,
+        min_fuzzy_score,
+        animations_enabled,
+        open_animation_ms,
+        close_animation_ms,
+        debounce_ms,
+        density_mode,
+        indexed_folders,
+        learning_enabled,
+        currency_refresh_enabled,
+        currency_rate_ttl_hours,
+        web_search_enabled,
+        web_search_max_actions,
+    }
 }
 
 #[cfg(feature = "gtk_ui")]
