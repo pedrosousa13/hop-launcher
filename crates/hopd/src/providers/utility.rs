@@ -1,7 +1,11 @@
 use crate::SearchItem;
 
 pub fn results(query: &str) -> Vec<SearchItem> {
-    if query.trim().is_empty() {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if trimmed.chars().count() > 2 {
         return Vec::new();
     }
 
