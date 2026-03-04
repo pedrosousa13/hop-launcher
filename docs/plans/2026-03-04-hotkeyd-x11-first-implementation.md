@@ -8,6 +8,58 @@
 
 **Tech Stack:** Rust, x11rb, Unix sockets, serde_json.
 
+## Status Snapshot (Updated 2026-03-04)
+
+This plan is fully implemented, and the branch has progressed beyond the original X11-first scope.
+
+### Original Plan Tasks
+
+- [x] Task 1: Add failing command parsing tests
+- [x] Task 2: Implement command parsing and runtime dispatch
+- [x] Task 3: Implement X11 runtime backend and Wayland fallback
+- [x] Task 4: Update docs/manual testing and verify full suite
+
+### Completed Beyond Original Scope
+
+- Added control socket diagnostics and health classification:
+  - `hop-hotkeyd status`
+  - `hop-hotkeyd doctor` (+ wait/interval/retry options)
+  - `hop-hotkeyd doctor --strict` for CI/script fail-fast behavior
+- Added compositor-aware tooling:
+  - `hop-hotkeyd print-bindings` (+ `--compositor`, `--socket`)
+  - `status` and `doctor` now support `--compositor` override for testing
+  - `status` now supports `--socket` override and embeds control probe results
+  - `status` now emits `recommended_binding` for detected mode
+- Added native Wayland daemon backends:
+  - Sway tick backend (`send_tick hop-launcher-toggle`)
+  - Hyprland event backend (`dispatch event hop-launcher-toggle`)
+- Added native Wayland readiness diagnostics:
+  - `native_backend_ready`
+  - `native_backend_socket`
+  - `native_backend_error`
+  - `wayland_backend_mode` (`sway_tick`, `hyprland_event`, `fallback`)
+- Updated manual and installer guidance:
+  - `scripts/run-gtk-manual-test.sh` now prints richer hotkey diagnostics
+  - installer output includes binding helper guidance
+
+### Recent Continuation Commits (Newest First)
+
+- `48e2b6e` feat(hotkeyd): add strict doctor mode
+- `0acae04` feat(hotkeyd): add compositor override for status and doctor
+- `f752c71` feat(hotkeyd): add status socket override and probe output
+- `972e472` feat(hotkeyd): support custom socket in binding snippets
+- `0d02273` feat(hotkeyd): add recommended binding in status output
+- `ab7a9fd` feat(hotkeyd): add wayland native readiness diagnostics
+- `e6eb98b` feat(hotkeyd): add hyprland event backend for wayland toggle
+- `19de3d8` feat(hotkeyd): add sway tick backend for wayland toggle
+
+### Continuation Backlog (Next Phase Candidates)
+
+- [ ] Add KDE-native global shortcut backend (KGlobalAccel/DBus path)
+- [ ] Add GNOME-native global shortcut backend (Shell extension/API bridge path)
+- [ ] Add end-to-end integration tests for native Wayland event loops (where feasible)
+- [ ] Optional: expose structured machine-readable status/doctor schema in docs
+
 ---
 
 ### Task 1: Add failing command parsing tests
