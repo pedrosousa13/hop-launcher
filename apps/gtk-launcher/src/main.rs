@@ -67,6 +67,7 @@ struct LauncherUiSettings {
     close_animation_ms: i32,
     debounce_ms: i32,
     density_mode: String,
+    indexed_folders: Vec<String>,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -94,6 +95,7 @@ impl Default for LauncherUiSettings {
             close_animation_ms: 110,
             debounce_ms: 15,
             density_mode: "default".to_string(),
+            indexed_folders: Vec::new(),
         }
     }
 }
@@ -243,6 +245,17 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_str)
         .map(sanitize_density_mode)
         .unwrap_or(default.density_mode);
+    let indexed_folders = json
+        .get("indexed_folders")
+        .and_then(serde_json::Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(|path| path.trim().to_string())
+                .filter(|path| !path.is_empty())
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or(default.indexed_folders);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -266,6 +279,7 @@ fn load_ui_settings() -> LauncherUiSettings {
         close_animation_ms,
         debounce_ms,
         density_mode,
+        indexed_folders,
     }
 }
 
@@ -299,6 +313,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "close_animation_ms": settings.close_animation_ms,
         "debounce_ms": settings.debounce_ms,
         "density_mode": settings.density_mode,
+        "indexed_folders": settings.indexed_folders,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -329,6 +344,7 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ui.close_animation_ms", serde_json::json!(settings.close_animation_ms)),
         ("ui.debounce_ms", serde_json::json!(settings.debounce_ms)),
         ("ui.density_mode", serde_json::json!(settings.density_mode)),
+        ("search.indexed_folders", serde_json::json!(settings.indexed_folders)),
     ];
     for (key, value) in values {
         if let Err(error) = config_set(socket_path, key, value) {
@@ -451,6 +467,22 @@ fn run() {
             });
         }
 
+        let open_settings = gio::SimpleAction::new("open-settings", None);
+        {
+            let app = app.clone();
+            let parent = window.clone();
+            let settings = ui_settings.clone();
+            let socket_path = socket_path.clone();
+            open_settings.connect_activate(move |_, _| {
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
+            });
+        }
+        app.add_action(&open_settings);
+        app.set_accels_for_action(
+            "app.open-settings",
+            &["<Primary>comma", "<Super>comma", "<Meta>comma"],
+        );
+
         let toggle = gio::SimpleAction::new("toggle", None);
         {
             let window = window.clone();
@@ -567,6 +599,8 @@ fn run() {
             let controller = gtk::EventControllerKey::new();
             controller.connect_key_pressed(move |_, key, _, state| {
                 let is_ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                let is_super = state.contains(gtk::gdk::ModifierType::SUPER_MASK)
+                    || state.contains(gtk::gdk::ModifierType::META_MASK);
                 let is_shift = state.contains(gtk::gdk::ModifierType::SHIFT_MASK);
                 match key {
                     gtk::gdk::Key::Down => {
@@ -601,7 +635,7 @@ fn run() {
                         hide_window(&window, &ui_settings.borrow());
                         true.into()
                     }
-                    gtk::gdk::Key::comma if is_ctrl => {
+                    gtk::gdk::Key::comma if is_ctrl || is_super => {
                         open_settings_window(&app, &window, ui_settings.clone(), &socket_path);
                         true.into()
                     }
@@ -1280,6 +1314,44 @@ fn open_settings_window(
         socket_path,
         |state, value| state.feature_utility_enabled = value,
     );
+    let indexed_row = adw::ActionRow::builder()
+        .title("Indexed folders")
+        .subtitle("Comma-separated folders used for file indexing/search.")
+        .build();
+    let indexed_entry = gtk::Entry::builder()
+        .hexpand(true)
+        .placeholder_text("/home/user/Documents, /home/user/Projects")
+        .text(settings.borrow().indexed_folders.join(", "))
+        .build();
+    indexed_entry.set_valign(gtk::Align::Center);
+    indexed_row.add_suffix(&indexed_entry);
+    indexed_row.set_activatable_widget(Some(&indexed_entry));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        indexed_entry.connect_changed(move |entry| {
+            let raw = entry.text();
+            let folders = raw
+                .split(',')
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<String>>();
+            let mut next = settings.borrow().clone();
+            next.indexed_folders = folders;
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) = config_set(
+                &socket_path,
+                "search.indexed_folders",
+                serde_json::json!(next.indexed_folders),
+            ) {
+                eprintln!("failed to sync setting to hopd: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    providers.add(&indexed_row);
 
     add_integer_spin_row(
         &ranking,
