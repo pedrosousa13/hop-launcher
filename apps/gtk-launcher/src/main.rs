@@ -14,6 +14,8 @@ use std::sync::mpsc;
 use std::thread;
 #[cfg(feature = "gtk_ui")]
 use std::time::Duration;
+#[cfg(feature = "gtk_ui")]
+use std::path::Path;
 
 #[cfg(feature = "gtk_ui")]
 use gtk::gio;
@@ -108,8 +110,9 @@ fn run() {
         let toggle = gio::SimpleAction::new("toggle", None);
         {
             let window = window.clone();
+            let entry = entry.clone();
             toggle.connect_activate(move |_, _| {
-                toggle_window(&window);
+                toggle_window(&window, &entry);
             });
         }
         app.add_action(&toggle);
@@ -118,9 +121,10 @@ fn run() {
         let (toggle_tx, toggle_rx) = mpsc::channel::<()>();
         {
             let window = window.clone();
+            let entry = entry.clone();
             gtk::glib::timeout_add_local(Duration::from_millis(30), move || {
                 while toggle_rx.try_recv().is_ok() {
-                    toggle_window(&window);
+                    toggle_window(&window, &entry);
                 }
                 gtk::glib::ControlFlow::Continue
             });
@@ -163,6 +167,28 @@ fn run() {
 
         {
             let list = list.clone();
+            let window = window.clone();
+            let controller = gtk::EventControllerKey::new();
+            controller.connect_key_pressed(move |_, key, _, _| match key {
+                gtk::gdk::Key::Down => {
+                    move_selection(&list, 1);
+                    true.into()
+                }
+                gtk::gdk::Key::Up => {
+                    move_selection(&list, -1);
+                    true.into()
+                }
+                gtk::gdk::Key::Escape => {
+                    window.hide();
+                    true.into()
+                }
+                _ => false.into(),
+            });
+            entry.add_controller(controller);
+        }
+
+        {
+            let list = list.clone();
             let status = status.clone();
             let results = results.clone();
             let socket_path = socket_path.clone();
@@ -184,6 +210,7 @@ fn run() {
 
         if start_visible_on_launch() {
             window.present();
+            entry.grab_focus();
         } else {
             window.hide();
         }
@@ -193,11 +220,13 @@ fn run() {
 }
 
 #[cfg(feature = "gtk_ui")]
-fn toggle_window(window: &adw::ApplicationWindow) {
+fn toggle_window(window: &adw::ApplicationWindow, entry: &gtk::Entry) {
     if window.is_visible() {
         window.hide();
     } else {
         window.present();
+        entry.grab_focus();
+        entry.set_position(-1);
     }
 }
 
@@ -332,6 +361,19 @@ fn install_css() {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn move_selection(list: &gtk::ListBox, delta: i32) {
+    let current = list.selected_row().map(|row| row.index()).unwrap_or(-1);
+    let next = if current < 0 {
+        0
+    } else {
+        (current + delta).max(0)
+    };
+    if let Some(target) = list.row_at_index(next) {
+        list.select_row(Some(&target));
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
 fn refresh_results(
     list: &gtk::ListBox,
     status: &gtk::Label,
@@ -349,12 +391,7 @@ fn refresh_results(
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
             for row in &rows {
-                let icon_name = if row.icon.is_empty() {
-                    "system-search-symbolic"
-                } else {
-                    row.icon.as_str()
-                };
-                let icon = gtk::Image::from_icon_name(icon_name);
+                let icon = build_result_icon(row);
                 icon.set_pixel_size(20);
                 let title = gtk::Label::builder()
                     .xalign(0.0)
@@ -409,6 +446,30 @@ fn refresh_results(
             ))));
         }
     }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn build_result_icon(row: &LauncherResult) -> gtk::Image {
+    let raw = row.icon.trim();
+    if !raw.is_empty() {
+        if Path::new(raw).is_absolute() {
+            return gtk::Image::from_file(raw);
+        }
+        return gtk::Image::from_icon_name(raw);
+    }
+
+    let fallback = match row.kind.as_str() {
+        "app" => "application-x-executable-symbolic",
+        "window" => "window-symbolic",
+        "file" => "text-x-generic-symbolic",
+        "recent" => "document-open-recent-symbolic",
+        "setting" => "preferences-system-symbolic",
+        "weather" => "weather-clear-symbolic",
+        "timezone" => "preferences-system-time-symbolic",
+        "emoji" => "face-smile-symbolic",
+        _ => "system-search-symbolic",
+    };
+    gtk::Image::from_icon_name(fallback)
 }
 
 #[cfg(not(feature = "gtk_ui"))]

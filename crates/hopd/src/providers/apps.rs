@@ -73,6 +73,7 @@ fn parse_desktop_entry(content: &str, file_name: &str) -> Option<SearchItem> {
     let mut name = String::new();
     let mut exec = String::new();
     let mut keywords = String::new();
+    let mut icon = String::new();
 
     for line in content.lines() {
         if let Some(value) = line.strip_prefix("Name=") {
@@ -86,6 +87,10 @@ fn parse_desktop_entry(content: &str, file_name: &str) -> Option<SearchItem> {
         } else if let Some(value) = line.strip_prefix("Keywords=") {
             if keywords.is_empty() {
                 keywords = value.replace(';', " ");
+            }
+        } else if let Some(value) = line.strip_prefix("Icon=") {
+            if icon.is_empty() {
+                icon = value.trim().to_string();
             }
         }
     }
@@ -104,7 +109,11 @@ fn parse_desktop_entry(content: &str, file_name: &str) -> Option<SearchItem> {
         "app",
         &name,
         "Installed application",
-        "application-x-executable-symbolic",
+        if icon.is_empty() {
+            "application-x-executable-symbolic"
+        } else {
+            &icon
+        },
         &merged_keywords,
     ))
 }
@@ -116,13 +125,14 @@ mod tests {
     #[test]
     fn parses_desktop_entry_into_search_item() {
         let item = parse_desktop_entry(
-            "[Desktop Entry]\nName=Firefox\nExec=firefox %u\nKeywords=browser;web;\n",
+            "[Desktop Entry]\nName=Firefox\nExec=firefox %u\nIcon=firefox\nKeywords=browser;web;\n",
             "firefox.desktop",
         )
         .expect("desktop entry parsed");
         assert_eq!(item.id, "app:firefox.desktop");
         assert_eq!(item.kind, "app");
         assert_eq!(item.title, "Firefox");
+        assert_eq!(item.icon, "firefox");
         assert!(item.keywords.contains("browser"));
     }
 }
