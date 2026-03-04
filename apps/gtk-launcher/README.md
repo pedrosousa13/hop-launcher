@@ -23,7 +23,8 @@ Use `--features gtk_ui` to launch the native GTK/libadwaita app.
 - Control socket accepts `ui.toggle` requests at `${XDG_RUNTIME_DIR}/hop-launcher-control.sock`.
 
 This phase focuses on standalone usability and IPC integration.
-True compositor-wide global shortcut behavior is planned for the next phase.
+X11 global shortcut capture is now provided by the companion `hop-hotkeyd` service.
+Wayland remains on trigger fallback until native capture is implemented.
 
 ## Phase 2 local toggle probe
 

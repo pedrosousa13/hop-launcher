@@ -60,3 +60,10 @@ See `docs/HOPD_LOCAL_INSTALL.md` for full details.
 
 This command installs/updates `hopd`, checks daemon health over the Unix socket,
 and launches the GTK app with `--features gtk_ui` for manual validation.
+
+On X11 sessions, `hop-hotkeyd` runs a real global hotkey loop for `Ctrl+Shift+&`.
+On Wayland sessions, use the fallback one-shot command:
+
+```bash
+~/.local/bin/hop-hotkeyd trigger
+```

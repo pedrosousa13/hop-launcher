@@ -99,10 +99,11 @@ systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
 
 echo
 echo "Manual test checklist:"
-echo "- App starts visible in Phase 1; Ctrl+Shift+& is app-local (not global yet)"
+echo "- App starts visible."
+echo "- X11: Ctrl+Shift+& should toggle globally via hop-hotkeyd.service."
+echo "- Wayland fallback: ~/.local/bin/hop-hotkeyd trigger --socket $CONTROL_SOCKET_PATH"
 echo "- Type: weather zurich / time in tokyo / emoji smile"
 echo "- Press Enter on a result to trigger actions.execute"
-echo "- Global toggle test: ~/.local/bin/hop-hotkeyd trigger --socket $CONTROL_SOCKET_PATH"
 echo
 
 echo "Launching GTK app..."
