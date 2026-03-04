@@ -107,7 +107,17 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             "session_type": session_type,
             "backend": "wayland",
             "global_hotkey_supported": false,
-            "fallback": "hop-hotkeyd trigger"
+            "fallback": "hop-hotkeyd trigger",
+            "wayland_compositor": detect_wayland_compositor(
+                &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+                &env::var("XDG_SESSION_DESKTOP").unwrap_or_default()
+            ),
+            "next_step": wayland_next_step_hint(
+                &detect_wayland_compositor(
+                    &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+                    &env::var("XDG_SESSION_DESKTOP").unwrap_or_default()
+                )
+            )
         }),
         Err(error) => json!({
             "session_type": session_type,
@@ -115,6 +125,34 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             "global_hotkey_supported": false,
             "error": error
         }),
+    }
+}
+
+fn detect_wayland_compositor(current_desktop: &str, session_desktop: &str) -> &'static str {
+    let merged = format!(
+        "{}:{}",
+        current_desktop.to_ascii_lowercase(),
+        session_desktop.to_ascii_lowercase()
+    );
+    if merged.contains("gnome") {
+        "gnome"
+    } else if merged.contains("kde") || merged.contains("plasma") {
+        "kde"
+    } else if merged.contains("sway") {
+        "sway"
+    } else if merged.contains("hyprland") {
+        "hyprland"
+    } else {
+        "unknown"
+    }
+}
+
+fn wayland_next_step_hint(compositor: &str) -> &'static str {
+    match compositor {
+        "gnome" => "implement gnome-shell integration path for global shortcut capture",
+        "kde" => "implement KGlobalAccel integration path for global shortcut capture",
+        "sway" | "hyprland" => "use compositor config binding to call `hop-hotkeyd trigger`",
+        _ => "use fallback trigger and detect compositor-specific integration strategy",
     }
 }
 
@@ -455,5 +493,22 @@ mod tests {
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], false);
         assert_eq!(payload["fallback"], "hop-hotkeyd trigger");
+    }
+
+    #[test]
+    fn detects_wayland_compositor_from_desktop_env() {
+        assert_eq!(detect_wayland_compositor("GNOME", ""), "gnome");
+        assert_eq!(detect_wayland_compositor("KDE", ""), "kde");
+        assert_eq!(detect_wayland_compositor("sway", ""), "sway");
+        assert_eq!(detect_wayland_compositor("Hyprland", ""), "hyprland");
+        assert_eq!(detect_wayland_compositor("", ""), "unknown");
+    }
+
+    #[test]
+    fn provides_wayland_next_step_hint() {
+        assert!(wayland_next_step_hint("gnome").contains("gnome-shell"));
+        assert!(wayland_next_step_hint("kde").contains("KGlobalAccel"));
+        assert!(wayland_next_step_hint("sway").contains("trigger"));
+        assert!(wayland_next_step_hint("unknown").contains("fallback"));
     }
 }
