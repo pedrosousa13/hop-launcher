@@ -67,6 +67,32 @@ pub fn send_toggle(socket_path: &str, request_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn probe_control_socket(socket_path: &str) -> Result<(), String> {
+    let mut stream = UnixStream::connect(socket_path)
+        .map_err(|error| format!("connect {} failed: {}", socket_path, error))?;
+
+    let request = json!({
+        "id": "doctor",
+        "method": "ui.ping"
+    });
+    let encoded = serde_json::to_string(&request)
+        .map_err(|error| format!("encode request failed: {}", error))?;
+    stream
+        .write_all(encoded.as_bytes())
+        .map_err(|error| format!("write request failed: {}", error))?;
+    stream
+        .write_all(b"\n")
+        .map_err(|error| format!("write newline failed: {}", error))?;
+
+    let mut line = String::new();
+    BufReader::new(stream)
+        .read_line(&mut line)
+        .map_err(|error| format!("read response failed: {}", error))?;
+    let _payload: Value = serde_json::from_str(line.trim())
+        .map_err(|error| format!("decode response failed: {}", error))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{BufRead, BufReader, Write};
@@ -122,5 +148,30 @@ mod tests {
         }
 
         assert!(result.is_ok(), "toggle should succeed");
+    }
+
+    #[test]
+    fn probe_control_socket_accepts_error_reply_as_reachable() {
+        let socket_path = temp_socket_path("hop-hotkeyd-probe");
+        let listener = UnixListener::bind(&socket_path).expect("bind test socket");
+        let server = thread::spawn(move || {
+            let (mut conn, _) = listener.accept().expect("accept connection");
+            let mut line = String::new();
+            let mut reader = BufReader::new(conn.try_clone().expect("clone conn"));
+            reader.read_line(&mut line).expect("read request");
+            assert!(line.contains("\"method\":\"ui.ping\""));
+
+            let response = "{\"id\":\"doctor\",\"error\":{\"code\":-32601,\"message\":\"unsupported method\"}}\n";
+            conn.write_all(response.as_bytes()).expect("write response");
+        });
+
+        let reachable = probe_control_socket(&socket_path);
+        server.join().expect("server thread");
+
+        if Path::new(&socket_path).exists() {
+            let _ = std::fs::remove_file(&socket_path);
+        }
+
+        assert!(reachable.is_ok(), "probe should treat error response as reachable");
     }
 }

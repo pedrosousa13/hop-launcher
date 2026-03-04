@@ -3,7 +3,7 @@ use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use hop_hotkeyd::{default_control_socket_path, select_backend_mode, send_toggle};
+use hop_hotkeyd::{default_control_socket_path, probe_control_socket, select_backend_mode, send_toggle};
 use serde_json::json;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
@@ -14,10 +14,11 @@ enum Command {
     Run,
     Trigger { socket_path: String },
     Status,
+    Doctor { socket_path: String },
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>]  # print diagnostics\n"
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
@@ -26,6 +27,24 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
     }
     if args[1] == "status" {
         return Ok(Command::Status);
+    }
+    if args[1] == "doctor" {
+        let mut socket_path = default_control_socket_path();
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--socket" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--socket requires a value".to_string());
+                    }
+                    socket_path = args[i].clone();
+                }
+                unknown => return Err(format!("unknown argument: {}", unknown)),
+            }
+            i += 1;
+        }
+        return Ok(Command::Doctor { socket_path });
     }
     if args[1] != "trigger" {
         return Err(usage().to_string());
@@ -58,6 +77,18 @@ fn run() -> Result<(), String> {
         Command::Status => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             println!("{}", build_status_payload(&session_type));
+            Ok(())
+        }
+        Command::Doctor { socket_path } => {
+            let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
+            let backend_payload = build_status_payload(&session_type);
+            let reachable = probe_control_socket(&socket_path).is_ok();
+            let doctor = json!({
+                "status": backend_payload,
+                "control_socket_path": socket_path,
+                "control_socket_reachable": reachable
+            });
+            println!("{}", doctor);
             Ok(())
         }
         Command::Run => run_daemon_mode(),
@@ -341,6 +372,23 @@ mod tests {
         let args = vec!["hop-hotkeyd".to_string(), "status".to_string()];
         let command = parse_command(&args).expect("status should parse");
         assert_eq!(command, Command::Status);
+    }
+
+    #[test]
+    fn parse_doctor_subcommand_with_custom_socket() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "doctor".to_string(),
+            "--socket".to_string(),
+            "/tmp/doctor.sock".to_string(),
+        ];
+        let command = parse_command(&args).expect("doctor should parse");
+        assert_eq!(
+            command,
+            Command::Doctor {
+                socket_path: "/tmp/doctor.sock".to_string()
+            }
+        );
     }
 
     #[test]
