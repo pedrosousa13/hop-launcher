@@ -17,11 +17,15 @@ enum Command {
     Run,
     Trigger { socket_path: String },
     Status,
-    Doctor { socket_path: String },
+    Doctor {
+        socket_path: String,
+        wait_seconds: u64,
+        interval_ms: u64,
+    },
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>]  # print diagnostics\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +45,8 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
     }
     if args[1] == "doctor" {
         let mut socket_path = default_control_socket_path();
+        let mut wait_seconds: u64 = 0;
+        let mut interval_ms: u64 = 250;
         let mut i = 2;
         while i < args.len() {
             match args[i].as_str() {
@@ -51,11 +57,36 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                     }
                     socket_path = args[i].clone();
                 }
+                "--wait-seconds" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--wait-seconds requires a value".to_string());
+                    }
+                    wait_seconds = args[i]
+                        .parse::<u64>()
+                        .map_err(|_| "--wait-seconds must be an integer".to_string())?;
+                }
+                "--interval-ms" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--interval-ms requires a value".to_string());
+                    }
+                    interval_ms = args[i]
+                        .parse::<u64>()
+                        .map_err(|_| "--interval-ms must be an integer".to_string())?;
+                    if interval_ms == 0 {
+                        return Err("--interval-ms must be greater than 0".to_string());
+                    }
+                }
                 unknown => return Err(format!("unknown argument: {}", unknown)),
             }
             i += 1;
         }
-        return Ok(Command::Doctor { socket_path });
+        return Ok(Command::Doctor {
+            socket_path,
+            wait_seconds,
+            interval_ms,
+        });
     }
     if args[1] != "trigger" {
         return Err(usage().to_string());
@@ -90,17 +121,27 @@ fn run() -> Result<(), String> {
             println!("{}", build_status_payload(&session_type));
             Ok(())
         }
-        Command::Doctor { socket_path } => {
+        Command::Doctor {
+            socket_path,
+            wait_seconds,
+            interval_ms,
+        } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             let backend_payload = build_status_payload(&session_type);
-            let summary = summarize_probe_result(probe_control_socket(&socket_path));
+            let summary = summarize_probe_result(run_doctor_probe(
+                &socket_path,
+                wait_seconds,
+                interval_ms,
+            ));
             let doctor = json!({
                 "status": backend_payload,
                 "control_socket_path": socket_path,
                 "control_socket_reachable": summary.reachable,
                 "control_ping_supported": summary.ping_supported,
                 "control_probe_status": summary.status,
-                "control_probe_error": summary.error
+                "control_probe_error": summary.error,
+                "doctor_wait_seconds": wait_seconds,
+                "doctor_interval_ms": interval_ms
             });
             println!("{}", doctor);
             Ok(())
@@ -129,6 +170,27 @@ fn summarize_probe_result(probe: Result<ControlProbeStatus, String>) -> ProbeSum
             status: "unreachable",
             error: Some(error),
         },
+    }
+}
+
+fn run_doctor_probe(
+    socket_path: &str,
+    wait_seconds: u64,
+    interval_ms: u64,
+) -> Result<ControlProbeStatus, String> {
+    let deadline = Instant::now() + Duration::from_secs(wait_seconds);
+
+    loop {
+        match probe_control_socket(socket_path) {
+            Ok(status) => return Ok(status),
+            Err(error) => {
+                if Instant::now() >= deadline {
+                    return Err(error);
+                }
+            }
+        }
+
+        thread::sleep(Duration::from_millis(interval_ms));
     }
 }
 
@@ -477,7 +539,30 @@ mod tests {
         assert_eq!(
             command,
             Command::Doctor {
-                socket_path: "/tmp/doctor.sock".to_string()
+                socket_path: "/tmp/doctor.sock".to_string(),
+                wait_seconds: 0,
+                interval_ms: 250
+            }
+        );
+    }
+
+    #[test]
+    fn parse_doctor_subcommand_with_wait_options() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "doctor".to_string(),
+            "--wait-seconds".to_string(),
+            "3".to_string(),
+            "--interval-ms".to_string(),
+            "100".to_string(),
+        ];
+        let command = parse_command(&args).expect("doctor should parse");
+        assert_eq!(
+            command,
+            Command::Doctor {
+                socket_path: default_control_socket_path(),
+                wait_seconds: 3,
+                interval_ms: 100
             }
         );
     }
