@@ -9,7 +9,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
 
     let mut rows = collect_windows()
         .into_iter()
-        .filter(|window| is_empty_query || window.title.to_lowercase().contains(&normalized))
+        .filter(|window| is_empty_query || matches_window_query(window, &normalized))
         .map(|window| {
             let icon = window
                 .icon
@@ -218,6 +218,18 @@ fn normalize_icon_hint(raw: &str) -> Option<String> {
     }
 }
 
+fn matches_window_query(window: &WindowEntry, query: &str) -> bool {
+    let title = window.title.to_lowercase();
+    if title.contains(query) {
+        return true;
+    }
+    window
+        .icon
+        .as_deref()
+        .map(|value| value.to_lowercase().contains(query))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +291,17 @@ mod tests {
             Some("nautilus".to_string())
         );
         assert_eq!(normalize_icon_hint(""), None);
+    }
+
+    #[test]
+    fn matches_window_query_uses_title_and_keywords() {
+        let entry = WindowEntry {
+            id: "0x1".to_string(),
+            title: "Workspace 2".to_string(),
+            icon: Some("gnome-terminal".to_string()),
+        };
+        assert!(matches_window_query(&entry, "workspace"));
+        assert!(matches_window_query(&entry, "terminal"));
+        assert!(!matches_window_query(&entry, "firefox"));
     }
 }
