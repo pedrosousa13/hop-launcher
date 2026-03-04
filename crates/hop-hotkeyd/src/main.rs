@@ -124,12 +124,16 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             "fallback": "hop-hotkeyd trigger",
             "wayland_compositor": detect_wayland_compositor(
                 &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
-                &env::var("XDG_SESSION_DESKTOP").unwrap_or_default()
+                &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+                &env::var("SWAYSOCK").unwrap_or_default(),
+                &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
             ),
             "next_step": wayland_next_step_hint(
                 &detect_wayland_compositor(
                     &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
-                    &env::var("XDG_SESSION_DESKTOP").unwrap_or_default()
+                    &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+                    &env::var("SWAYSOCK").unwrap_or_default(),
+                    &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
                 )
             )
         }),
@@ -142,7 +146,19 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
     }
 }
 
-fn detect_wayland_compositor(current_desktop: &str, session_desktop: &str) -> &'static str {
+fn detect_wayland_compositor(
+    current_desktop: &str,
+    session_desktop: &str,
+    sway_sock: &str,
+    hyprland_signature: &str,
+) -> &'static str {
+    if !sway_sock.trim().is_empty() {
+        return "sway";
+    }
+    if !hyprland_signature.trim().is_empty() {
+        return "hyprland";
+    }
+
     let merged = format!(
         "{}:{}",
         current_desktop.to_ascii_lowercase(),
@@ -511,11 +527,23 @@ mod tests {
 
     #[test]
     fn detects_wayland_compositor_from_desktop_env() {
-        assert_eq!(detect_wayland_compositor("GNOME", ""), "gnome");
-        assert_eq!(detect_wayland_compositor("KDE", ""), "kde");
-        assert_eq!(detect_wayland_compositor("sway", ""), "sway");
-        assert_eq!(detect_wayland_compositor("Hyprland", ""), "hyprland");
-        assert_eq!(detect_wayland_compositor("", ""), "unknown");
+        assert_eq!(detect_wayland_compositor("GNOME", "", "", ""), "gnome");
+        assert_eq!(detect_wayland_compositor("KDE", "", "", ""), "kde");
+        assert_eq!(detect_wayland_compositor("sway", "", "", ""), "sway");
+        assert_eq!(detect_wayland_compositor("Hyprland", "", "", ""), "hyprland");
+        assert_eq!(detect_wayland_compositor("", "", "", ""), "unknown");
+    }
+
+    #[test]
+    fn detects_wayland_compositor_from_runtime_hints() {
+        assert_eq!(
+            detect_wayland_compositor("", "", "/run/user/1000/sway-ipc.sock", ""),
+            "sway"
+        );
+        assert_eq!(
+            detect_wayland_compositor("", "", "", "deadbeef-signature"),
+            "hyprland"
+        );
     }
 
     #[test]
