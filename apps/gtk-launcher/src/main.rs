@@ -502,13 +502,6 @@ fn run() {
             .build();
         content.add_css_class("hop-launcher-content");
 
-        let title = gtk::Label::builder()
-            .label("Hop Launcher")
-            .xalign(0.0)
-            .hexpand(true)
-            .build();
-        title.add_css_class("title-2");
-        title.add_css_class("hop-launcher-title");
         let settings_button = gtk::Button::from_icon_name("preferences-system-symbolic");
         settings_button.add_css_class("flat");
         settings_button.add_css_class("hop-launcher-settings-button");
@@ -517,15 +510,13 @@ fn run() {
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
             .build();
-        header.append(&title);
+        let header_spacer = gtk::Box::builder().hexpand(true).build();
+        header.append(&header_spacer);
         header.append(&settings_button);
         let entry = gtk::Entry::builder()
             .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji, calculations, currency…")
             .build();
         entry.add_css_class("hop-launcher-entry");
-        let (hints, mode_hint_chips) = build_mode_hints(&entry);
-        let mode_hint_chips = Rc::new(mode_hint_chips);
-        update_mode_hint_active(&mode_hint_chips, &search_query_mode(""));
         let status = gtk::Label::builder()
             .xalign(0.0)
             .build();
@@ -545,7 +536,6 @@ fn run() {
         list_scroller.add_css_class("hop-launcher-scroll");
 
         content.append(&header);
-        content.append(&hints);
         content.append(&entry);
         content.append(&status);
         content.append(&list_scroller);
@@ -613,11 +603,8 @@ fn run() {
             let socket_path = socket_path.clone();
             let ui_settings = ui_settings.clone();
             let pending_search = pending_search.clone();
-            let mode_hint_chips = mode_hint_chips.clone();
             entry.connect_changed(move |entry| {
                 let query = entry.text().to_string();
-                let active_mode = search_query_mode(&query);
-                update_mode_hint_active(&mode_hint_chips, &active_mode);
                 status.set_text(&render_status_text(QueryState::Searching));
                 if let Some(source) = pending_search.borrow_mut().take() {
                     source.remove();
@@ -673,6 +660,18 @@ fn run() {
                             &socket_path_for_settings,
                         );
                         status.set_text("Opened launcher settings");
+                        return;
+                    }
+                    if should_copy_on_enter(&result) {
+                        if let Err(error) = copy_text_to_clipboard(&result.title) {
+                            status.set_text(&render_status_text(QueryState::Error(format!(
+                                "copy failed: {error}"
+                            ))));
+                        } else {
+                            status.set_text("Copied to clipboard");
+                            hide_window(&window, &ui_settings.borrow());
+                            entry.set_text("");
+                        }
                         return;
                     }
                     if let Err(error) = execute(&socket_path, &result.id) {
@@ -766,6 +765,18 @@ fn run() {
                             &socket_path_for_settings,
                         );
                         status.set_text("Opened launcher settings");
+                        return;
+                    }
+                    if should_copy_on_enter(&result) {
+                        if let Err(error) = copy_text_to_clipboard(&result.title) {
+                            status.set_text(&render_status_text(QueryState::Error(format!(
+                                "copy failed: {error}"
+                            ))));
+                        } else {
+                            status.set_text("Copied to clipboard");
+                            hide_window(&window, &ui_settings.borrow());
+                            entry.set_text("");
+                        }
                         return;
                     }
                     if let Err(error) = execute(&socket_path, &result.id) {
@@ -970,30 +981,9 @@ fn install_css() {
   background: linear-gradient(160deg, rgba(20, 26, 34, 0.88), rgba(17, 21, 30, 0.84));
 }
 
-.hop-launcher-title {
-  letter-spacing: 0.02em;
-}
-
 .hop-launcher-settings-button {
   min-width: 32px;
   min-height: 32px;
-}
-
-.hop-launcher-hints {
-  margin-bottom: 2px;
-}
-
-.hop-launcher-hint-chip {
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid alpha(@headerbar_border_color, 0.35);
-  background: alpha(@view_bg_color, 0.38);
-  font-size: 0.78em;
-}
-
-.hop-launcher-hint-chip-active {
-  border-color: alpha(@accent_bg_color, 0.70);
-  background: alpha(@accent_bg_color, 0.24);
 }
 
 .hop-launcher-entry {
@@ -2301,121 +2291,24 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
 }
 
 #[cfg(feature = "gtk_ui")]
-fn mode_hint_specs() -> [(&'static str, &'static str, &'static str); 11] {
-    [
-        ("All", "", "all"),
-        ("Apps", "a ", "apps"),
-        ("Windows", "w ", "windows"),
-        ("Files", "f ", "files"),
-        ("Recents", "r ", "recents"),
-        ("Settings", "settings ", "settings"),
-        ("Weather", "weather ", "weather"),
-        ("Timezones", "time in ", "timezone"),
-        ("Emoji", "emoji ", "emoji"),
-        ("Calculator", "2+2", "calculator"),
-        ("Currency", "12 usd to chf", "currency"),
-    ]
+fn should_copy_on_enter(row: &LauncherResult) -> bool {
+    matches!(
+        row.kind.as_str(),
+        "utility" | "emoji" | "calculator" | "currency" | "weather" | "timezone"
+    ) && !row.title.trim().is_empty()
 }
 
 #[cfg(feature = "gtk_ui")]
-fn strip_mode_prefix(raw_query: &str) -> String {
-    let trimmed = raw_query.trim_start();
-    let lowered = trimmed.to_lowercase();
-
-    if lowered.starts_with("w ") || lowered.starts_with("a ") || lowered.starts_with("f ") || lowered.starts_with("r ") {
-        return trimmed[2..].trim().to_string();
+fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
+    let value = text.trim();
+    if value.is_empty() {
+        return Err("empty text".to_string());
     }
-    if lowered.starts_with("settings ") || lowered.starts_with("timezone ") || lowered.starts_with("currency ") {
-        return trimmed[9..].trim().to_string();
-    }
-    if lowered.starts_with("prefs ") || lowered.starts_with("emoji ") || lowered.starts_with("calc ") {
-        return trimmed[6..].trim().to_string();
-    }
-    if lowered.starts_with(":emoji ") || lowered.starts_with("weather ") || lowered.starts_with("time in ") {
-        return trimmed[7..].trim().to_string();
-    }
-    if lowered.starts_with("time ") || lowered.starts_with("calculator ") {
-        return trimmed[5..].trim().to_string();
-    }
-    if lowered.starts_with("tz ") || lowered.starts_with("wx ") || lowered.starts_with("fx ") {
-        return trimmed[3..].trim().to_string();
-    }
-
-    trimmed.to_string()
-}
-
-#[cfg(feature = "gtk_ui")]
-fn query_for_mode(mode: &str, seed: &str, current_query: &str) -> String {
-    let base = strip_mode_prefix(current_query);
-    match mode {
-        "all" => base,
-        "apps" => prefixed_mode_query("a", &base),
-        "windows" => prefixed_mode_query("w", &base),
-        "files" => prefixed_mode_query("f", &base),
-        "recents" => prefixed_mode_query("r", &base),
-        "settings" => prefixed_mode_query("settings", &base),
-        "weather" => prefixed_mode_query("weather", &base),
-        "timezone" => prefixed_mode_query("time in", &base),
-        "emoji" => prefixed_mode_query("emoji", &base),
-        "calculator" | "currency" => {
-            if base.is_empty() {
-                seed.to_string()
-            } else {
-                base
-            }
-        }
-        _ => current_query.to_string(),
-    }
-}
-
-#[cfg(feature = "gtk_ui")]
-fn prefixed_mode_query(prefix: &str, base: &str) -> String {
-    if base.is_empty() {
-        format!("{prefix} ")
-    } else {
-        format!("{prefix} {base}")
-    }
-}
-
-#[cfg(feature = "gtk_ui")]
-fn build_mode_hints(entry: &gtk::Entry) -> (gtk::Box, Vec<(String, gtk::Button)>) {
-    let row = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(6)
-        .build();
-    row.add_css_class("hop-launcher-hints");
-    let mut chips = Vec::new();
-
-    for (label, seed, mode) in mode_hint_specs() {
-        let chip = gtk::Button::with_label(label);
-        chip.add_css_class("flat");
-        chip.add_css_class("hop-launcher-hint-chip");
-        let entry = entry.clone();
-        let mode = mode.to_string();
-        let chip_mode = mode.clone();
-        let seed = seed.to_string();
-        chip.connect_clicked(move |_| {
-            let next = query_for_mode(&mode, &seed, &entry.text());
-            entry.set_text(&next);
-            entry.set_position(-1);
-            entry.grab_focus();
-        });
-        row.append(&chip);
-        chips.push((chip_mode, chip));
-    }
-
-    (row, chips)
-}
-
-#[cfg(feature = "gtk_ui")]
-fn update_mode_hint_active(chips: &[(String, gtk::Button)], active_mode: &str) {
-    for (mode, chip) in chips {
-        if mode == active_mode {
-            chip.add_css_class("hop-launcher-hint-chip-active");
-        } else {
-            chip.remove_css_class("hop-launcher-hint-chip-active");
-        }
-    }
+    let Some(display) = gtk::gdk::Display::default() else {
+        return Err("display unavailable".to_string());
+    };
+    display.clipboard().set_text(value);
+    Ok(())
 }
 
 #[cfg(feature = "gtk_ui")]
