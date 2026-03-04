@@ -297,6 +297,14 @@ fn extract_query_route(raw_query: &str) -> QueryRoute {
         ("weather", trimmed[8..].to_string())
     } else if lowered.starts_with("wx ") {
         ("weather", trimmed[3..].to_string())
+    } else if lowered.starts_with("calc ") {
+        ("calculator", trimmed[5..].to_string())
+    } else if lowered.starts_with("calculator ") {
+        ("calculator", trimmed[11..].to_string())
+    } else if lowered.starts_with("currency ") {
+        ("currency", trimmed[9..].to_string())
+    } else if lowered.starts_with("fx ") {
+        ("currency", trimmed[3..].to_string())
     } else if lowered.ends_with(" weather") && trimmed.len() > 8 {
         ("weather", trimmed[..trimmed.len() - 8].trim().to_string())
     } else if looks_like_math(trimmed) {
@@ -358,6 +366,20 @@ mod tests {
     #[test]
     fn search_query_mode_reports_files_prefix() {
         assert_eq!(search_query_mode("f report"), "files");
+    }
+
+    #[test]
+    fn route_calc_prefix_maps_to_calculator_mode() {
+        let route = extract_query_route("calc 2+2");
+        assert_eq!(route.mode, "calculator");
+        assert_eq!(route.query, "2+2");
+    }
+
+    #[test]
+    fn route_currency_prefix_maps_to_currency_mode() {
+        let route = extract_query_route("currency 12 usd to chf");
+        assert_eq!(route.mode, "currency");
+        assert_eq!(route.query, "12 usd to chf");
     }
 
     #[test]
