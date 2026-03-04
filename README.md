@@ -79,3 +79,9 @@ Run structured diagnostics (with optional wait/retry) with:
 ```bash
 ~/.local/bin/hop-hotkeyd doctor --wait-seconds 5 --interval-ms 200
 ```
+
+Print compositor-specific binding snippets with:
+
+```bash
+~/.local/bin/hop-hotkeyd print-bindings
+```

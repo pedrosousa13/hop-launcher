@@ -39,3 +39,9 @@ Inspect active backend mode/capabilities with:
 ```bash
 ~/.local/bin/hop-hotkeyd status
 ```
+
+Print compositor-specific binding snippets (for Wayland setups) with:
+
+```bash
+~/.local/bin/hop-hotkeyd print-bindings
+```

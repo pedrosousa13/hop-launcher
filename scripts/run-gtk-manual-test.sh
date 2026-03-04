@@ -99,6 +99,8 @@ systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
 
 echo "hotkey backend status:"
 ~/.local/bin/hop-hotkeyd status || true
+echo "hotkey binding snippets:"
+~/.local/bin/hop-hotkeyd print-bindings || true
 echo "hotkey diagnostics:"
 echo "(expected: unreachable before GTK app starts)"
 ~/.local/bin/hop-hotkeyd doctor --socket "$CONTROL_SOCKET_PATH" --wait-seconds 1 --interval-ms 200 || true
@@ -108,6 +110,7 @@ echo "Manual test checklist:"
 echo "- App starts visible."
 echo "- X11: Ctrl+Shift+& should toggle globally via hop-hotkeyd.service."
 echo "- Wayland fallback: ~/.local/bin/hop-hotkeyd trigger --socket $CONTROL_SOCKET_PATH"
+echo "- Wayland bindings helper: ~/.local/bin/hop-hotkeyd print-bindings"
 echo "- Optional readiness probe: ~/.local/bin/hop-hotkeyd doctor --socket $CONTROL_SOCKET_PATH --wait-seconds 5 --interval-ms 200"
 echo "- Type: weather zurich / time in tokyo / emoji smile"
 echo "- Press Enter on a result to trigger actions.execute"

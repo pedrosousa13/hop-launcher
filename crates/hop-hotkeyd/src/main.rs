@@ -22,10 +22,11 @@ enum Command {
         wait_seconds: u64,
         interval_ms: u64,
     },
+    PrintBindings { compositor: Option<String> },
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +89,24 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             interval_ms,
         });
     }
+    if args[1] == "print-bindings" {
+        let mut compositor: Option<String> = None;
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--compositor" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--compositor requires a value".to_string());
+                    }
+                    compositor = Some(args[i].to_ascii_lowercase());
+                }
+                unknown => return Err(format!("unknown argument: {}", unknown)),
+            }
+            i += 1;
+        }
+        return Ok(Command::PrintBindings { compositor });
+    }
     if args[1] != "trigger" {
         return Err(usage().to_string());
     }
@@ -147,6 +166,28 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         Command::Run => run_daemon_mode(),
+        Command::PrintBindings { compositor } => {
+            let control_socket = default_control_socket_path();
+            let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
+            let resolved = compositor.unwrap_or_else(|| {
+                if session_type.eq_ignore_ascii_case("wayland") {
+                    detect_wayland_compositor(
+                        &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+                        &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+                        &env::var("SWAYSOCK").unwrap_or_default(),
+                        &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
+                    )
+                    .to_string()
+                } else {
+                    "x11".to_string()
+                }
+            });
+            println!(
+                "{}",
+                build_binding_snippet_payload(&resolved, &control_socket)
+            );
+            Ok(())
+        }
     }
 }
 
@@ -269,6 +310,31 @@ fn wayland_next_step_hint(compositor: &str) -> &'static str {
         "sway" | "hyprland" => "use compositor config binding to call `hop-hotkeyd trigger`",
         _ => "use fallback trigger and detect compositor-specific integration strategy",
     }
+}
+
+fn build_binding_snippet_payload(compositor: &str, control_socket: &str) -> serde_json::Value {
+    let snippet = match compositor {
+        "sway" => format!(
+            "Add to ~/.config/sway/config:\nbindsym Ctrl+Shift+ampersand exec ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            control_socket
+        ),
+        "hyprland" => format!(
+            "Add to ~/.config/hypr/hyprland.conf:\nbind = CTRL SHIFT, ampersand, exec, ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            control_socket
+        ),
+        "kde" => "Use System Settings > Shortcuts > Custom Shortcuts to run: ~/.local/bin/hop-hotkeyd trigger".to_string(),
+        "gnome" => "GNOME Wayland requires GNOME Shell extension/API path for true global capture; use fallback trigger for now.".to_string(),
+        "x11" => "X11 uses built-in hotkey daemon capture; no compositor binding snippet needed.".to_string(),
+        _ => format!(
+            "Unknown compositor. Use fallback command in your compositor config:\n~/.local/bin/hop-hotkeyd trigger --socket {}",
+            control_socket
+        ),
+    };
+    json!({
+        "compositor": compositor,
+        "control_socket_path": control_socket,
+        "snippet": snippet
+    })
 }
 
 fn run_daemon_mode() -> Result<(), String> {
@@ -592,6 +658,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_print_bindings_subcommand() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "print-bindings".to_string(),
+            "--compositor".to_string(),
+            "sway".to_string(),
+        ];
+        let result = parse_command(&args).expect("print-bindings should parse");
+        assert_eq!(
+            result,
+            Command::PrintBindings {
+                compositor: Some("sway".to_string())
+            }
+        );
+    }
+
+    #[test]
     fn variants_include_lock_modifier_combinations() {
         let variants = hotkey_modifier_variants(ModMask::M2);
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT)));
@@ -684,6 +767,22 @@ mod tests {
         assert!(wayland_next_step_hint("kde").contains("KGlobalAccel"));
         assert!(wayland_next_step_hint("sway").contains("trigger"));
         assert!(wayland_next_step_hint("unknown").contains("fallback"));
+    }
+
+    #[test]
+    fn binding_payload_for_sway_includes_trigger_command() {
+        let payload = build_binding_snippet_payload("sway", "/tmp/hop.sock");
+        let snippet = payload["snippet"].as_str().unwrap_or_default();
+        assert!(snippet.contains("bindsym"));
+        assert!(snippet.contains("hop-hotkeyd trigger"));
+        assert!(snippet.contains("/tmp/hop.sock"));
+    }
+
+    #[test]
+    fn binding_payload_for_x11_states_builtin_support() {
+        let payload = build_binding_snippet_payload("x11", "/tmp/hop.sock");
+        let snippet = payload["snippet"].as_str().unwrap_or_default();
+        assert!(snippet.contains("built-in hotkey daemon capture"));
     }
 
     #[test]
