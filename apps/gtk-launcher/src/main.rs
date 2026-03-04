@@ -16,7 +16,10 @@ use gtk4 as gtk;
 #[cfg(feature = "gtk_ui")]
 use libadwaita as adw;
 #[cfg(feature = "gtk_ui")]
-use hop_launcher_gtk::{default_hopd_socket_path, execute, search, LauncherResult};
+use hop_launcher_gtk::{
+    default_hopd_socket_path, execute, search, start_visible_on_launch, toggle_accelerator,
+    LauncherResult,
+};
 
 fn main() {
     run();
@@ -79,7 +82,7 @@ fn run() {
             });
         }
         app.add_action(&toggle);
-        app.set_accels_for_action("app.toggle", &["<Primary>space"]);
+        app.set_accels_for_action("app.toggle", &[toggle_accelerator()]);
 
         {
             let list = list.clone();
@@ -128,7 +131,11 @@ fn run() {
             });
         }
 
-        window.hide();
+        if start_visible_on_launch() {
+            window.present();
+        } else {
+            window.hide();
+        }
     });
 
     app.run();

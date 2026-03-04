@@ -21,6 +21,14 @@ pub fn default_hopd_socket_path() -> String {
     "/tmp/hopd.sock".to_string()
 }
 
+pub fn toggle_accelerator() -> &'static str {
+    "<Primary><Shift>ampersand"
+}
+
+pub fn start_visible_on_launch() -> bool {
+    true
+}
+
 pub fn build_search_payload(query: &str, limit: u32, request_id: &str) -> Value {
     json!({
         "id": request_id,
@@ -133,5 +141,15 @@ mod tests {
         assert_eq!(payload["method"], "actions.execute");
         assert_eq!(payload["params"]["result_id"], "utility:weather");
         assert_eq!(payload["params"]["action"], "enter");
+    }
+
+    #[test]
+    fn exposes_toggle_accelerator() {
+        assert_eq!(toggle_accelerator(), "<Primary><Shift>ampersand");
+    }
+
+    #[test]
+    fn starts_visible_for_phase1_local_testing() {
+        assert!(start_visible_on_launch());
     }
 }

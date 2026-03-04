@@ -42,3 +42,12 @@ npm run install:hopd:local
 ```
 
 See `docs/HOPD_LOCAL_INSTALL.md` for full details.
+
+## One-command local GTK manual test
+
+```bash
+./scripts/run-gtk-manual-test.sh
+```
+
+This command installs/updates `hopd`, checks daemon health over the Unix socket,
+and launches the GTK app with `--features gtk_ui` for manual validation.

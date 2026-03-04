@@ -16,7 +16,8 @@ Use `--features gtk_ui` to launch the native GTK/libadwaita app.
 ## Phase 1 behavior
 
 - Background-style app process with a toggleable launcher window.
-- Fallback accelerator: `Ctrl+Space` (`<Primary>space`) registered as app action.
+- Fallback accelerator: `Ctrl+Shift+&` (`<Primary><Shift>ampersand`) registered as app action.
+- Phase 1 starts with the window visible (app-local shortcut; not compositor-global yet).
 - Query typing calls `hopd` `search.query`.
 - Enter (or row activation) calls `hopd` `actions.execute`.
 
