@@ -1,5 +1,5 @@
 use std::env;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::process;
 use std::thread;
@@ -18,6 +18,7 @@ const SWAY_IPC_MAGIC: &[u8; 6] = b"i3-ipc";
 const SWAY_MSG_SUBSCRIBE: u32 = 2;
 const SWAY_EVENT_TICK: u32 = 0x8000_0007;
 const SWAY_TICK_TOGGLE_PAYLOAD: &str = "hop-launcher-toggle";
+const HYPRLAND_TOGGLE_EVENT: &str = "hop-launcher-toggle";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
@@ -258,7 +259,13 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
                 &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
             );
             let sway_socket = env::var("SWAYSOCK").unwrap_or_default();
-            build_wayland_status_payload(session_type, compositor, &sway_socket)
+            let hyprland_signature = env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default();
+            build_wayland_status_payload(
+                session_type,
+                compositor,
+                &sway_socket,
+                &hyprland_signature,
+            )
         }
         Err(error) => json!({
             "session_type": session_type,
@@ -273,15 +280,24 @@ fn build_wayland_status_payload(
     session_type: &str,
     compositor: &str,
     sway_socket: &str,
+    hyprland_signature: &str,
 ) -> serde_json::Value {
-    let native_supported = compositor == "sway" && !sway_socket.trim().is_empty();
+    let native_supported = (compositor == "sway" && !sway_socket.trim().is_empty())
+        || (compositor == "hyprland" && !hyprland_signature.trim().is_empty());
+    let backend_mode = if compositor == "sway" && !sway_socket.trim().is_empty() {
+        "sway_tick"
+    } else if compositor == "hyprland" && !hyprland_signature.trim().is_empty() {
+        "hyprland_event"
+    } else {
+        "fallback"
+    };
     json!({
         "session_type": session_type,
         "backend": "wayland",
         "global_hotkey_supported": native_supported,
         "fallback": "hop-hotkeyd trigger",
         "wayland_compositor": compositor,
-        "wayland_backend_mode": if native_supported { "sway_tick" } else { "fallback" },
+        "wayland_backend_mode": backend_mode,
         "next_step": wayland_next_step_hint(compositor)
     })
 }
@@ -322,7 +338,7 @@ fn wayland_next_step_hint(compositor: &str) -> &'static str {
         "gnome" => "implement gnome-shell integration path for global shortcut capture",
         "kde" => "implement KGlobalAccel integration path for global shortcut capture",
         "sway" => "configure sway `send_tick hop-launcher-toggle` binding for native daemon toggle",
-        "hyprland" => "use compositor config binding to call `hop-hotkeyd trigger`",
+        "hyprland" => "configure hyprland `dispatch event hop-launcher-toggle` binding for native daemon toggle",
         _ => "use fallback trigger and detect compositor-specific integration strategy",
     }
 }
@@ -334,8 +350,8 @@ fn build_binding_snippet_payload(compositor: &str, control_socket: &str) -> serd
             SWAY_TICK_TOGGLE_PAYLOAD, control_socket
         ),
         "hyprland" => format!(
-            "Add to ~/.config/hypr/hyprland.conf:\nbind = CTRL SHIFT, ampersand, exec, ~/.local/bin/hop-hotkeyd trigger --socket {}",
-            control_socket
+            "Add to ~/.config/hypr/hyprland.conf:\nbind = CTRL SHIFT, ampersand, exec, hyprctl dispatch event {}\nFallback: ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            HYPRLAND_TOGGLE_EVENT, control_socket
         ),
         "kde" => format!(
             "Use System Settings > Shortcuts > Custom Shortcuts to run: ~/.local/bin/hop-hotkeyd trigger --socket {}",
@@ -413,6 +429,14 @@ fn run_wayland_daemon_mode() -> Result<(), String> {
         }
         return run_sway_daemon_loop(default_control_socket_path(), sway_socket);
     }
+    if compositor == "hyprland" {
+        let signature = env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default();
+        if signature.trim().is_empty() {
+            eprintln!("hyprland compositor detected but HYPRLAND_INSTANCE_SIGNATURE is empty; using fallback mode");
+            return run_wayland_fallback();
+        }
+        return run_hyprland_daemon_loop(default_control_socket_path(), signature);
+    }
     run_wayland_fallback()
 }
 
@@ -436,6 +460,51 @@ fn run_sway_daemon_loop(control_socket_path: String, sway_socket_path: String) -
                 );
                 thread::sleep(Duration::from_secs(delay));
                 attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn run_hyprland_daemon_loop(control_socket_path: String, signature: String) -> Result<(), String> {
+    let mut attempt: u32 = 0;
+    loop {
+        match run_hyprland_event_loop(control_socket_path.clone(), signature.clone()) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let delay = reconnect_backoff_secs(attempt);
+                eprintln!(
+                    "hyprland event loop error: {}. reconnecting in {}s",
+                    error, delay
+                );
+                thread::sleep(Duration::from_secs(delay));
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn run_hyprland_event_loop(control_socket_path: String, signature: String) -> Result<(), String> {
+    let runtime_dir = env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+    let hypr_socket = format!("{}/hypr/{}/.socket2.sock", runtime_dir, signature);
+    let stream = UnixStream::connect(&hypr_socket)
+        .map_err(|error| format!("hyprland socket connect failed: {}", error))?;
+    let mut reader = BufReader::new(stream);
+
+    let mut last_toggle_at: Option<Instant> = None;
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|error| format!("hyprland socket read failed: {}", error))?;
+        if read == 0 {
+            return Err("hyprland socket closed".to_string());
+        }
+        if parse_hyprland_toggle_event_line(&line) {
+            let now = Instant::now();
+            if should_emit_toggle(now, &mut last_toggle_at, Duration::from_millis(220)) {
+                if let Err(error) = send_toggle(&control_socket_path, "hotkey-hyprland-event") {
+                    eprintln!("toggle send failed: {}", error);
+                }
             }
         }
     }
@@ -514,6 +583,11 @@ fn parse_sway_tick_toggle_event(payload: &[u8]) -> bool {
         .and_then(|value| value.as_str())
         .map(|value| value == SWAY_TICK_TOGGLE_PAYLOAD)
         .unwrap_or(false)
+}
+
+fn parse_hyprland_toggle_event_line(line: &str) -> bool {
+    let normalized = line.trim();
+    normalized == format!("custom>>{}", HYPRLAND_TOGGLE_EVENT)
 }
 
 fn run_x11_hotkey_loop(socket_path: String) -> Result<(), String> {
@@ -866,7 +940,7 @@ mod tests {
 
     #[test]
     fn status_payload_reports_wayland_fallback() {
-        let payload = build_wayland_status_payload("wayland", "unknown", "");
+        let payload = build_wayland_status_payload("wayland", "unknown", "", "");
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], false);
         assert_eq!(payload["wayland_backend_mode"], "fallback");
@@ -874,10 +948,23 @@ mod tests {
 
     #[test]
     fn status_payload_reports_sway_native_mode_when_socket_present() {
-        let payload = build_wayland_status_payload("wayland", "sway", "/run/user/1000/sway-ipc.sock");
+        let payload = build_wayland_status_payload(
+            "wayland",
+            "sway",
+            "/run/user/1000/sway-ipc.sock",
+            "",
+        );
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], true);
         assert_eq!(payload["wayland_backend_mode"], "sway_tick");
+    }
+
+    #[test]
+    fn status_payload_reports_hyprland_native_mode_when_signature_present() {
+        let payload = build_wayland_status_payload("wayland", "hyprland", "", "abc123");
+        assert_eq!(payload["backend"], "wayland");
+        assert_eq!(payload["global_hotkey_supported"], true);
+        assert_eq!(payload["wayland_backend_mode"], "hyprland_event");
     }
 
     #[test]
@@ -889,6 +976,14 @@ mod tests {
             br#"{"first":false,"payload":"other"}"#
         ));
         assert!(!parse_sway_tick_toggle_event(br#"{"first":false}"#));
+    }
+
+    #[test]
+    fn parse_hyprland_event_line_matches_toggle_marker() {
+        assert!(parse_hyprland_toggle_event_line(
+            "custom>>hop-launcher-toggle\n"
+        ));
+        assert!(!parse_hyprland_toggle_event_line("custom>>other\n"));
     }
 
     #[test]
@@ -917,6 +1012,7 @@ mod tests {
         assert!(wayland_next_step_hint("gnome").contains("gnome-shell"));
         assert!(wayland_next_step_hint("kde").contains("KGlobalAccel"));
         assert!(wayland_next_step_hint("sway").contains("send_tick"));
+        assert!(wayland_next_step_hint("hyprland").contains("dispatch event"));
         assert!(wayland_next_step_hint("unknown").contains("fallback"));
     }
 
@@ -942,6 +1038,16 @@ mod tests {
     fn binding_payload_for_kde_includes_socket_path() {
         let payload = build_binding_snippet_payload("kde", "/tmp/hop.sock");
         let snippet = payload["snippet"].as_str().unwrap_or_default();
+        assert!(snippet.contains("hop-hotkeyd trigger"));
+        assert!(snippet.contains("/tmp/hop.sock"));
+    }
+
+    #[test]
+    fn binding_payload_for_hyprland_includes_event_and_fallback_command() {
+        let payload = build_binding_snippet_payload("hyprland", "/tmp/hop.sock");
+        let snippet = payload["snippet"].as_str().unwrap_or_default();
+        assert!(snippet.contains("dispatch event"));
+        assert!(snippet.contains("hop-launcher-toggle"));
         assert!(snippet.contains("hop-hotkeyd trigger"));
         assert!(snippet.contains("/tmp/hop.sock"));
     }

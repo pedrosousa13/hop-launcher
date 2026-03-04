@@ -68,6 +68,12 @@ On Sway Wayland sessions, configure a binding with:
 swaymsg -q -t send_tick hop-launcher-toggle
 ```
 
+On Hyprland sessions, configure a binding with:
+
+```bash
+hyprctl dispatch event hop-launcher-toggle
+```
+
 Other Wayland compositors still use the fallback one-shot command:
 
 ```bash
