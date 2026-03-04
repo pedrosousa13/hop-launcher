@@ -68,6 +68,11 @@ struct LauncherUiSettings {
     debounce_ms: i32,
     density_mode: String,
     indexed_folders: Vec<String>,
+    learning_enabled: bool,
+    currency_refresh_enabled: bool,
+    currency_rate_ttl_hours: i32,
+    web_search_enabled: bool,
+    web_search_max_actions: i32,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -96,6 +101,11 @@ impl Default for LauncherUiSettings {
             debounce_ms: 15,
             density_mode: "default".to_string(),
             indexed_folders: Vec::new(),
+            learning_enabled: true,
+            currency_refresh_enabled: true,
+            currency_rate_ttl_hours: 12,
+            web_search_enabled: true,
+            web_search_max_actions: 3,
         }
     }
 }
@@ -256,6 +266,28 @@ fn load_ui_settings() -> LauncherUiSettings {
                 .collect::<Vec<String>>()
         })
         .unwrap_or(default.indexed_folders);
+    let learning_enabled = json
+        .get("learning_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.learning_enabled);
+    let currency_refresh_enabled = json
+        .get("currency_refresh_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.currency_refresh_enabled);
+    let currency_rate_ttl_hours = json
+        .get("currency_rate_ttl_hours")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 168) as i32)
+        .unwrap_or(default.currency_rate_ttl_hours);
+    let web_search_enabled = json
+        .get("web_search_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.web_search_enabled);
+    let web_search_max_actions = json
+        .get("web_search_max_actions")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 10) as i32)
+        .unwrap_or(default.web_search_max_actions);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -280,6 +312,11 @@ fn load_ui_settings() -> LauncherUiSettings {
         debounce_ms,
         density_mode,
         indexed_folders,
+        learning_enabled,
+        currency_refresh_enabled,
+        currency_rate_ttl_hours,
+        web_search_enabled,
+        web_search_max_actions,
     }
 }
 
@@ -314,6 +351,11 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "debounce_ms": settings.debounce_ms,
         "density_mode": settings.density_mode,
         "indexed_folders": settings.indexed_folders,
+        "learning_enabled": settings.learning_enabled,
+        "currency_refresh_enabled": settings.currency_refresh_enabled,
+        "currency_rate_ttl_hours": settings.currency_rate_ttl_hours,
+        "web_search_enabled": settings.web_search_enabled,
+        "web_search_max_actions": settings.web_search_max_actions,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -345,6 +387,20 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ui.debounce_ms", serde_json::json!(settings.debounce_ms)),
         ("ui.density_mode", serde_json::json!(settings.density_mode)),
         ("search.indexed_folders", serde_json::json!(settings.indexed_folders)),
+        ("learning.enabled", serde_json::json!(settings.learning_enabled)),
+        (
+            "currency.refresh_enabled",
+            serde_json::json!(settings.currency_refresh_enabled),
+        ),
+        (
+            "currency.rate_ttl_hours",
+            serde_json::json!(settings.currency_rate_ttl_hours),
+        ),
+        ("web_search.enabled", serde_json::json!(settings.web_search_enabled)),
+        (
+            "web_search.max_actions",
+            serde_json::json!(settings.web_search_max_actions),
+        ),
     ];
     for (key, value) in values {
         if let Err(error) = config_set(socket_path, key, value) {
@@ -1049,6 +1105,10 @@ fn open_settings_window(
         .title("Ranking")
         .description("Adjust provider weights and fuzzy threshold.")
         .build();
+    let advanced = adw::PreferencesGroup::builder()
+        .title("Advanced")
+        .description("Parity controls for smart-provider behavior.")
+        .build();
 
     let opacity_row = adw::ActionRow::builder()
         .title("Launcher translucency (%)")
@@ -1442,6 +1502,61 @@ fn open_settings_window(
     page.add(&behavior);
     page.add(&providers);
     page.add(&ranking);
+    add_provider_switch_row(
+        &advanced,
+        "Learning enabled",
+        "Enable usage-based learning signals for ranking.",
+        settings.borrow().learning_enabled,
+        "learning.enabled",
+        settings.clone(),
+        socket_path,
+        |state, value| state.learning_enabled = value,
+    );
+    add_provider_switch_row(
+        &advanced,
+        "Currency refresh",
+        "Allow online refresh of exchange rates when available.",
+        settings.borrow().currency_refresh_enabled,
+        "currency.refresh_enabled",
+        settings.clone(),
+        socket_path,
+        |state, value| state.currency_refresh_enabled = value,
+    );
+    add_integer_spin_row(
+        &advanced,
+        "Currency TTL (hours)",
+        "Hours before cached currency rates are considered stale.",
+        settings.borrow().currency_rate_ttl_hours,
+        1,
+        168,
+        "currency.rate_ttl_hours",
+        settings.clone(),
+        socket_path,
+        |state, value| state.currency_rate_ttl_hours = value,
+    );
+    add_provider_switch_row(
+        &advanced,
+        "Web search enabled",
+        "Expose web-search actions for non-empty queries.",
+        settings.borrow().web_search_enabled,
+        "web_search.enabled",
+        settings.clone(),
+        socket_path,
+        |state, value| state.web_search_enabled = value,
+    );
+    add_integer_spin_row(
+        &advanced,
+        "Web search max actions",
+        "Maximum number of web-search providers shown per query.",
+        settings.borrow().web_search_max_actions,
+        1,
+        10,
+        "web_search.max_actions",
+        settings.clone(),
+        socket_path,
+        |state, value| state.web_search_max_actions = value,
+    );
+    page.add(&advanced);
     prefs.add(&page);
     prefs.present();
 }
