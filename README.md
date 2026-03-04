@@ -74,7 +74,21 @@ On Hyprland sessions, configure a binding with:
 hyprctl dispatch event hop-launcher-toggle
 ```
 
-Other Wayland compositors still use the fallback one-shot command:
+On KDE Wayland sessions, `hop-hotkeyd` now supports a DBus bridge path.
+You can manually trigger the expected action with:
+
+```bash
+qdbus org.kde.kglobalaccel /component/hoplauncher org.kde.kglobalaccel.Component.invokeShortcut hop-launcher-toggle
+```
+
+On GNOME Wayland sessions, `hop-hotkeyd` now supports a GNOME Shell/API DBus bridge path.
+You can manually emit the expected bridge signal with:
+
+```bash
+gdbus emit --session --object-path /io/github/hop/Hotkeyd --signal io.github.hop.Hotkeyd.Toggle hop-launcher-toggle
+```
+
+Unknown/unsupported Wayland compositors still use the fallback one-shot command:
 
 ```bash
 ~/.local/bin/hop-hotkeyd trigger
@@ -97,9 +111,12 @@ Force compositor-specific status diagnostics when testing:
 ```bash
 ~/.local/bin/hop-hotkeyd status --compositor sway
 ~/.local/bin/hop-hotkeyd doctor --compositor hyprland
+~/.local/bin/hop-hotkeyd status --compositor kde
+~/.local/bin/hop-hotkeyd status --compositor gnome
 ```
 
 `status` now also reports native Wayland readiness details (`native_backend_ready`, `native_backend_socket`, `native_backend_error`) and a `recommended_binding` command for the detected compositor mode.
+See `docs/HOTKEYD_STATUS_SCHEMA.md` for the structured `status`/`doctor` payload schema.
 
 Run structured diagnostics (with optional wait/retry) with:
 

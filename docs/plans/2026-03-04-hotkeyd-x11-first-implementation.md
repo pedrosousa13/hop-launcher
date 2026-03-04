@@ -33,11 +33,19 @@ This plan is fully implemented, and the branch has progressed beyond the origina
 - Added native Wayland daemon backends:
   - Sway tick backend (`send_tick hop-launcher-toggle`)
   - Hyprland event backend (`dispatch event hop-launcher-toggle`)
+  - KDE DBus bridge backend (KGlobalAccel/DBus monitor path)
+  - GNOME DBus bridge backend (Shell/API signal bridge path)
 - Added native Wayland readiness diagnostics:
   - `native_backend_ready`
   - `native_backend_socket`
   - `native_backend_error`
-  - `wayland_backend_mode` (`sway_tick`, `hyprland_event`, `fallback`)
+  - `wayland_backend_mode` (`sway_tick`, `hyprland_event`, `kde_dbus_bridge`, `gnome_shell_bridge`, `fallback`)
+- Added feasible integration-level Wayland loop coverage:
+  - sway IPC frame read/write roundtrip tests
+  - invalid sway frame rejection tests
+  - KDE/GNOME DBus monitor line parser tests
+- Added structured schema documentation:
+  - `docs/HOTKEYD_STATUS_SCHEMA.md` for `status` and `doctor` outputs
 - Updated manual and installer guidance:
   - `scripts/run-gtk-manual-test.sh` now prints richer hotkey diagnostics
   - installer output includes binding helper guidance
@@ -55,10 +63,10 @@ This plan is fully implemented, and the branch has progressed beyond the origina
 
 ### Continuation Backlog (Next Phase Candidates)
 
-- [ ] Add KDE-native global shortcut backend (KGlobalAccel/DBus path)
-- [ ] Add GNOME-native global shortcut backend (Shell extension/API bridge path)
-- [ ] Add end-to-end integration tests for native Wayland event loops (where feasible)
-- [ ] Optional: expose structured machine-readable status/doctor schema in docs
+- [x] Add KDE-native global shortcut backend (KGlobalAccel/DBus path)
+- [x] Add GNOME-native global shortcut backend (Shell extension/API bridge path)
+- [x] Add end-to-end integration tests for native Wayland event loops (where feasible)
+- [x] Optional: expose structured machine-readable status/doctor schema in docs
 
 ---
 

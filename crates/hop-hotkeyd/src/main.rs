@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
-use std::process;
+use std::process::{self, Command as ProcessCommand, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,9 @@ const SWAY_MSG_SUBSCRIBE: u32 = 2;
 const SWAY_EVENT_TICK: u32 = 0x8000_0007;
 const SWAY_TICK_TOGGLE_PAYLOAD: &str = "hop-launcher-toggle";
 const HYPRLAND_TOGGLE_EVENT: &str = "hop-launcher-toggle";
+const KDE_TOGGLE_ACTION: &str = "hop-launcher-toggle";
+const GNOME_BRIDGE_INTERFACE: &str = "io.github.hop.Hotkeyd";
+const GNOME_BRIDGE_MEMBER: &str = "Toggle";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
@@ -420,6 +423,18 @@ fn recommended_wayland_binding(
             HYPRLAND_TOGGLE_EVENT
         ));
     }
+    if compositor == "kde" && backend_mode == "kde_dbus_bridge" {
+        return Some(format!(
+            "qdbus org.kde.kglobalaccel /component/hoplauncher org.kde.kglobalaccel.Component.invokeShortcut {}",
+            KDE_TOGGLE_ACTION
+        ));
+    }
+    if compositor == "gnome" && backend_mode == "gnome_shell_bridge" {
+        return Some(format!(
+            "gdbus emit --session --object-path /io/github/hop/Hotkeyd --signal {}.{} {}",
+            GNOME_BRIDGE_INTERFACE, GNOME_BRIDGE_MEMBER, KDE_TOGGLE_ACTION
+        ));
+    }
 
     socket_path.map(|path| format!("~/.local/bin/hop-hotkeyd trigger --socket {}", path))
 }
@@ -487,6 +502,32 @@ fn probe_wayland_native_backend(
         let socket_path = format!("{}/hypr/{}/.socket2.sock", runtime_dir, hyprland_signature);
         return check_unix_socket_path("hyprland_event", socket_path);
     }
+    if compositor == "kde" {
+        let monitor_ready = command_exists_in_path("dbus-monitor");
+        return NativeBackendProbe {
+            ready: monitor_ready,
+            backend_mode: "kde_dbus_bridge",
+            socket_path: None,
+            error: if monitor_ready {
+                None
+            } else {
+                Some("dbus-monitor is not available in PATH".to_string())
+            },
+        };
+    }
+    if compositor == "gnome" {
+        let monitor_ready = command_exists_in_path("dbus-monitor");
+        return NativeBackendProbe {
+            ready: monitor_ready,
+            backend_mode: "gnome_shell_bridge",
+            socket_path: None,
+            error: if monitor_ready {
+                None
+            } else {
+                Some("dbus-monitor is not available in PATH".to_string())
+            },
+        };
+    }
 
     NativeBackendProbe {
         ready: false,
@@ -525,6 +566,19 @@ fn check_unix_socket_path(backend_mode: &'static str, socket_path: String) -> Na
     }
 }
 
+fn command_exists_in_path(command_name: &str) -> bool {
+    let Some(paths) = env::var_os("PATH") else {
+        return false;
+    };
+    for path in env::split_paths(&paths) {
+        let candidate = path.join(command_name);
+        if candidate.is_file() {
+            return true;
+        }
+    }
+    false
+}
+
 fn detect_wayland_compositor(
     current_desktop: &str,
     session_desktop: &str,
@@ -558,8 +612,8 @@ fn detect_wayland_compositor(
 
 fn wayland_next_step_hint(compositor: &str) -> &'static str {
     match compositor {
-        "gnome" => "implement gnome-shell integration path for global shortcut capture",
-        "kde" => "implement KGlobalAccel integration path for global shortcut capture",
+        "gnome" => "configure gnome shell extension bridge to emit io.github.hop.Hotkeyd.Toggle",
+        "kde" => "configure KGlobalAccel action and DBus bridge event for hop-launcher-toggle",
         "sway" => "configure sway `send_tick hop-launcher-toggle` binding for native daemon toggle",
         "hyprland" => "configure hyprland `dispatch event hop-launcher-toggle` binding for native daemon toggle",
         _ => "use fallback trigger and detect compositor-specific integration strategy",
@@ -577,12 +631,13 @@ fn build_binding_snippet_payload(compositor: &str, control_socket: &str) -> serd
             HYPRLAND_TOGGLE_EVENT, control_socket
         ),
         "kde" => format!(
-            "Use System Settings > Shortcuts > Custom Shortcuts to run: ~/.local/bin/hop-hotkeyd trigger --socket {}",
-            control_socket
+            "KDE DBus bridge path (KGlobalAccel):\n1) Create a KGlobalAccel shortcut action named `{}`.\n2) Ensure hop-hotkeyd daemon is running (it listens via dbus-monitor).\n3) Manual test command:\nqdbus org.kde.kglobalaccel /component/hoplauncher org.kde.kglobalaccel.Component.invokeShortcut {}\nFallback: ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            KDE_TOGGLE_ACTION, KDE_TOGGLE_ACTION, control_socket
         ),
         "gnome" => format!(
-            "GNOME Wayland requires GNOME Shell extension/API path for true global capture; use fallback trigger for now: ~/.local/bin/hop-hotkeyd trigger --socket {}",
-            control_socket
+            "GNOME shell bridge path:\nEmit `{}`.`{}` with payload `{}` from extension/API bridge.\nManual emit test:\ngdbus emit --session --object-path /io/github/hop/Hotkeyd --signal {}.{} {}\nFallback: ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            GNOME_BRIDGE_INTERFACE, GNOME_BRIDGE_MEMBER, KDE_TOGGLE_ACTION,
+            GNOME_BRIDGE_INTERFACE, GNOME_BRIDGE_MEMBER, KDE_TOGGLE_ACTION, control_socket
         ),
         "x11" => "X11 uses built-in hotkey daemon capture; no compositor binding snippet needed.".to_string(),
         _ => format!(
@@ -660,6 +715,12 @@ fn run_wayland_daemon_mode() -> Result<(), String> {
         }
         return run_hyprland_daemon_loop(default_control_socket_path(), signature);
     }
+    if compositor == "kde" {
+        return run_kde_dbus_bridge_loop(default_control_socket_path());
+    }
+    if compositor == "gnome" {
+        return run_gnome_shell_bridge_loop(default_control_socket_path());
+    }
     run_wayland_fallback()
 }
 
@@ -704,6 +765,115 @@ fn run_hyprland_daemon_loop(control_socket_path: String, signature: String) -> R
             }
         }
     }
+}
+
+fn run_kde_dbus_bridge_loop(control_socket_path: String) -> Result<(), String> {
+    let mut attempt: u32 = 0;
+    loop {
+        match run_kde_dbus_monitor_once(control_socket_path.clone()) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let delay = reconnect_backoff_secs(attempt);
+                eprintln!(
+                    "kde dbus bridge loop error: {}. reconnecting in {}s",
+                    error, delay
+                );
+                thread::sleep(Duration::from_secs(delay));
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn run_gnome_shell_bridge_loop(control_socket_path: String) -> Result<(), String> {
+    let mut attempt: u32 = 0;
+    loop {
+        match run_gnome_dbus_monitor_once(control_socket_path.clone()) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let delay = reconnect_backoff_secs(attempt);
+                eprintln!(
+                    "gnome dbus bridge loop error: {}. reconnecting in {}s",
+                    error, delay
+                );
+                thread::sleep(Duration::from_secs(delay));
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn run_kde_dbus_monitor_once(control_socket_path: String) -> Result<(), String> {
+    let mut child = ProcessCommand::new("dbus-monitor")
+        .args([
+            "--session",
+            "type='signal',interface='org.kde.kglobalaccel.Component',member='globalShortcutPressed'",
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to start dbus-monitor for KDE: {}", error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "dbus-monitor stdout unavailable".to_string())?;
+    let mut last_toggle_at: Option<Instant> = None;
+    for line in BufReader::new(stdout).lines() {
+        let line = line.map_err(|error| format!("dbus-monitor read failed: {}", error))?;
+        if parse_kde_dbus_toggle_line(&line) {
+            let now = Instant::now();
+            if should_emit_toggle(now, &mut last_toggle_at, Duration::from_millis(220)) {
+                if let Err(error) = send_toggle(&control_socket_path, "hotkey-kde-dbus") {
+                    eprintln!("toggle send failed: {}", error);
+                }
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("dbus-monitor wait failed: {}", error))?;
+    Err(format!("kde dbus bridge exited: {}", status))
+}
+
+fn run_gnome_dbus_monitor_once(control_socket_path: String) -> Result<(), String> {
+    let signal_match = format!(
+        "type='signal',interface='{}',member='{}'",
+        GNOME_BRIDGE_INTERFACE, GNOME_BRIDGE_MEMBER
+    );
+    let mut child = ProcessCommand::new("dbus-monitor")
+        .args(["--session", signal_match.as_str()])
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to start dbus-monitor for GNOME: {}", error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "dbus-monitor stdout unavailable".to_string())?;
+    let mut last_toggle_at: Option<Instant> = None;
+    let mut awaiting_toggle_payload = false;
+    for line in BufReader::new(stdout).lines() {
+        let line = line.map_err(|error| format!("dbus-monitor read failed: {}", error))?;
+        if parse_gnome_dbus_signal_header_line(&line) {
+            awaiting_toggle_payload = true;
+            continue;
+        }
+        if awaiting_toggle_payload && parse_gnome_dbus_toggle_line(&line) {
+            let now = Instant::now();
+            if should_emit_toggle(now, &mut last_toggle_at, Duration::from_millis(220)) {
+                if let Err(error) = send_toggle(&control_socket_path, "hotkey-gnome-bridge") {
+                    eprintln!("toggle send failed: {}", error);
+                }
+            }
+            awaiting_toggle_payload = false;
+            continue;
+        }
+        if line.trim_start().starts_with("signal ") {
+            awaiting_toggle_payload = false;
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("dbus-monitor wait failed: {}", error))?;
+    Err(format!("gnome dbus bridge exited: {}", status))
 }
 
 fn run_hyprland_event_loop(control_socket_path: String, signature: String) -> Result<(), String> {
@@ -811,6 +981,23 @@ fn parse_sway_tick_toggle_event(payload: &[u8]) -> bool {
 fn parse_hyprland_toggle_event_line(line: &str) -> bool {
     let normalized = line.trim();
     normalized == format!("custom>>{}", HYPRLAND_TOGGLE_EVENT)
+}
+
+fn parse_kde_dbus_toggle_line(line: &str) -> bool {
+    let normalized = line.trim();
+    normalized.contains("string \"hop-launcher-toggle\"")
+}
+
+fn parse_gnome_dbus_toggle_line(line: &str) -> bool {
+    let normalized = line.trim();
+    normalized.contains("string \"hop-launcher-toggle\"")
+}
+
+fn parse_gnome_dbus_signal_header_line(line: &str) -> bool {
+    let normalized = line.trim();
+    normalized.starts_with("signal ")
+        && normalized.contains("interface=io.github.hop.Hotkeyd")
+        && normalized.contains("member=Toggle")
 }
 
 fn run_x11_hotkey_loop(socket_path: String) -> Result<(), String> {
@@ -983,6 +1170,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::os::unix::net::UnixListener;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1286,6 +1474,28 @@ mod tests {
     }
 
     #[test]
+    fn status_payload_reports_kde_dbus_bridge_mode() {
+        let payload = build_wayland_status_payload("wayland", "kde", "", "", "/tmp");
+        assert_eq!(payload["backend"], "wayland");
+        assert_eq!(payload["wayland_backend_mode"], "kde_dbus_bridge");
+        assert!(payload["recommended_binding"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("qdbus"));
+    }
+
+    #[test]
+    fn status_payload_reports_gnome_shell_bridge_mode() {
+        let payload = build_wayland_status_payload("wayland", "gnome", "", "", "/tmp");
+        assert_eq!(payload["backend"], "wayland");
+        assert_eq!(payload["wayland_backend_mode"], "gnome_shell_bridge");
+        assert!(payload["recommended_binding"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("gdbus"));
+    }
+
+    #[test]
     fn status_payload_reports_sway_native_mode_when_socket_present() {
         let base = unique_temp_path("sway-status");
         fs::create_dir_all(&base).expect("create temp dir");
@@ -1398,11 +1608,59 @@ mod tests {
     }
 
     #[test]
+    fn sway_message_roundtrip_preserves_type_and_payload() {
+        let (mut writer, mut reader) =
+            std::os::unix::net::UnixStream::pair().expect("create socket pair");
+        write_sway_message(&mut writer, SWAY_MSG_SUBSCRIBE, br#"["tick"]"#)
+            .expect("write frame");
+        let (msg_type, payload) = read_sway_message(&mut reader).expect("read frame");
+        assert_eq!(msg_type, SWAY_MSG_SUBSCRIBE);
+        assert_eq!(payload, br#"["tick"]"#);
+    }
+
+    #[test]
+    fn sway_message_rejects_invalid_magic_header() {
+        let (mut writer, mut reader) =
+            std::os::unix::net::UnixStream::pair().expect("create socket pair");
+        writer
+            .write_all(b"badmagicheader")
+            .expect("write invalid header");
+        let result = read_sway_message(&mut reader);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn parse_hyprland_event_line_matches_toggle_marker() {
         assert!(parse_hyprland_toggle_event_line(
             "custom>>hop-launcher-toggle\n"
         ));
         assert!(!parse_hyprland_toggle_event_line("custom>>other\n"));
+    }
+
+    #[test]
+    fn parse_kde_dbus_monitor_line_matches_toggle_marker() {
+        assert!(parse_kde_dbus_toggle_line(
+            "   string \"hop-launcher-toggle\"\n"
+        ));
+        assert!(!parse_kde_dbus_toggle_line("   string \"other-action\"\n"));
+    }
+
+    #[test]
+    fn parse_gnome_dbus_monitor_line_matches_toggle_marker() {
+        assert!(parse_gnome_dbus_toggle_line(
+            "   string \"hop-launcher-toggle\"\n"
+        ));
+        assert!(!parse_gnome_dbus_toggle_line("   string \"other\"\n"));
+    }
+
+    #[test]
+    fn parse_gnome_dbus_signal_header_matches_bridge_signal() {
+        assert!(parse_gnome_dbus_signal_header_line(
+            "signal time=1 sender=:1.2 -> destination=(null destination) serial=5 path=/io/github/hop/Hotkeyd; interface=io.github.hop.Hotkeyd; member=Toggle"
+        ));
+        assert!(!parse_gnome_dbus_signal_header_line(
+            "signal time=1 sender=:1.2 -> destination=(null destination) serial=5 path=/io/github/hop/Hotkeyd; interface=io.github.hop.Hotkeyd; member=Other"
+        ));
     }
 
     #[test]
@@ -1428,7 +1686,7 @@ mod tests {
 
     #[test]
     fn provides_wayland_next_step_hint() {
-        assert!(wayland_next_step_hint("gnome").contains("gnome-shell"));
+        assert!(wayland_next_step_hint("gnome").contains("io.github.hop.Hotkeyd.Toggle"));
         assert!(wayland_next_step_hint("kde").contains("KGlobalAccel"));
         assert!(wayland_next_step_hint("sway").contains("send_tick"));
         assert!(wayland_next_step_hint("hyprland").contains("dispatch event"));
@@ -1457,8 +1715,8 @@ mod tests {
     fn binding_payload_for_kde_includes_socket_path() {
         let payload = build_binding_snippet_payload("kde", "/tmp/hop.sock");
         let snippet = payload["snippet"].as_str().unwrap_or_default();
-        assert!(snippet.contains("hop-hotkeyd trigger"));
-        assert!(snippet.contains("/tmp/hop.sock"));
+        assert!(snippet.contains("qdbus"));
+        assert!(snippet.contains("hop-launcher-toggle"));
     }
 
     #[test]

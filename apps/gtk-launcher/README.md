@@ -24,7 +24,9 @@ Use `--features gtk_ui` to launch the native GTK/libadwaita app.
 
 This phase focuses on standalone usability and IPC integration.
 X11 global shortcut capture is now provided by the companion `hop-hotkeyd` service.
-Sway and Hyprland Wayland now support daemon-driven toggle via compositor event sockets; other Wayland compositors remain on trigger fallback.
+Sway and Hyprland Wayland support daemon-driven toggle via compositor event sockets.
+KDE and GNOME Wayland support DBus bridge paths.
+Unknown/unsupported Wayland compositors remain on trigger fallback.
 
 ## Phase 2 local toggle probe
 
@@ -50,6 +52,8 @@ For compositor-specific testing overrides:
 
 ```bash
 ~/.local/bin/hop-hotkeyd status --compositor sway
+~/.local/bin/hop-hotkeyd status --compositor kde
+~/.local/bin/hop-hotkeyd status --compositor gnome
 ```
 
 Fail fast in scripts when control socket should already be available:
