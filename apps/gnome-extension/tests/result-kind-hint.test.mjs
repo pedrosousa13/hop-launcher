@@ -33,6 +33,12 @@ test('getResultHintActionLabel maps copy and execute actions to specific labels'
     assert.equal(getResultHintActionLabel('action', 'execute'), 'Run');
 });
 
+test('getResultHintActionLabel uses Open for settings-like actions', () => {
+    assert.equal(getResultHintActionLabel('action', 'execute', {id: 'hop-launcher-settings'}), 'Open');
+    assert.equal(getResultHintActionLabel('action', 'execute', {id: 'gnome-settings-app'}), 'Open');
+    assert.equal(getResultHintActionLabel('action', 'execute', {id: 'gnome-keyboard-shortcuts'}), 'Open');
+});
+
 test('getResultHintActionLabel falls back to Enter when action is unknown', () => {
     assert.equal(getResultHintActionLabel('app', 'none'), 'Enter');
     assert.equal(getResultHintActionLabel('unknown', 'execute'), 'Enter');

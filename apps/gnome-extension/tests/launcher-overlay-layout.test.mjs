@@ -12,3 +12,8 @@ test('launcher overlay does not pass unsupported orientation property to St.BoxL
     const source = fs.readFileSync(overlayPath, 'utf8');
     assert.equal(source.includes('orientation: Clutter.Orientation.VERTICAL'), false);
 });
+
+test('launcher overlay input advertises broad search categories', () => {
+    const source = fs.readFileSync(overlayPath, 'utf8');
+    assert.match(source, /hint_text:\s*'Search apps, windows, files, emoji, utilities, settings…'/);
+});

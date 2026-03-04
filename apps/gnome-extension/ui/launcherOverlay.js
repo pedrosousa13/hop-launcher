@@ -85,7 +85,7 @@ class LauncherOverlay extends St.BoxLayout {
 
         this._input = new St.Entry({
             style_class: 'hop-launcher-input',
-            hint_text: 'Search apps, windows, files, emoji, utilities…',
+            hint_text: 'Search apps, windows, files, emoji, utilities, settings…',
             can_focus: true,
             x_expand: true,
         });
@@ -376,7 +376,7 @@ class LauncherOverlay extends St.BoxLayout {
         this._results.forEach((result, index) => {
             const enterAction = resolveEnterAction(result);
             const isCopyAction = enterAction.type === 'copy';
-            const actionLabel = getResultHintActionLabel(result.kind, enterAction.type);
+            const actionLabel = getResultHintActionLabel(result.kind, enterAction.type, result);
             const row = new St.BoxLayout({
                 style_class: `hop-launcher-row${index === this._selectedIndex ? ' selected' : ''}`,
                 x_expand: true,

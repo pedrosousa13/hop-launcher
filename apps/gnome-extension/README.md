@@ -21,6 +21,7 @@ A polished command palette for GNOME Shell 45+ on Wayland.
   - `w ` windows only
   - `a ` apps only
   - `f ` files only
+  - `settings <query>` or `prefs <query>` settings actions (includes prioritized `Hop Launcher Settings`; typo-tolerant terms like `setings` also match in all-mode)
   - `:emoji ` or `emoji ` emoji picker
   - `tz ` / `timezone ` / `time in <city>` / `<city> time` / bare tokens like `pst`, `tokyo`, or `zurich` for timezone lookup
   - `$100 usd to eur`, `100 usd to eur`, or `100usd to eur` currency conversion (supports common codes like `CHF`)
@@ -48,6 +49,7 @@ Then test instantly:
 - press **Super+Space** to open
 - type `chr` or `crome` and verify matching
 - try `w ` for windows only and `a ` for apps only
+- try `settings launcher`, `prefs hotkeys`, and `setings`, then confirm `Hop Launcher Settings` ranks first
 - try `f report`, `emoji smile`, `time in zurich`, `zurich time`, `weather berlin`, `zurich weather`, `wx 94103`, `pst`, `100eur to chf`, `100usd to eur`, and `2+2`
 - type any non-empty query and confirm trailing `Search <provider>` actions appear at the end
 

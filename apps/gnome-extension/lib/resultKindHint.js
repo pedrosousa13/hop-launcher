@@ -23,7 +23,12 @@ export function getResultHintIconSpec(kind) {
     return null;
 }
 
-export function getResultHintActionLabel(kind, enterActionType) {
+function isSettingsActionId(id) {
+    const value = (id ?? '').toString().toLowerCase();
+    return value.includes('settings') || value.includes('prefs') || value.includes('shortcut');
+}
+
+export function getResultHintActionLabel(kind, enterActionType, result = null) {
     if (enterActionType === 'copy')
         return 'Copy';
     if (enterActionType !== 'execute')
@@ -33,8 +38,11 @@ export function getResultHintActionLabel(kind, enterActionType) {
         return 'Focus';
     if (kind === 'app' || kind === 'file')
         return 'Open';
-    if (kind === 'action')
+    if (kind === 'action') {
+        if (isSettingsActionId(result?.id))
+            return 'Open';
         return 'Run';
+    }
 
     return 'Enter';
 }
