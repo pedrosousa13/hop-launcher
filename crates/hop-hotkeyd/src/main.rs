@@ -3,7 +3,10 @@ use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use hop_hotkeyd::{default_control_socket_path, probe_control_socket, select_backend_mode, send_toggle};
+use hop_hotkeyd::{
+    default_control_socket_path, probe_control_socket, select_backend_mode, send_toggle,
+    ControlProbeStatus,
+};
 use serde_json::json;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
@@ -82,16 +85,27 @@ fn run() -> Result<(), String> {
         Command::Doctor { socket_path } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             let backend_payload = build_status_payload(&session_type);
-            let reachable = probe_control_socket(&socket_path).is_ok();
+            let (reachable, ping_supported, probe_status) =
+                summarize_probe_result(probe_control_socket(&socket_path));
             let doctor = json!({
                 "status": backend_payload,
                 "control_socket_path": socket_path,
-                "control_socket_reachable": reachable
+                "control_socket_reachable": reachable,
+                "control_ping_supported": ping_supported,
+                "control_probe_status": probe_status
             });
             println!("{}", doctor);
             Ok(())
         }
         Command::Run => run_daemon_mode(),
+    }
+}
+
+fn summarize_probe_result(probe: Result<ControlProbeStatus, String>) -> (bool, bool, &'static str) {
+    match probe {
+        Ok(ControlProbeStatus::Healthy) => (true, true, "healthy"),
+        Ok(ControlProbeStatus::ReachableNoPing) => (true, false, "reachable_no_ping"),
+        Err(_) => (false, false, "unreachable"),
     }
 }
 
@@ -510,5 +524,21 @@ mod tests {
         assert!(wayland_next_step_hint("kde").contains("KGlobalAccel"));
         assert!(wayland_next_step_hint("sway").contains("trigger"));
         assert!(wayland_next_step_hint("unknown").contains("fallback"));
+    }
+
+    #[test]
+    fn summarize_probe_result_maps_states() {
+        assert_eq!(
+            summarize_probe_result(Ok(ControlProbeStatus::Healthy)),
+            (true, true, "healthy")
+        );
+        assert_eq!(
+            summarize_probe_result(Ok(ControlProbeStatus::ReachableNoPing)),
+            (true, false, "reachable_no_ping")
+        );
+        assert_eq!(
+            summarize_probe_result(Err("missing socket".to_string())),
+            (false, false, "unreachable")
+        );
     }
 }

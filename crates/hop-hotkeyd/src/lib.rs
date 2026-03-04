@@ -10,6 +10,12 @@ pub enum BackendMode {
     X11,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlProbeStatus {
+    Healthy,
+    ReachableNoPing,
+}
+
 pub fn default_control_socket_path() -> String {
     if let Ok(path) = env::var("HOP_LAUNCHER_CONTROL_SOCKET") {
         return path;
@@ -67,7 +73,7 @@ pub fn send_toggle(socket_path: &str, request_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn probe_control_socket(socket_path: &str) -> Result<(), String> {
+pub fn probe_control_socket(socket_path: &str) -> Result<ControlProbeStatus, String> {
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|error| format!("connect {} failed: {}", socket_path, error))?;
 
@@ -88,9 +94,29 @@ pub fn probe_control_socket(socket_path: &str) -> Result<(), String> {
     BufReader::new(stream)
         .read_line(&mut line)
         .map_err(|error| format!("read response failed: {}", error))?;
-    let _payload: Value = serde_json::from_str(line.trim())
+    let payload: Value = serde_json::from_str(line.trim())
         .map_err(|error| format!("decode response failed: {}", error))?;
-    Ok(())
+
+    if payload
+        .get("result")
+        .and_then(|row| row.get("ok"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Ok(ControlProbeStatus::Healthy);
+    }
+
+    let method_not_found = payload
+        .get("error")
+        .and_then(|row| row.get("code"))
+        .and_then(Value::as_i64)
+        .map(|code| code == -32601)
+        .unwrap_or(false);
+    if method_not_found {
+        return Ok(ControlProbeStatus::ReachableNoPing);
+    }
+
+    Err(format!("unexpected probe response: {}", payload))
 }
 
 #[cfg(test)]
@@ -151,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_control_socket_accepts_error_reply_as_reachable() {
+    fn probe_control_socket_accepts_error_reply_as_reachable_without_ping() {
         let socket_path = temp_socket_path("hop-hotkeyd-probe");
         let listener = UnixListener::bind(&socket_path).expect("bind test socket");
         let server = thread::spawn(move || {
@@ -172,6 +198,31 @@ mod tests {
             let _ = std::fs::remove_file(&socket_path);
         }
 
-        assert!(reachable.is_ok(), "probe should treat error response as reachable");
+        assert_eq!(reachable.ok(), Some(ControlProbeStatus::ReachableNoPing));
+    }
+
+    #[test]
+    fn probe_control_socket_reports_healthy_on_ok_response() {
+        let socket_path = temp_socket_path("hop-hotkeyd-probe-ok");
+        let listener = UnixListener::bind(&socket_path).expect("bind test socket");
+        let server = thread::spawn(move || {
+            let (mut conn, _) = listener.accept().expect("accept connection");
+            let mut line = String::new();
+            let mut reader = BufReader::new(conn.try_clone().expect("clone conn"));
+            reader.read_line(&mut line).expect("read request");
+            assert!(line.contains("\"method\":\"ui.ping\""));
+
+            let response = "{\"id\":\"doctor\",\"result\":{\"ok\":true}}\n";
+            conn.write_all(response.as_bytes()).expect("write response");
+        });
+
+        let probe = probe_control_socket(&socket_path);
+        server.join().expect("server thread");
+
+        if Path::new(&socket_path).exists() {
+            let _ = std::fs::remove_file(&socket_path);
+        }
+
+        assert_eq!(probe.ok(), Some(ControlProbeStatus::Healthy));
     }
 }
