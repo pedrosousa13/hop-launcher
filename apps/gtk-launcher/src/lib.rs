@@ -100,11 +100,13 @@ pub fn build_control_error_response(id: &str, code: i32, message: &str) -> Value
 }
 
 pub fn build_search_payload(query: &str, limit: u32, request_id: &str) -> Value {
+    let route = extract_query_route(query);
     json!({
         "id": request_id,
         "method": "search.query",
         "params": {
-            "query": query,
+            "query": route.query,
+            "mode": route.mode,
             "limit": limit.max(1),
         }
     })
@@ -233,6 +235,80 @@ pub fn execute(socket_path: &str, result_id: &str) -> Result<(), String> {
     parse_execute_response(&response)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QueryRoute {
+    mode: String,
+    query: String,
+}
+
+fn looks_like_math(query: &str) -> bool {
+    let trimmed = query.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().any(|ch| ch.is_ascii_digit())
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || "+-*/(). %".contains(ch))
+}
+
+fn looks_like_currency(query: &str) -> bool {
+    let parts: Vec<&str> = query.split_whitespace().collect();
+    if parts.len() != 4 || parts[2].to_lowercase() != "to" {
+        return false;
+    }
+    let left_ok = parts[0].chars().all(|ch| ch.is_ascii_digit() || ch == '.');
+    let src_ok = parts[1].chars().all(|ch| ch.is_ascii_alphabetic()) && parts[1].len() == 3;
+    let dst_ok = parts[3].chars().all(|ch| ch.is_ascii_alphabetic()) && parts[3].len() == 3;
+    left_ok && src_ok && dst_ok
+}
+
+fn extract_query_route(raw_query: &str) -> QueryRoute {
+    let trimmed = raw_query.trim_start();
+    let lowered = trimmed.to_lowercase();
+
+    let route = if lowered.starts_with("w ") {
+        ("windows", trimmed[2..].to_string())
+    } else if lowered.starts_with("a ") {
+        ("apps", trimmed[2..].to_string())
+    } else if lowered.starts_with("f ") {
+        ("files", trimmed[2..].to_string())
+    } else if lowered.starts_with("r ") {
+        ("recents", trimmed[2..].to_string())
+    } else if lowered.starts_with("settings ") {
+        ("settings", trimmed[9..].to_string())
+    } else if lowered.starts_with("prefs ") {
+        ("settings", trimmed[6..].to_string())
+    } else if lowered.starts_with(":emoji ") {
+        ("emoji", trimmed[7..].to_string())
+    } else if lowered.starts_with("emoji ") {
+        ("emoji", trimmed[6..].to_string())
+    } else if lowered.starts_with("tz ") {
+        ("timezone", trimmed[3..].to_string())
+    } else if lowered.starts_with("timezone ") {
+        ("timezone", trimmed[9..].to_string())
+    } else if lowered.starts_with("time in ") {
+        ("timezone", trimmed[8..].to_string())
+    } else if lowered.starts_with("time ") {
+        ("timezone", trimmed[5..].to_string())
+    } else if lowered.starts_with("weather ") {
+        ("weather", trimmed[8..].to_string())
+    } else if lowered.starts_with("wx ") {
+        ("weather", trimmed[3..].to_string())
+    } else if lowered.ends_with(" weather") && trimmed.len() > 8 {
+        ("weather", trimmed[..trimmed.len() - 8].trim().to_string())
+    } else if looks_like_math(trimmed) {
+        ("all", trimmed.to_string())
+    } else if looks_like_currency(trimmed) {
+        ("all", trimmed.to_string())
+    } else {
+        ("all", trimmed.to_string())
+    };
+
+    QueryRoute {
+        mode: route.0.to_string(),
+        query: route.1,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,8 +318,37 @@ mod tests {
         let payload = build_search_payload("weather zurich", 5, "gtk-1");
         assert_eq!(payload["id"], "gtk-1");
         assert_eq!(payload["method"], "search.query");
-        assert_eq!(payload["params"]["query"], "weather zurich");
+        assert_eq!(payload["params"]["query"], "zurich");
+        assert_eq!(payload["params"]["mode"], "weather");
         assert_eq!(payload["params"]["limit"], 5);
+    }
+
+    #[test]
+    fn route_prefix_w_maps_to_windows_mode() {
+        let route = extract_query_route("w terminal");
+        assert_eq!(route.mode, "windows");
+        assert_eq!(route.query, "terminal");
+    }
+
+    #[test]
+    fn route_prefix_a_maps_to_apps_mode() {
+        let route = extract_query_route("a firefox");
+        assert_eq!(route.mode, "apps");
+        assert_eq!(route.query, "firefox");
+    }
+
+    #[test]
+    fn route_settings_keyword_maps_to_settings_mode() {
+        let route = extract_query_route("settings bluetooth");
+        assert_eq!(route.mode, "settings");
+        assert_eq!(route.query, "bluetooth");
+    }
+
+    #[test]
+    fn route_default_keeps_all_mode() {
+        let route = extract_query_route("firefox");
+        assert_eq!(route.mode, "all");
+        assert_eq!(route.query, "firefox");
     }
 
     #[test]

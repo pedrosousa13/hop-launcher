@@ -42,6 +42,7 @@ fn main() {
 #[cfg(feature = "gtk_ui")]
 fn run() {
     adw::init().expect("failed to initialize libadwaita");
+    install_css();
 
     let app = adw::Application::builder()
         .application_id("app.hoplauncher.gtk")
@@ -54,34 +55,54 @@ fn run() {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Hop Launcher")
-            .default_width(860)
-            .default_height(420)
+            .default_width(900)
+            .default_height(560)
             .build();
+        window.add_css_class("hop-launcher-window");
 
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .spacing(12)
-            .margin_top(16)
-            .margin_bottom(16)
-            .margin_start(16)
-            .margin_end(16)
+            .spacing(10)
+            .margin_top(20)
+            .margin_bottom(20)
+            .margin_start(20)
+            .margin_end(20)
             .build();
+        content.add_css_class("hop-launcher-content");
+
+        let title = gtk::Label::builder()
+            .label("Hop Launcher")
+            .xalign(0.0)
+            .build();
+        title.add_css_class("title-2");
+        title.add_css_class("hop-launcher-title");
 
         let entry = gtk::Entry::builder()
             .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji…")
             .build();
+        entry.add_css_class("hop-launcher-entry");
         let status = gtk::Label::builder()
             .xalign(0.0)
             .build();
         status.add_css_class("dim-label");
+        status.add_css_class("hop-launcher-status");
 
         let list = gtk::ListBox::new();
         list.set_selection_mode(gtk::SelectionMode::Single);
         list.add_css_class("boxed-list");
+        list.add_css_class("hop-launcher-list");
+        let list_scroller = gtk::ScrolledWindow::builder()
+            .vexpand(true)
+            .hexpand(true)
+            .min_content_height(320)
+            .build();
+        list_scroller.set_child(Some(&list));
+        list_scroller.add_css_class("hop-launcher-scroll");
 
+        content.append(&title);
         content.append(&entry);
         content.append(&status);
-        content.append(&list);
+        content.append(&list_scroller);
         window.set_content(Some(&content));
 
         let toggle = gio::SimpleAction::new("toggle", None);
@@ -261,6 +282,56 @@ fn handle_control_stream(mut stream: UnixStream, toggle_tx: &mpsc::Sender<()>) -
 }
 
 #[cfg(feature = "gtk_ui")]
+fn install_css() {
+    let css = r#"
+.hop-launcher-window {
+  background: linear-gradient(155deg, rgba(28, 33, 42, 0.95), rgba(23, 28, 35, 0.95));
+}
+
+.hop-launcher-content {
+  border-radius: 18px;
+  background: alpha(@window_bg_color, 0.92);
+}
+
+.hop-launcher-title {
+  letter-spacing: 0.02em;
+}
+
+.hop-launcher-entry {
+  min-height: 44px;
+}
+
+.hop-launcher-status {
+  margin-bottom: 2px;
+}
+
+.hop-launcher-scroll {
+  border-radius: 12px;
+  background: alpha(@view_bg_color, 0.86);
+}
+
+.hop-launcher-list row {
+  margin: 2px 4px;
+  border-radius: 10px;
+}
+
+.hop-launcher-list row:selected {
+  background: alpha(@accent_bg_color, 0.28);
+}
+"#;
+
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(css);
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
 fn refresh_results(
     list: &gtk::ListBox,
     status: &gtk::Label,
@@ -278,6 +349,13 @@ fn refresh_results(
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
             for row in &rows {
+                let icon_name = if row.icon.is_empty() {
+                    "system-search-symbolic"
+                } else {
+                    row.icon.as_str()
+                };
+                let icon = gtk::Image::from_icon_name(icon_name);
+                icon.set_pixel_size(20);
                 let title = gtk::Label::builder()
                     .xalign(0.0)
                     .label(&row.title)
@@ -292,16 +370,23 @@ fn refresh_results(
                     .label(&subtitle_text)
                     .build();
                 subtitle.add_css_class("dim-label");
-                let body = gtk::Box::builder()
+                let text = gtk::Box::builder()
                     .orientation(gtk::Orientation::Vertical)
                     .spacing(2)
-                    .margin_top(4)
-                    .margin_bottom(4)
-                    .margin_start(4)
-                    .margin_end(4)
+                    .hexpand(true)
                     .build();
-                body.append(&title);
-                body.append(&subtitle);
+                text.append(&title);
+                text.append(&subtitle);
+                let body = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Horizontal)
+                    .spacing(10)
+                    .margin_top(6)
+                    .margin_bottom(6)
+                    .margin_start(8)
+                    .margin_end(8)
+                    .build();
+                body.append(&icon);
+                body.append(&text);
                 let item_row = gtk::ListBoxRow::new();
                 item_row.set_child(Some(&body));
                 list.append(&item_row);
