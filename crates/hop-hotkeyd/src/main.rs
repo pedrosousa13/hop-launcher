@@ -27,11 +27,15 @@ const HYPRLAND_TOGGLE_EVENT: &str = "hop-launcher-toggle";
 enum Command {
     Run,
     Trigger { socket_path: String },
-    Status { socket_path: String },
+    Status {
+        socket_path: String,
+        compositor: Option<String>,
+    },
     Doctor {
         socket_path: String,
         wait_seconds: u64,
         interval_ms: u64,
+        compositor: Option<String>,
     },
     PrintBindings {
         compositor: Option<String>,
@@ -40,7 +44,7 @@ enum Command {
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status [--socket <path>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +69,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
     }
     if args[1] == "status" {
         let mut socket_path = default_control_socket_path();
+        let mut compositor: Option<String> = None;
         let mut i = 2;
         while i < args.len() {
             match args[i].as_str() {
@@ -75,16 +80,27 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                     }
                     socket_path = args[i].clone();
                 }
+                "--compositor" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--compositor requires a value".to_string());
+                    }
+                    compositor = Some(args[i].to_ascii_lowercase());
+                }
                 unknown => return Err(format!("unknown argument: {}", unknown)),
             }
             i += 1;
         }
-        return Ok(Command::Status { socket_path });
+        return Ok(Command::Status {
+            socket_path,
+            compositor,
+        });
     }
     if args[1] == "doctor" {
         let mut socket_path = default_control_socket_path();
         let mut wait_seconds: u64 = 0;
         let mut interval_ms: u64 = 250;
+        let mut compositor: Option<String> = None;
         let mut i = 2;
         while i < args.len() {
             match args[i].as_str() {
@@ -116,6 +132,13 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                         return Err("--interval-ms must be greater than 0".to_string());
                     }
                 }
+                "--compositor" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--compositor requires a value".to_string());
+                    }
+                    compositor = Some(args[i].to_ascii_lowercase());
+                }
                 unknown => return Err(format!("unknown argument: {}", unknown)),
             }
             i += 1;
@@ -124,6 +147,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             socket_path,
             wait_seconds,
             interval_ms,
+            compositor,
         });
     }
     if args[1] == "print-bindings" {
@@ -183,9 +207,12 @@ fn run() -> Result<(), String> {
     let command = parse_command(&args)?;
     match command {
         Command::Trigger { socket_path } => send_toggle(&socket_path, "hotkey-trigger"),
-        Command::Status { socket_path } => {
+        Command::Status {
+            socket_path,
+            compositor,
+        } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
-            let mut payload = build_status_payload(&session_type);
+            let mut payload = build_status_payload(&session_type, compositor.as_deref());
             let summary = summarize_probe_result(probe_control_socket(&socket_path));
             add_control_probe_fields(&mut payload, &socket_path, summary);
             println!("{}", payload);
@@ -195,9 +222,10 @@ fn run() -> Result<(), String> {
             socket_path,
             wait_seconds,
             interval_ms,
+            compositor,
         } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
-            let backend_payload = build_status_payload(&session_type);
+            let backend_payload = build_status_payload(&session_type, compositor.as_deref());
             let summary = summarize_probe_result(run_doctor_probe(
                 &socket_path,
                 wait_seconds,
@@ -288,7 +316,18 @@ fn run_doctor_probe(
     }
 }
 
-fn build_status_payload(session_type: &str) -> serde_json::Value {
+fn normalize_compositor_name(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "sway" => "sway",
+        "hyprland" | "hypr" => "hyprland",
+        "kde" | "plasma" => "kde",
+        "gnome" => "gnome",
+        "x11" => "x11",
+        _ => "unknown",
+    }
+}
+
+fn build_status_payload(session_type: &str, compositor_override: Option<&str>) -> serde_json::Value {
     match select_backend_mode(session_type) {
         Ok(hop_hotkeyd::BackendMode::X11) => json!({
             "session_type": session_type,
@@ -297,12 +336,16 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             "mode": "daemon"
         }),
         Ok(hop_hotkeyd::BackendMode::Wayland) => {
-            let compositor = detect_wayland_compositor(
-                &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
-                &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
-                &env::var("SWAYSOCK").unwrap_or_default(),
-                &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
-            );
+            let compositor = compositor_override
+                .map(normalize_compositor_name)
+                .unwrap_or_else(|| {
+                    detect_wayland_compositor(
+                        &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+                        &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+                        &env::var("SWAYSOCK").unwrap_or_default(),
+                        &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
+                    )
+                });
             let sway_socket = env::var("SWAYSOCK").unwrap_or_default();
             let hyprland_signature = env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default();
             let runtime_dir = env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
@@ -970,7 +1013,8 @@ mod tests {
         assert_eq!(
             command,
             Command::Status {
-                socket_path: default_control_socket_path()
+                socket_path: default_control_socket_path(),
+                compositor: None,
             }
         );
     }
@@ -987,7 +1031,26 @@ mod tests {
         assert_eq!(
             command,
             Command::Status {
-                socket_path: "/tmp/status.sock".to_string()
+                socket_path: "/tmp/status.sock".to_string(),
+                compositor: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_status_subcommand_with_compositor_override() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "status".to_string(),
+            "--compositor".to_string(),
+            "hyprland".to_string(),
+        ];
+        let command = parse_command(&args).expect("status should parse");
+        assert_eq!(
+            command,
+            Command::Status {
+                socket_path: default_control_socket_path(),
+                compositor: Some("hyprland".to_string()),
             }
         );
     }
@@ -1006,7 +1069,8 @@ mod tests {
             Command::Doctor {
                 socket_path: "/tmp/doctor.sock".to_string(),
                 wait_seconds: 0,
-                interval_ms: 250
+                interval_ms: 250,
+                compositor: None
             }
         );
     }
@@ -1027,7 +1091,28 @@ mod tests {
             Command::Doctor {
                 socket_path: default_control_socket_path(),
                 wait_seconds: 3,
-                interval_ms: 100
+                interval_ms: 100,
+                compositor: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_doctor_subcommand_with_compositor_override() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "doctor".to_string(),
+            "--compositor".to_string(),
+            "kde".to_string(),
+        ];
+        let command = parse_command(&args).expect("doctor should parse");
+        assert_eq!(
+            command,
+            Command::Doctor {
+                socket_path: default_control_socket_path(),
+                wait_seconds: 0,
+                interval_ms: 250,
+                compositor: Some("kde".to_string()),
             }
         );
     }
@@ -1145,9 +1230,16 @@ mod tests {
 
     #[test]
     fn status_payload_reports_x11_capability() {
-        let payload = build_status_payload("x11");
+        let payload = build_status_payload("x11", None);
         assert_eq!(payload["backend"], "x11");
         assert_eq!(payload["global_hotkey_supported"], true);
+    }
+
+    #[test]
+    fn status_payload_honors_wayland_compositor_override() {
+        let payload = build_status_payload("wayland", Some("kde"));
+        assert_eq!(payload["backend"], "wayland");
+        assert_eq!(payload["wayland_compositor"], "kde");
     }
 
     #[test]

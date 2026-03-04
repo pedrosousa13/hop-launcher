@@ -46,6 +46,12 @@ If your control socket path is customized:
 ~/.local/bin/hop-hotkeyd status --socket /tmp/hop-launcher-control.sock
 ```
 
+For compositor-specific testing overrides:
+
+```bash
+~/.local/bin/hop-hotkeyd status --compositor sway
+```
+
 Print compositor-specific binding snippets (for Wayland setups) with:
 
 ```bash
