@@ -15,7 +15,7 @@ use std::thread;
 #[cfg(feature = "gtk_ui")]
 use std::time::Duration;
 #[cfg(feature = "gtk_ui")]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "gtk_ui")]
 use gtk::gio;
@@ -43,6 +43,87 @@ fn main() {
 }
 
 #[cfg(feature = "gtk_ui")]
+#[derive(Clone, Debug)]
+struct LauncherUiSettings {
+    overlay_opacity_percent: i32,
+    max_results: u32,
+    frameless_window: bool,
+}
+
+#[cfg(feature = "gtk_ui")]
+impl Default for LauncherUiSettings {
+    fn default() -> Self {
+        Self {
+            overlay_opacity_percent: 94,
+            max_results: 12,
+            frameless_window: true,
+        }
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn settings_file_path() -> Option<PathBuf> {
+    if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME") {
+        return Some(PathBuf::from(config_home).join("hop-launcher-gtk/settings.json"));
+    }
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".config/hop-launcher-gtk/settings.json"))
+}
+
+#[cfg(feature = "gtk_ui")]
+fn load_ui_settings() -> LauncherUiSettings {
+    let Some(path) = settings_file_path() else {
+        return LauncherUiSettings::default();
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
+        return LauncherUiSettings::default();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return LauncherUiSettings::default();
+    };
+
+    let default = LauncherUiSettings::default();
+    let overlay = json
+        .get("overlay_opacity_percent")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(70, 100) as i32)
+        .unwrap_or(default.overlay_opacity_percent);
+    let max_results = json
+        .get("max_results")
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v.clamp(4, 24) as u32)
+        .unwrap_or(default.max_results);
+    let frameless = json
+        .get("frameless_window")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.frameless_window);
+
+    LauncherUiSettings {
+        overlay_opacity_percent: overlay,
+        max_results,
+        frameless_window: frameless,
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
+    let Some(path) = settings_file_path() else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("create settings dir failed: {error}"))?;
+    }
+    let payload = serde_json::json!({
+        "overlay_opacity_percent": settings.overlay_opacity_percent,
+        "max_results": settings.max_results,
+        "frameless_window": settings.frameless_window,
+    });
+    let encoded = serde_json::to_string_pretty(&payload)
+        .map_err(|error| format!("encode settings failed: {error}"))?;
+    fs::write(path, encoded).map_err(|error| format!("write settings failed: {error}"))
+}
+
+#[cfg(feature = "gtk_ui")]
 fn run() {
     adw::init().expect("failed to initialize libadwaita");
     install_css();
@@ -54,6 +135,7 @@ fn run() {
     app.connect_activate(|app| {
         let socket_path = Rc::new(default_hopd_socket_path());
         let results = Rc::new(RefCell::new(Vec::<LauncherResult>::new()));
+        let ui_settings = Rc::new(RefCell::new(load_ui_settings()));
 
         let window = adw::ApplicationWindow::builder()
             .application(app)
@@ -61,8 +143,11 @@ fn run() {
             .default_width(900)
             .default_height(560)
             .build();
-        window.set_opacity(0.86);
-        window.set_decorated(false);
+        {
+            let settings = ui_settings.borrow().clone();
+            window.set_opacity(settings.overlay_opacity_percent as f64 / 100.0);
+            window.set_decorated(!settings.frameless_window);
+        }
         window.add_css_class("hop-launcher-window");
 
         let content = gtk::Box::builder()
@@ -78,9 +163,20 @@ fn run() {
         let title = gtk::Label::builder()
             .label("Hop Launcher")
             .xalign(0.0)
+            .hexpand(true)
             .build();
         title.add_css_class("title-2");
         title.add_css_class("hop-launcher-title");
+        let settings_button = gtk::Button::from_icon_name("preferences-system-symbolic");
+        settings_button.add_css_class("flat");
+        settings_button.add_css_class("hop-launcher-settings-button");
+        settings_button.set_tooltip_text(Some("Launcher Settings"));
+        let header = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
+        header.append(&title);
+        header.append(&settings_button);
         let hints = build_mode_hints();
 
         let entry = gtk::Entry::builder()
@@ -105,12 +201,21 @@ fn run() {
         list_scroller.set_child(Some(&list));
         list_scroller.add_css_class("hop-launcher-scroll");
 
-        content.append(&title);
+        content.append(&header);
         content.append(&hints);
         content.append(&entry);
         content.append(&status);
         content.append(&list_scroller);
         window.set_content(Some(&content));
+
+        {
+            let app = app.clone();
+            let parent = window.clone();
+            let settings = ui_settings.clone();
+            settings_button.connect_clicked(move |_| {
+                open_settings_window(&app, &parent, settings.clone());
+            });
+        }
 
         let toggle = gio::SimpleAction::new("toggle", None);
         {
@@ -143,9 +248,11 @@ fn run() {
             let status = status.clone();
             let results = results.clone();
             let socket_path = socket_path.clone();
+            let ui_settings = ui_settings.clone();
             entry.connect_changed(move |entry| {
                 let query = entry.text().to_string();
-                refresh_results(&list, &status, &results, &socket_path, &query);
+                let max_results = ui_settings.borrow().max_results;
+                refresh_results(&list, &status, &results, &socket_path, max_results, &query);
             });
         }
 
@@ -177,6 +284,8 @@ fn run() {
         {
             let list = list.clone();
             let window = window.clone();
+            let app = app.clone();
+            let ui_settings = ui_settings.clone();
             let controller = gtk::EventControllerKey::new();
             controller.connect_key_pressed(move |_, key, _, state| {
                 let is_ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -214,6 +323,10 @@ fn run() {
                         window.hide();
                         true.into()
                     }
+                    gtk::gdk::Key::comma if is_ctrl => {
+                        open_settings_window(&app, &window, ui_settings.clone());
+                        true.into()
+                    }
                     _ => false.into(),
                 }
             });
@@ -243,7 +356,14 @@ fn run() {
             });
         }
 
-        refresh_results(&list, &status, &results, &socket_path, "");
+        refresh_results(
+            &list,
+            &status,
+            &results,
+            &socket_path,
+            ui_settings.borrow().max_results,
+            "",
+        );
 
         if start_visible_on_launch() {
             window.present();
@@ -356,12 +476,17 @@ fn install_css() {
 
 .hop-launcher-content {
   border-radius: 18px;
-  border: 1px solid alpha(@accent_bg_color, 0.14);
-  background: linear-gradient(160deg, rgba(20, 26, 34, 0.36), rgba(17, 21, 30, 0.30));
+  border: 1px solid alpha(@accent_bg_color, 0.20);
+  background: linear-gradient(160deg, rgba(20, 26, 34, 0.62), rgba(17, 21, 30, 0.56));
 }
 
 .hop-launcher-title {
   letter-spacing: 0.02em;
+}
+
+.hop-launcher-settings-button {
+  min-width: 32px;
+  min-height: 32px;
 }
 
 .hop-launcher-hints {
@@ -371,8 +496,8 @@ fn install_css() {
 .hop-launcher-hint-chip {
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid alpha(@headerbar_border_color, 0.28);
-  background: alpha(@view_bg_color, 0.10);
+  border: 1px solid alpha(@headerbar_border_color, 0.35);
+  background: alpha(@view_bg_color, 0.22);
   font-size: 0.78em;
 }
 
@@ -390,23 +515,23 @@ fn install_css() {
 
 .hop-launcher-scroll {
   border-radius: 12px;
-  border: 1px solid alpha(@headerbar_border_color, 0.28);
-  background: alpha(@view_bg_color, 0.24);
+  border: 1px solid alpha(@headerbar_border_color, 0.35);
+  background: alpha(@view_bg_color, 0.48);
 }
 
 .hop-launcher-list row {
   margin: 1px 4px;
   border-radius: 10px;
-  background: alpha(@view_bg_color, 0.08);
+  background: alpha(@view_bg_color, 0.20);
   transition: 130ms ease;
 }
 
 .hop-launcher-list row:hover {
-  background: alpha(@view_bg_color, 0.16);
+  background: alpha(@view_bg_color, 0.30);
 }
 
 .hop-launcher-list row:selected {
-  background: alpha(@accent_bg_color, 0.28);
+  background: alpha(@accent_bg_color, 0.40);
 }
 
 .hop-launcher-kind-badge {
@@ -474,6 +599,122 @@ fn move_selection(list: &gtk::ListBox, delta: i32) {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn open_settings_window(
+    app: &adw::Application,
+    parent: &adw::ApplicationWindow,
+    settings: Rc<RefCell<LauncherUiSettings>>,
+) {
+    let prefs = adw::PreferencesWindow::builder()
+        .application(app)
+        .title("Hop Launcher Settings")
+        .default_width(560)
+        .default_height(420)
+        .transient_for(parent)
+        .modal(true)
+        .build();
+
+    let page = adw::PreferencesPage::new();
+    let appearance = adw::PreferencesGroup::builder()
+        .title("Appearance")
+        .description("Tune launcher translucency and window chrome.")
+        .build();
+    let behavior = adw::PreferencesGroup::builder()
+        .title("Behavior")
+        .description("Result density and interaction defaults.")
+        .build();
+
+    let opacity_row = adw::ActionRow::builder()
+        .title("Launcher translucency (%)")
+        .subtitle("Higher values are less transparent.")
+        .build();
+    let opacity_adjustment = gtk::Adjustment::new(
+        settings.borrow().overlay_opacity_percent as f64,
+        70.0,
+        100.0,
+        1.0,
+        5.0,
+        0.0,
+    );
+    let opacity_spin = gtk::SpinButton::new(Some(&opacity_adjustment), 1.0, 0);
+    opacity_spin.set_valign(gtk::Align::Center);
+    opacity_row.add_suffix(&opacity_spin);
+    opacity_row.set_activatable_widget(Some(&opacity_spin));
+    {
+        let settings = settings.clone();
+        let parent = parent.clone();
+        opacity_spin.connect_value_changed(move |spin| {
+            let mut next = settings.borrow().clone();
+            next.overlay_opacity_percent = spin.value_as_int().clamp(70, 100);
+            parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    appearance.add(&opacity_row);
+
+    let frame_row = adw::ActionRow::builder()
+        .title("Frameless launcher window")
+        .subtitle("Use overlay-style window without titlebar decorations.")
+        .build();
+    let frame_switch = gtk::Switch::builder()
+        .active(settings.borrow().frameless_window)
+        .valign(gtk::Align::Center)
+        .build();
+    frame_row.add_suffix(&frame_switch);
+    frame_row.set_activatable_widget(Some(&frame_switch));
+    {
+        let settings = settings.clone();
+        let parent = parent.clone();
+        frame_switch.connect_active_notify(move |toggle| {
+            let mut next = settings.borrow().clone();
+            next.frameless_window = toggle.is_active();
+            parent.set_decorated(!next.frameless_window);
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    appearance.add(&frame_row);
+
+    let results_row = adw::ActionRow::builder()
+        .title("Max results")
+        .subtitle("Maximum number of rows returned from hopd per query.")
+        .build();
+    let results_adjustment = gtk::Adjustment::new(
+        settings.borrow().max_results as f64,
+        4.0,
+        24.0,
+        1.0,
+        4.0,
+        0.0,
+    );
+    let results_spin = gtk::SpinButton::new(Some(&results_adjustment), 1.0, 0);
+    results_spin.set_valign(gtk::Align::Center);
+    results_row.add_suffix(&results_spin);
+    results_row.set_activatable_widget(Some(&results_spin));
+    {
+        let settings = settings.clone();
+        results_spin.connect_value_changed(move |spin| {
+            let mut next = settings.borrow().clone();
+            next.max_results = spin.value_as_int().clamp(4, 24) as u32;
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    behavior.add(&results_row);
+
+    page.add(&appearance);
+    page.add(&behavior);
+    prefs.add(&page);
+    prefs.present();
+}
+
+#[cfg(feature = "gtk_ui")]
 fn build_mode_hints() -> gtk::Box {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -507,6 +748,7 @@ fn refresh_results(
     status: &gtk::Label,
     results: &Rc<RefCell<Vec<LauncherResult>>>,
     socket_path: &str,
+    max_results: u32,
     query: &str,
 ) {
     while let Some(child) = list.first_child() {
@@ -515,7 +757,7 @@ fn refresh_results(
 
     status.set_text(&render_status_text(QueryState::Searching));
     let mode_label = search_query_mode(query).to_ascii_uppercase();
-    match search(socket_path, query, 12) {
+    match search(socket_path, query, max_results) {
         Ok(rows) => {
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
