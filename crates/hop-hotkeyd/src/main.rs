@@ -24,6 +24,14 @@ fn usage() -> &'static str {
     "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>]  # print diagnostics\n"
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProbeSummary {
+    reachable: bool,
+    ping_supported: bool,
+    status: &'static str,
+    error: Option<String>,
+}
+
 fn parse_command(args: &[String]) -> Result<Command, String> {
     if args.len() < 2 {
         return Ok(Command::Run);
@@ -85,14 +93,14 @@ fn run() -> Result<(), String> {
         Command::Doctor { socket_path } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             let backend_payload = build_status_payload(&session_type);
-            let (reachable, ping_supported, probe_status) =
-                summarize_probe_result(probe_control_socket(&socket_path));
+            let summary = summarize_probe_result(probe_control_socket(&socket_path));
             let doctor = json!({
                 "status": backend_payload,
                 "control_socket_path": socket_path,
-                "control_socket_reachable": reachable,
-                "control_ping_supported": ping_supported,
-                "control_probe_status": probe_status
+                "control_socket_reachable": summary.reachable,
+                "control_ping_supported": summary.ping_supported,
+                "control_probe_status": summary.status,
+                "control_probe_error": summary.error
             });
             println!("{}", doctor);
             Ok(())
@@ -101,11 +109,26 @@ fn run() -> Result<(), String> {
     }
 }
 
-fn summarize_probe_result(probe: Result<ControlProbeStatus, String>) -> (bool, bool, &'static str) {
+fn summarize_probe_result(probe: Result<ControlProbeStatus, String>) -> ProbeSummary {
     match probe {
-        Ok(ControlProbeStatus::Healthy) => (true, true, "healthy"),
-        Ok(ControlProbeStatus::ReachableNoPing) => (true, false, "reachable_no_ping"),
-        Err(_) => (false, false, "unreachable"),
+        Ok(ControlProbeStatus::Healthy) => ProbeSummary {
+            reachable: true,
+            ping_supported: true,
+            status: "healthy",
+            error: None,
+        },
+        Ok(ControlProbeStatus::ReachableNoPing) => ProbeSummary {
+            reachable: true,
+            ping_supported: false,
+            status: "reachable_no_ping",
+            error: None,
+        },
+        Err(error) => ProbeSummary {
+            reachable: false,
+            ping_supported: false,
+            status: "unreachable",
+            error: Some(error),
+        },
     }
 }
 
@@ -558,15 +581,30 @@ mod tests {
     fn summarize_probe_result_maps_states() {
         assert_eq!(
             summarize_probe_result(Ok(ControlProbeStatus::Healthy)),
-            (true, true, "healthy")
+            ProbeSummary {
+                reachable: true,
+                ping_supported: true,
+                status: "healthy",
+                error: None
+            }
         );
         assert_eq!(
             summarize_probe_result(Ok(ControlProbeStatus::ReachableNoPing)),
-            (true, false, "reachable_no_ping")
+            ProbeSummary {
+                reachable: true,
+                ping_supported: false,
+                status: "reachable_no_ping",
+                error: None
+            }
         );
         assert_eq!(
             summarize_probe_result(Err("missing socket".to_string())),
-            (false, false, "unreachable")
+            ProbeSummary {
+                reachable: false,
+                ping_supported: false,
+                status: "unreachable",
+                error: Some("missing socket".to_string())
+            }
         );
     }
 }

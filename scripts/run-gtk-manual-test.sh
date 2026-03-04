@@ -100,6 +100,7 @@ systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
 echo "hotkey backend status:"
 ~/.local/bin/hop-hotkeyd status || true
 echo "hotkey diagnostics:"
+echo "(expected: unreachable before GTK app starts)"
 ~/.local/bin/hop-hotkeyd doctor --socket "$CONTROL_SOCKET_PATH" || true
 
 echo
