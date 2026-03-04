@@ -660,29 +660,32 @@ fn run() {
             let ui_settings = ui_settings.clone();
             let socket_path_for_settings = socket_path.clone();
             entry.clone().connect_activate(move |_| {
-                if let Some(row) = list.selected_row() {
-                    let index = row.index() as usize;
-                    if let Some(result) = results.borrow().get(index).cloned() {
-                        if result.id == "hop-launcher-settings" {
-                            open_settings_window(
-                                &app,
-                                &window,
-                                ui_settings.clone(),
-                                &socket_path_for_settings,
-                            );
-                            status.set_text("Opened launcher settings");
-                            return;
-                        }
-                        if let Err(error) = execute(&socket_path, &result.id) {
-                            status.set_text(&render_status_text(QueryState::Error(format!(
-                                "execute failed: {error}"
-                            ))));
-                        } else {
-                            status.set_text(&render_status_text(QueryState::Executed));
-                            hide_window(&window, &ui_settings.borrow());
-                            entry.set_text("");
-                        }
+                let index = list
+                    .selected_row()
+                    .map(|row| row.index() as usize)
+                    .unwrap_or(0);
+                if let Some(result) = results.borrow().get(index).cloned() {
+                    if result.id == "hop-launcher-settings" {
+                        open_settings_window(
+                            &app,
+                            &window,
+                            ui_settings.clone(),
+                            &socket_path_for_settings,
+                        );
+                        status.set_text("Opened launcher settings");
+                        return;
                     }
+                    if let Err(error) = execute(&socket_path, &result.id) {
+                        status.set_text(&render_status_text(QueryState::Error(format!(
+                            "execute failed: {error}"
+                        ))));
+                    } else {
+                        status.set_text(&render_status_text(QueryState::Executed));
+                        hide_window(&window, &ui_settings.borrow());
+                        entry.set_text("");
+                    }
+                } else {
+                    status.set_text(&render_status_text(QueryState::Empty));
                 }
             });
         }
