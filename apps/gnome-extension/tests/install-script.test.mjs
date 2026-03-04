@@ -56,3 +56,10 @@ test('reload script installs extension then requests GNOME Shell reexec', () => 
   assert.match(script, /org\.gnome\.Shell/);
   assert.match(script, /global\.reexec_self\(\)/);
 });
+
+test('install script also installs hop-hotkeyd companion service', () => {
+  const script = fs.readFileSync(path.join(rootDir, 'scripts/install-hopd-local.sh'), 'utf8');
+  assert.match(script, /hop-hotkeyd/);
+  assert.match(script, /hop-hotkeyd\.service/);
+  assert.match(script, /HOP_LAUNCHER_CONTROL_SOCKET/);
+});

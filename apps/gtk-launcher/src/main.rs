@@ -1,7 +1,19 @@
 #[cfg(feature = "gtk_ui")]
 use std::cell::RefCell;
 #[cfg(feature = "gtk_ui")]
+use std::fs;
+#[cfg(feature = "gtk_ui")]
+use std::io::{BufRead, BufReader, Write};
+#[cfg(feature = "gtk_ui")]
+use std::os::unix::net::{UnixListener, UnixStream};
+#[cfg(feature = "gtk_ui")]
 use std::rc::Rc;
+#[cfg(feature = "gtk_ui")]
+use std::sync::mpsc;
+#[cfg(feature = "gtk_ui")]
+use std::thread;
+#[cfg(feature = "gtk_ui")]
+use std::time::Duration;
 
 #[cfg(feature = "gtk_ui")]
 use gtk::gio;
@@ -17,8 +29,9 @@ use gtk4 as gtk;
 use libadwaita as adw;
 #[cfg(feature = "gtk_ui")]
 use hop_launcher_gtk::{
-    default_hopd_socket_path, execute, search, start_visible_on_launch, toggle_accelerator,
-    LauncherResult,
+    build_control_error_response, build_control_ok_response, default_control_socket_path,
+    default_hopd_socket_path, execute, parse_control_request, search, start_visible_on_launch,
+    toggle_accelerator, LauncherResult,
 };
 
 fn main() {
@@ -74,15 +87,25 @@ fn run() {
         {
             let window = window.clone();
             toggle.connect_activate(move |_, _| {
-                if window.is_visible() {
-                    window.hide();
-                } else {
-                    window.present();
-                }
+                toggle_window(&window);
             });
         }
         app.add_action(&toggle);
         app.set_accels_for_action("app.toggle", &[toggle_accelerator()]);
+
+        let (toggle_tx, toggle_rx) = mpsc::channel::<()>();
+        {
+            let window = window.clone();
+            gtk::glib::timeout_add_local(Duration::from_millis(30), move || {
+                while toggle_rx.try_recv().is_ok() {
+                    toggle_window(&window);
+                }
+                gtk::glib::ControlFlow::Continue
+            });
+        }
+        if let Err(error) = start_control_listener(default_control_socket_path(), toggle_tx) {
+            eprintln!("failed to start control listener: {}", error);
+        }
 
         {
             let list = list.clone();
@@ -139,6 +162,92 @@ fn run() {
     });
 
     app.run();
+}
+
+#[cfg(feature = "gtk_ui")]
+fn toggle_window(window: &adw::ApplicationWindow) {
+    if window.is_visible() {
+        window.hide();
+    } else {
+        window.present();
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn start_control_listener(socket_path: String, toggle_tx: mpsc::Sender<()>) -> Result<(), String> {
+    thread::Builder::new()
+        .name("hop-launcher-control".to_string())
+        .spawn(move || {
+            if fs::remove_file(&socket_path).is_err() && std::path::Path::new(&socket_path).exists() {
+                eprintln!("failed to remove stale control socket: {}", socket_path);
+            }
+
+            let listener = match UnixListener::bind(&socket_path) {
+                Ok(listener) => listener,
+                Err(error) => {
+                    eprintln!("control socket bind failed at {}: {}", socket_path, error);
+                    return;
+                }
+            };
+
+            for stream_result in listener.incoming() {
+                match stream_result {
+                    Ok(stream) => {
+                        if let Err(error) = handle_control_stream(stream, &toggle_tx) {
+                            eprintln!("control request error: {}", error);
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("control socket accept error: {}", error);
+                    }
+                }
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| format!("spawn control listener failed: {}", error))
+}
+
+#[cfg(feature = "gtk_ui")]
+fn handle_control_stream(mut stream: UnixStream, toggle_tx: &mpsc::Sender<()>) -> Result<(), String> {
+    let mut line = String::new();
+    let mut reader = BufReader::new(
+        stream
+            .try_clone()
+            .map_err(|error| format!("clone stream failed: {}", error))?,
+    );
+    reader
+        .read_line(&mut line)
+        .map_err(|error| format!("read request failed: {}", error))?;
+
+    let payload: serde_json::Value = serde_json::from_str(line.trim())
+        .map_err(|error| format!("decode request failed: {}", error))?;
+
+    let request_id = payload
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+
+    let response = match parse_control_request(&payload) {
+        Ok(_) => {
+            if toggle_tx.send(()).is_err() {
+                build_control_error_response(request_id, -32000, "toggle dispatch failed")
+            } else {
+                build_control_ok_response(request_id)
+            }
+        }
+        Err(error) => build_control_error_response(request_id, -32601, &error),
+    };
+
+    let encoded = serde_json::to_string(&response)
+        .map_err(|error| format!("encode response failed: {}", error))?;
+    stream
+        .write_all(encoded.as_bytes())
+        .map_err(|error| format!("write response failed: {}", error))?;
+    stream
+        .write_all(b"\n")
+        .map_err(|error| format!("write newline failed: {}", error))?;
+
+    Ok(())
 }
 
 #[cfg(feature = "gtk_ui")]

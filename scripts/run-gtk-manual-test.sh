@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SCRIPT="$ROOT_DIR/apps/gnome-extension/scripts/install-hopd-local.sh"
 GTK_DIR="$ROOT_DIR/apps/gtk-launcher"
 SOCKET_PATH="${HOPD_SOCKET:-${XDG_RUNTIME_DIR:-/tmp}/hopd.sock}"
+CONTROL_SOCKET_PATH="${HOP_LAUNCHER_CONTROL_SOCKET:-${XDG_RUNTIME_DIR:-/tmp}/hop-launcher-control.sock}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -89,11 +90,19 @@ wait_for_socket
 echo "Checking hopd health..."
 check_hopd_health
 
+echo "Checking hop-hotkeyd service..."
+systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
+  echo "hop-hotkeyd.service is not active" >&2
+  echo "Try: systemctl --user status hop-hotkeyd.service" >&2
+  exit 1
+}
+
 echo
 echo "Manual test checklist:"
 echo "- App starts visible in Phase 1; Ctrl+Shift+& is app-local (not global yet)"
 echo "- Type: weather zurich / time in tokyo / emoji smile"
 echo "- Press Enter on a result to trigger actions.execute"
+echo "- Global toggle test: ~/.local/bin/hop-hotkeyd trigger --socket $CONTROL_SOCKET_PATH"
 echo
 
 echo "Launching GTK app..."

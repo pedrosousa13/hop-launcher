@@ -30,3 +30,8 @@ test('manual gtk test script launches gtk_ui app', () => {
   const script = readScript();
   assert.match(script, /cargo run --features gtk_ui/);
 });
+
+test('manual gtk test script includes hop-hotkeyd trigger hint', () => {
+  const script = readScript();
+  assert.match(script, /hop-hotkeyd trigger/);
+});

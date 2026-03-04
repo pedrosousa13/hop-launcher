@@ -3,11 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOPD_DIR="$ROOT_DIR/../../crates/hopd"
+HOTKEYD_DIR="$ROOT_DIR/../../crates/hop-hotkeyd"
 INSTALL_BIN_DIR="${HOME}/.local/bin"
 INSTALL_BIN_PATH="${INSTALL_BIN_DIR}/hopd"
+HOTKEYD_BIN_PATH="${INSTALL_BIN_DIR}/hop-hotkeyd"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 SERVICE_PATH="${SYSTEMD_USER_DIR}/hopd.service"
+HOTKEYD_SERVICE_PATH="${SYSTEMD_USER_DIR}/hop-hotkeyd.service"
 SOCKET_PATH="${XDG_RUNTIME_DIR:-/tmp}/hopd.sock"
+CONTROL_SOCKET_PATH="${HOP_LAUNCHER_CONTROL_SOCKET:-${XDG_RUNTIME_DIR:-/tmp}/hop-launcher-control.sock}"
 ENABLE_SERVICE=1
 DRY_RUN=0
 
@@ -58,12 +62,15 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 run_cmd cargo build --release --manifest-path "${HOPD_DIR}/Cargo.toml"
+run_cmd cargo build --release --manifest-path "${HOTKEYD_DIR}/Cargo.toml"
 run_cmd mkdir -p "${INSTALL_BIN_DIR}"
 run_cmd install -m 0755 "${HOPD_DIR}/target/release/hopd" "${INSTALL_BIN_PATH}"
+run_cmd install -m 0755 "${HOTKEYD_DIR}/target/release/hop-hotkeyd" "${HOTKEYD_BIN_PATH}"
 run_cmd mkdir -p "${SYSTEMD_USER_DIR}"
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "[dry-run] write ${SERVICE_PATH}"
+    echo "[dry-run] write ${HOTKEYD_SERVICE_PATH}"
 else
     cat > "${SERVICE_PATH}" <<EOF
 [Unit]
@@ -80,15 +87,35 @@ Environment=HOPD_SOCKET=${SOCKET_PATH}
 [Install]
 WantedBy=default.target
 EOF
+
+    cat > "${HOTKEYD_SERVICE_PATH}" <<EOF
+[Unit]
+Description=Hop Launcher Global Hotkey Agent (hop-hotkeyd)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=${HOTKEYD_BIN_PATH}
+Restart=on-failure
+RestartSec=1
+Environment=HOP_LAUNCHER_CONTROL_SOCKET=${CONTROL_SOCKET_PATH}
+
+[Install]
+WantedBy=default.target
+EOF
 fi
 
 run_cmd systemctl --user daemon-reload
 if [[ "$ENABLE_SERVICE" -eq 1 ]]; then
     run_cmd systemctl --user enable --now hopd.service
+    run_cmd systemctl --user enable --now hop-hotkeyd.service
 else
-    echo "Installed hopd.service but did not enable/start it (--no-enable)."
+    echo "Installed hopd.service and hop-hotkeyd.service but did not enable/start them (--no-enable)."
 fi
 
 echo "hopd installed at ${INSTALL_BIN_PATH}"
+echo "hop-hotkeyd installed at ${HOTKEYD_BIN_PATH}"
 echo "systemd unit installed at ${SERVICE_PATH}"
+echo "systemd unit installed at ${HOTKEYD_SERVICE_PATH}"
 echo "socket path: ${SOCKET_PATH}"
+echo "control socket path: ${CONTROL_SOCKET_PATH}"

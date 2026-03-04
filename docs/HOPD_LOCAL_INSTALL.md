@@ -1,4 +1,4 @@
-# hopd Local Install Guide
+# hopd / hop-hotkeyd Local Install Guide
 
 ## Prerequisites
 
@@ -18,9 +18,10 @@ npm run install:hopd:local
 What this does:
 
 1. Builds `hopd` in release mode.
-2. Installs binary to `~/.local/bin/hopd`.
-3. Installs `~/.config/systemd/user/hopd.service`.
-4. Reloads user units and enables/starts `hopd.service`.
+2. Builds `hop-hotkeyd` in release mode.
+3. Installs binaries to `~/.local/bin/hopd` and `~/.local/bin/hop-hotkeyd`.
+4. Installs `~/.config/systemd/user/hopd.service` and `~/.config/systemd/user/hop-hotkeyd.service`.
+5. Reloads user units and enables/starts both services.
 
 ## Useful options
 
@@ -33,10 +34,11 @@ cd apps/gnome-extension
 ./scripts/install-hopd-local.sh --no-enable
 ```
 
-## Verify daemon
+## Verify daemons
 
 ```bash
 systemctl --user status hopd.service
+systemctl --user status hop-hotkeyd.service
 ```
 
 If `socat` is installed:

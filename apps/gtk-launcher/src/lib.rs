@@ -11,6 +11,11 @@ pub struct LauncherResult {
     pub title: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlRequest {
+    pub id: String,
+}
+
 pub fn default_hopd_socket_path() -> String {
     if let Ok(path) = env::var("HOPD_SOCKET") {
         return path;
@@ -21,12 +26,53 @@ pub fn default_hopd_socket_path() -> String {
     "/tmp/hopd.sock".to_string()
 }
 
+pub fn default_control_socket_path() -> String {
+    if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+        return format!("{runtime_dir}/hop-launcher-control.sock");
+    }
+    "/tmp/hop-launcher-control.sock".to_string()
+}
+
 pub fn toggle_accelerator() -> &'static str {
     "<Primary><Shift>ampersand"
 }
 
 pub fn start_visible_on_launch() -> bool {
     true
+}
+
+pub fn parse_control_request(payload: &Value) -> Result<ControlRequest, String> {
+    let id = payload
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "missing string id".to_string())?;
+    let method = payload
+        .get("method")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "missing string method".to_string())?;
+    if method != "ui.toggle" {
+        return Err(format!("unsupported method: {}", method));
+    }
+    Ok(ControlRequest { id: id.to_string() })
+}
+
+pub fn build_control_ok_response(id: &str) -> Value {
+    json!({
+        "id": id,
+        "result": {
+            "ok": true
+        }
+    })
+}
+
+pub fn build_control_error_response(id: &str, code: i32, message: &str) -> Value {
+    json!({
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
 }
 
 pub fn build_search_payload(query: &str, limit: u32, request_id: &str) -> Value {
@@ -151,5 +197,41 @@ mod tests {
     #[test]
     fn starts_visible_for_phase1_local_testing() {
         assert!(start_visible_on_launch());
+    }
+
+    #[test]
+    fn control_default_socket_path_uses_runtime_dir() {
+        if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+            assert_eq!(
+                default_control_socket_path(),
+                format!("{runtime_dir}/hop-launcher-control.sock")
+            );
+        }
+    }
+
+    #[test]
+    fn control_parse_toggle_request_accepts_ui_toggle() {
+        let payload = serde_json::json!({
+            "id": "ctrl-1",
+            "method": "ui.toggle"
+        });
+
+        let request = parse_control_request(&payload).expect("toggle request should parse");
+        assert_eq!(request.id, "ctrl-1");
+    }
+
+    #[test]
+    fn control_build_ok_response_uses_original_id() {
+        let response = build_control_ok_response("ctrl-1");
+        assert_eq!(response["id"], "ctrl-1");
+        assert_eq!(response["result"]["ok"], true);
+    }
+
+    #[test]
+    fn control_build_error_response_uses_json_rpc_shape() {
+        let response = build_control_error_response("ctrl-1", -32601, "method not found");
+        assert_eq!(response["id"], "ctrl-1");
+        assert_eq!(response["error"]["code"], -32601);
+        assert_eq!(response["error"]["message"], "method not found");
     }
 }
