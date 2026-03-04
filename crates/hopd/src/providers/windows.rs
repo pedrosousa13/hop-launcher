@@ -16,13 +16,14 @@ pub fn results(query: &str) -> Vec<SearchItem> {
                 .as_deref()
                 .unwrap_or("window-symbolic")
                 .to_string();
+            let keywords = build_window_keywords(&window);
             SearchItem::new(
                 &format!("window:{}", window.id),
                 "window",
                 &window.title,
                 "Open window",
                 &icon,
-                &format!("window {} {}", window.id, window.title),
+                &keywords,
             )
         })
         .take(if is_empty_query { 8 } else { 20 })
@@ -230,6 +231,18 @@ fn matches_window_query(window: &WindowEntry, query: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn build_window_keywords(window: &WindowEntry) -> String {
+    match window.icon.as_deref() {
+        Some(icon) if !icon.is_empty() => format!(
+            "window {} {} {}",
+            window.id,
+            window.title.to_lowercase(),
+            icon.to_lowercase()
+        ),
+        _ => format!("window {} {}", window.id, window.title.to_lowercase()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +316,17 @@ mod tests {
         assert!(matches_window_query(&entry, "workspace"));
         assert!(matches_window_query(&entry, "terminal"));
         assert!(!matches_window_query(&entry, "firefox"));
+    }
+
+    #[test]
+    fn build_window_keywords_includes_icon_hint() {
+        let entry = WindowEntry {
+            id: "0x2".to_string(),
+            title: "Workspace".to_string(),
+            icon: Some("firefox".to_string()),
+        };
+        let keywords = build_window_keywords(&entry);
+        assert!(keywords.contains("workspace"));
+        assert!(keywords.contains("firefox"));
     }
 }
