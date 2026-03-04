@@ -51,6 +51,16 @@ jobs:
           cargo build --release --manifest-path crates/hopd/Cargo.toml
           cargo build --release --manifest-path crates/hop-hotkeyd/Cargo.toml
 
+      - name: Install Debian packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper dh-cargo cargo rustc dpkg-dev
+
+      - name: Build Debian packages
+        run: |
+          cd crates/hopd && dpkg-buildpackage -us -uc -b
+          cd ../hop-hotkeyd && dpkg-buildpackage -us -uc -b
+
       - name: Package daemon artifacts
         shell: bash
         run: |
@@ -59,6 +69,8 @@ jobs:
           cp crates/hop-hotkeyd/target/release/hop-hotkeyd dist/hop-hotkeyd
           tar -C dist -czf dist/hopd-linux-x86_64.tar.gz hopd
           tar -C dist -czf dist/hop-hotkeyd-linux-x86_64.tar.gz hop-hotkeyd
+          mkdir -p dist/deb
+          find crates -maxdepth 2 -type f -name '*.deb' -exec cp {} dist/deb/ \;
 
       - name: Build distributable zip
         run: npm run package
@@ -83,6 +95,7 @@ jobs:
             ${{ steps.asset.outputs.asset_path }}
             dist/hopd-linux-x86_64.tar.gz
             dist/hop-hotkeyd-linux-x86_64.tar.gz
+            dist/deb/*.deb
           if-no-files-found: error
 
       - name: Create GitHub release and upload zip
@@ -97,4 +110,5 @@ jobs:
             ${{ steps.asset.outputs.asset_path }}
             dist/hopd-linux-x86_64.tar.gz
             dist/hop-hotkeyd-linux-x86_64.tar.gz
+            dist/deb/*.deb
           generate_release_notes: true

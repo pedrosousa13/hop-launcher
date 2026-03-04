@@ -31,11 +31,14 @@ The release workflow currently builds:
 - GNOME extension zip (`apps/gnome-extension/dist/*.zip`)
 - `hopd-linux-x86_64.tar.gz`
 - `hop-hotkeyd-linux-x86_64.tar.gz`
+- `.deb` packages for `hopd` and `hop-hotkeyd`
 
 Trigger options:
 
 - automatic on push to `main`
 - manual via `workflow_dispatch`
+
+CI (`.github/workflows/ci.yml`) also builds `.deb` packages on PR/push and uploads them as artifact `hop-launcher-deb`.
 
 ## 4) Post-release smoke checks
 

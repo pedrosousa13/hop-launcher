@@ -77,3 +77,36 @@ jobs:
       - name: Run GTK launcher tests
         run: cargo test
         working-directory: apps/gtk-launcher
+
+  deb-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Debian packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper dh-cargo cargo rustc dpkg-dev
+
+      - name: Build hopd .deb
+        run: dpkg-buildpackage -us -uc -b
+        working-directory: crates/hopd
+
+      - name: Build hop-hotkeyd .deb
+        run: dpkg-buildpackage -us -uc -b
+        working-directory: crates/hop-hotkeyd
+
+      - name: Collect .deb artifacts
+        shell: bash
+        run: |
+          mkdir -p dist/deb
+          find crates -maxdepth 2 -type f -name '*.deb' -exec cp {} dist/deb/ \;
+          ls -la dist/deb
+
+      - name: Upload .deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hop-launcher-deb
+          path: dist/deb/*.deb
+          if-no-files-found: error
