@@ -427,6 +427,16 @@ fn apply_density_class(window: &adw::ApplicationWindow, mode: &str) {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn set_settings_feedback(status_label: &gtk::Label, message: &str, is_error: bool) {
+    status_label.set_text(message);
+    if is_error {
+        status_label.add_css_class("hop-settings-status-error");
+    } else {
+        status_label.remove_css_class("hop-settings-status-error");
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
 fn run() {
     adw::init().expect("failed to initialize libadwaita");
     install_css();
@@ -1046,6 +1056,14 @@ fn install_css() {
   border-radius: 7px;
   background: alpha(@view_bg_color, 0.12);
 }
+
+.hop-settings-status {
+  margin-top: 4px;
+}
+
+.hop-settings-status-error {
+  color: @error_color;
+}
 "#;
 
     let provider = gtk::CssProvider::new();
@@ -1109,6 +1127,17 @@ fn open_settings_window(
         .title("Advanced")
         .description("Parity controls for smart-provider behavior.")
         .build();
+    let feedback = adw::PreferencesGroup::builder()
+        .title("Status")
+        .description("Settings save/sync feedback.")
+        .build();
+    let settings_status = gtk::Label::builder()
+        .label("Ready")
+        .xalign(0.0)
+        .build();
+    settings_status.add_css_class("dim-label");
+    settings_status.add_css_class("hop-settings-status");
+    feedback.add(&settings_status);
 
     let opacity_row = adw::ActionRow::builder()
         .title("Launcher translucency (%)")
@@ -1130,20 +1159,32 @@ fn open_settings_window(
         let settings = settings.clone();
         let parent = parent.clone();
         let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
         opacity_spin.connect_value_changed(move |spin| {
             let mut next = settings.borrow().clone();
             next.overlay_opacity_percent = spin.value_as_int().clamp(70, 100);
             parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
             }
             if let Err(error) = config_set(
                 &socket_path,
                 "ui.overlay_opacity_percent",
                 serde_json::json!(next.overlay_opacity_percent),
             ) {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
             }
+            set_settings_feedback(&settings_status, "Saved launcher translucency", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1163,20 +1204,32 @@ fn open_settings_window(
         let settings = settings.clone();
         let parent = parent.clone();
         let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
         frame_switch.connect_active_notify(move |toggle| {
             let mut next = settings.borrow().clone();
             next.frameless_window = toggle.is_active();
             parent.set_decorated(!next.frameless_window);
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
             }
             if let Err(error) = config_set(
                 &socket_path,
                 "ui.frameless_window",
                 serde_json::json!(next.frameless_window),
             ) {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
             }
+            set_settings_feedback(&settings_status, "Saved frame preference", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1201,19 +1254,31 @@ fn open_settings_window(
     {
         let settings = settings.clone();
         let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
         results_spin.connect_value_changed(move |spin| {
             let mut next = settings.borrow().clone();
             next.max_results = spin.value_as_int().clamp(4, 24) as u32;
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
             }
             if let Err(error) = config_set(
                 &socket_path,
                 "ui.max_results",
                 serde_json::json!(next.max_results),
             ) {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
             }
+            set_settings_feedback(&settings_status, "Saved max results", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1232,17 +1297,29 @@ fn open_settings_window(
     {
         let settings = settings.clone();
         let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
         animations_switch.connect_active_notify(move |widget| {
             let mut next = settings.borrow().clone();
             next.animations_enabled = widget.is_active();
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
             }
             if let Err(error) =
                 config_set(&socket_path, "ui.animations_enabled", serde_json::json!(next.animations_enabled))
             {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
             }
+            set_settings_feedback(&settings_status, "Saved animations setting", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1258,6 +1335,7 @@ fn open_settings_window(
         "ui.debounce_ms",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.debounce_ms = value,
     );
     let density_row = adw::ActionRow::builder()
@@ -1273,18 +1351,30 @@ fn open_settings_window(
         let settings = settings.clone();
         let socket_path = socket_path.to_string();
         let parent = parent.clone();
+        let settings_status = settings_status.clone();
         density.connect_selected_notify(move |widget| {
             let mut next = settings.borrow().clone();
             next.density_mode = density_index_to_mode(widget.selected());
             apply_density_class(&parent, &next.density_mode);
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
             }
             if let Err(error) =
                 config_set(&socket_path, "ui.density_mode", serde_json::json!(next.density_mode))
             {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
             }
+            set_settings_feedback(&settings_status, "Saved density mode", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1299,6 +1389,7 @@ fn open_settings_window(
         "ui.open_animation_ms",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.open_animation_ms = value,
     );
     add_integer_spin_row(
@@ -1311,6 +1402,7 @@ fn open_settings_window(
         "ui.close_animation_ms",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.close_animation_ms = value,
     );
 
@@ -1322,6 +1414,7 @@ fn open_settings_window(
         "features.apps",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.feature_apps_enabled = value,
     );
     add_provider_switch_row(
@@ -1332,6 +1425,7 @@ fn open_settings_window(
         "features.windows",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.feature_windows_enabled = value,
     );
     add_provider_switch_row(
@@ -1342,6 +1436,7 @@ fn open_settings_window(
         "features.files",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.feature_files_enabled = value,
     );
     add_provider_switch_row(
@@ -1352,6 +1447,7 @@ fn open_settings_window(
         "features.recents",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.feature_recents_enabled = value,
     );
     add_provider_switch_row(
@@ -1362,6 +1458,7 @@ fn open_settings_window(
         "features.settings",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.feature_settings_enabled = value,
     );
     add_provider_switch_row(
@@ -1372,6 +1469,7 @@ fn open_settings_window(
         "features.utility",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.feature_utility_enabled = value,
     );
     let indexed_row = adw::ActionRow::builder()
@@ -1389,6 +1487,7 @@ fn open_settings_window(
     {
         let settings = settings.clone();
         let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
         indexed_entry.connect_changed(move |entry| {
             let raw = entry.text();
             let folders = raw
@@ -1399,15 +1498,26 @@ fn open_settings_window(
             let mut next = settings.borrow().clone();
             next.indexed_folders = folders;
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
             }
             if let Err(error) = config_set(
                 &socket_path,
                 "search.indexed_folders",
                 serde_json::json!(next.indexed_folders),
             ) {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
             }
+            set_settings_feedback(&settings_status, "Saved indexed folders", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1423,6 +1533,7 @@ fn open_settings_window(
         "ranking.weight_windows",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.weight_windows = value,
     );
     add_integer_spin_row(
@@ -1435,6 +1546,7 @@ fn open_settings_window(
         "ranking.weight_apps",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.weight_apps = value,
     );
     add_integer_spin_row(
@@ -1447,6 +1559,7 @@ fn open_settings_window(
         "ranking.weight_recents",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.weight_recents = value,
     );
     add_integer_spin_row(
@@ -1459,6 +1572,7 @@ fn open_settings_window(
         "ranking.weight_files",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.weight_files = value,
     );
     add_integer_spin_row(
@@ -1471,6 +1585,7 @@ fn open_settings_window(
         "ranking.weight_emoji",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.weight_emoji = value,
     );
     add_integer_spin_row(
@@ -1483,6 +1598,7 @@ fn open_settings_window(
         "ranking.weight_utility",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.weight_utility = value,
     );
     add_integer_spin_row(
@@ -1495,6 +1611,7 @@ fn open_settings_window(
         "ranking.min_fuzzy_score",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.min_fuzzy_score = value,
     );
 
@@ -1510,6 +1627,7 @@ fn open_settings_window(
         "learning.enabled",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.learning_enabled = value,
     );
     add_provider_switch_row(
@@ -1520,6 +1638,7 @@ fn open_settings_window(
         "currency.refresh_enabled",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.currency_refresh_enabled = value,
     );
     add_integer_spin_row(
@@ -1532,6 +1651,7 @@ fn open_settings_window(
         "currency.rate_ttl_hours",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.currency_rate_ttl_hours = value,
     );
     add_provider_switch_row(
@@ -1542,6 +1662,7 @@ fn open_settings_window(
         "web_search.enabled",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.web_search_enabled = value,
     );
     add_integer_spin_row(
@@ -1554,9 +1675,11 @@ fn open_settings_window(
         "web_search.max_actions",
         settings.clone(),
         socket_path,
+        &settings_status,
         |state, value| state.web_search_max_actions = value,
     );
     page.add(&advanced);
+    page.add(&feedback);
     prefs.add(&page);
     prefs.present();
 }
@@ -1570,6 +1693,7 @@ fn add_provider_switch_row(
     hopd_key: &str,
     settings: Rc<RefCell<LauncherUiSettings>>,
     socket_path: &str,
+    status_label: &gtk::Label,
     apply_value: fn(&mut LauncherUiSettings, bool),
 ) {
     let row = adw::ActionRow::builder()
@@ -1586,15 +1710,19 @@ fn add_provider_switch_row(
         let settings = settings.clone();
         let socket_path = socket_path.to_string();
         let hopd_key = hopd_key.to_string();
+        let status_label = status_label.clone();
         toggle.connect_active_notify(move |widget| {
             let mut next = settings.borrow().clone();
             apply_value(&mut next, widget.is_active());
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(&status_label, &format!("Save failed: {error}"), true);
+                return;
             }
             if let Err(error) = config_set(&socket_path, &hopd_key, serde_json::json!(widget.is_active())) {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(&status_label, &format!("Sync failed: {error}"), true);
+                return;
             }
+            set_settings_feedback(&status_label, "Saved setting", false);
             *settings.borrow_mut() = next;
         });
     }
@@ -1612,6 +1740,7 @@ fn add_integer_spin_row(
     hopd_key: &str,
     settings: Rc<RefCell<LauncherUiSettings>>,
     socket_path: &str,
+    status_label: &gtk::Label,
     apply_value: fn(&mut LauncherUiSettings, i32),
 ) {
     let row = adw::ActionRow::builder()
@@ -1634,16 +1763,20 @@ fn add_integer_spin_row(
         let settings = settings.clone();
         let socket_path = socket_path.to_string();
         let hopd_key = hopd_key.to_string();
+        let status_label = status_label.clone();
         spin.connect_value_changed(move |widget| {
             let mut next = settings.borrow().clone();
             let value = widget.value_as_int().clamp(min, max);
             apply_value(&mut next, value);
             if let Err(error) = save_ui_settings(&next) {
-                eprintln!("failed to save launcher settings: {error}");
+                set_settings_feedback(&status_label, &format!("Save failed: {error}"), true);
+                return;
             }
             if let Err(error) = config_set(&socket_path, &hopd_key, serde_json::json!(value)) {
-                eprintln!("failed to sync setting to hopd: {error}");
+                set_settings_feedback(&status_label, &format!("Sync failed: {error}"), true);
+                return;
             }
+            set_settings_feedback(&status_label, "Saved setting", false);
             *settings.borrow_mut() = next;
         });
     }
