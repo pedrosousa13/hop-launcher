@@ -336,6 +336,10 @@ fn install_css() {
   margin-bottom: 2px;
 }
 
+.hop-launcher-subtitle {
+  font-size: 0.92em;
+}
+
 .hop-launcher-scroll {
   border-radius: 12px;
   border: 1px solid alpha(@headerbar_border_color, 0.35);
@@ -350,6 +354,21 @@ fn install_css() {
 
 .hop-launcher-list row:selected {
   background: alpha(@accent_bg_color, 0.34);
+}
+
+.hop-launcher-kind-badge {
+  min-width: 60px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid alpha(@accent_bg_color, 0.35);
+  background: alpha(@accent_bg_color, 0.16);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.hop-launcher-action-hint {
+  font-size: 0.8em;
 }
 "#;
 
@@ -411,6 +430,7 @@ fn refresh_results(
                     .label(&subtitle_text)
                     .build();
                 subtitle.add_css_class("dim-label");
+                subtitle.add_css_class("hop-launcher-subtitle");
                 let text = gtk::Box::builder()
                     .orientation(gtk::Orientation::Vertical)
                     .spacing(2)
@@ -418,6 +438,28 @@ fn refresh_results(
                     .build();
                 text.append(&title);
                 text.append(&subtitle);
+
+                let kind_badge = gtk::Label::builder()
+                    .label(row.kind.to_uppercase())
+                    .xalign(1.0)
+                    .build();
+                kind_badge.add_css_class("hop-launcher-kind-badge");
+
+                let action_hint = gtk::Label::builder()
+                    .label(action_hint_for_row(row))
+                    .xalign(1.0)
+                    .build();
+                action_hint.add_css_class("dim-label");
+                action_hint.add_css_class("hop-launcher-action-hint");
+
+                let meta = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .spacing(3)
+                    .valign(gtk::Align::Center)
+                    .build();
+                meta.append(&kind_badge);
+                meta.append(&action_hint);
+
                 let body = gtk::Box::builder()
                     .orientation(gtk::Orientation::Horizontal)
                     .spacing(10)
@@ -428,6 +470,7 @@ fn refresh_results(
                     .build();
                 body.append(&icon);
                 body.append(&text);
+                body.append(&meta);
                 let item_row = gtk::ListBoxRow::new();
                 item_row.set_child(Some(&body));
                 list.append(&item_row);
@@ -474,6 +517,16 @@ fn build_result_icon(row: &LauncherResult) -> gtk::Image {
         _ => "system-search-symbolic",
     };
     gtk::Image::from_icon_name(fallback)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn action_hint_for_row(row: &LauncherResult) -> &'static str {
+    match row.kind.as_str() {
+        "window" => "Focus",
+        "setting" => "Open",
+        "weather" | "timezone" | "emoji" => "Open",
+        _ => "Enter",
+    }
 }
 
 #[cfg(not(feature = "gtk_ui"))]
