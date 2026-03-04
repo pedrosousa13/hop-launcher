@@ -52,6 +52,12 @@ For compositor-specific testing overrides:
 ~/.local/bin/hop-hotkeyd status --compositor sway
 ```
 
+Fail fast in scripts when control socket should already be available:
+
+```bash
+~/.local/bin/hop-hotkeyd doctor --strict
+```
+
 Print compositor-specific binding snippets (for Wayland setups) with:
 
 ```bash

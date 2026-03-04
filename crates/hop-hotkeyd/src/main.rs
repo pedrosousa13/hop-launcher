@@ -36,6 +36,7 @@ enum Command {
         wait_seconds: u64,
         interval_ms: u64,
         compositor: Option<String>,
+        strict: bool,
     },
     PrintBindings {
         compositor: Option<String>,
@@ -44,7 +45,7 @@ enum Command {
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +102,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
         let mut wait_seconds: u64 = 0;
         let mut interval_ms: u64 = 250;
         let mut compositor: Option<String> = None;
+        let mut strict = false;
         let mut i = 2;
         while i < args.len() {
             match args[i].as_str() {
@@ -139,6 +141,9 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                     }
                     compositor = Some(args[i].to_ascii_lowercase());
                 }
+                "--strict" => {
+                    strict = true;
+                }
                 unknown => return Err(format!("unknown argument: {}", unknown)),
             }
             i += 1;
@@ -148,6 +153,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             wait_seconds,
             interval_ms,
             compositor,
+            strict,
         });
     }
     if args[1] == "print-bindings" {
@@ -223,6 +229,7 @@ fn run() -> Result<(), String> {
             wait_seconds,
             interval_ms,
             compositor,
+            strict,
         } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             let backend_payload = build_status_payload(&session_type, compositor.as_deref());
@@ -239,9 +246,13 @@ fn run() -> Result<(), String> {
                 "control_probe_status": summary.status,
                 "control_probe_error": summary.error,
                 "doctor_wait_seconds": wait_seconds,
-                "doctor_interval_ms": interval_ms
+                "doctor_interval_ms": interval_ms,
+                "doctor_strict": strict
             });
             println!("{}", doctor);
+            if strict && !summary.reachable {
+                return Err("doctor strict check failed: control socket unreachable".to_string());
+            }
             Ok(())
         }
         Command::Run => run_daemon_mode(),
@@ -1070,7 +1081,8 @@ mod tests {
                 socket_path: "/tmp/doctor.sock".to_string(),
                 wait_seconds: 0,
                 interval_ms: 250,
-                compositor: None
+                compositor: None,
+                strict: false
             }
         );
     }
@@ -1093,6 +1105,8 @@ mod tests {
                 wait_seconds: 3,
                 interval_ms: 100,
                 compositor: None
+                ,
+                strict: false
             }
         );
     }
@@ -1113,6 +1127,27 @@ mod tests {
                 wait_seconds: 0,
                 interval_ms: 250,
                 compositor: Some("kde".to_string()),
+                strict: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_doctor_subcommand_with_strict_flag() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "doctor".to_string(),
+            "--strict".to_string(),
+        ];
+        let command = parse_command(&args).expect("doctor should parse");
+        assert_eq!(
+            command,
+            Command::Doctor {
+                socket_path: default_control_socket_path(),
+                wait_seconds: 0,
+                interval_ms: 250,
+                compositor: None,
+                strict: true,
             }
         );
     }

@@ -107,6 +107,12 @@ Run structured diagnostics (with optional wait/retry) with:
 ~/.local/bin/hop-hotkeyd doctor --wait-seconds 5 --interval-ms 200
 ```
 
+Use `--strict` to make diagnostics exit non-zero when control socket is unreachable:
+
+```bash
+~/.local/bin/hop-hotkeyd doctor --strict
+```
+
 Print compositor-specific binding snippets with:
 
 ```bash
