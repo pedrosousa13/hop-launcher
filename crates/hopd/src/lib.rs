@@ -162,11 +162,15 @@ fn build_search_result(params: &Value) -> Value {
     let results: Vec<Value> = matches
         .into_iter()
         .take(limit.max(1))
-        .map(|(_, item)| {
+        .map(|(score, item)| {
             json!({
                 "id": item.id,
                 "kind": item.kind,
                 "title": item.title,
+                "subtitle": item.subtitle,
+                "icon": item.icon,
+                "primary_action": "enter",
+                "score": score,
             })
         })
         .collect();
@@ -184,6 +188,8 @@ struct SearchItem {
     id: String,
     kind: String,
     title: String,
+    subtitle: String,
+    icon: String,
     keywords: String,
 }
 
@@ -256,6 +262,8 @@ fn weather_provider(query: &str) -> Vec<SearchItem> {
         id: "utility:weather".to_string(),
         kind: "weather".to_string(),
         title: "Weather".to_string(),
+        subtitle: "Utility".to_string(),
+        icon: "weather-clear-symbolic".to_string(),
         keywords: "weather forecast temperature".to_string(),
     }]
 }
@@ -292,6 +300,8 @@ fn timezone_provider(query: &str) -> Vec<SearchItem> {
         id: "utility:timezone".to_string(),
         kind: "timezone".to_string(),
         title,
+        subtitle: "Utility".to_string(),
+        icon: "preferences-system-time-symbolic".to_string(),
         keywords: "timezone world clock time".to_string(),
     }]
 }
@@ -314,6 +324,8 @@ fn emoji_provider(query: &str) -> Vec<SearchItem> {
         id: "utility:emoji".to_string(),
         kind: "emoji".to_string(),
         title: "Emoji".to_string(),
+        subtitle: "Utility".to_string(),
+        icon: "face-smile-symbolic".to_string(),
         keywords: "emoji picker symbols smile grin".to_string(),
     }]
 }
@@ -324,18 +336,24 @@ fn default_catalog_items() -> Vec<SearchItem> {
             id: "utility:weather".to_string(),
             kind: "weather".to_string(),
             title: "Weather".to_string(),
+            subtitle: "Utility".to_string(),
+            icon: "weather-clear-symbolic".to_string(),
             keywords: "weather forecast temperature".to_string(),
         },
         SearchItem {
             id: "utility:timezone".to_string(),
             kind: "timezone".to_string(),
             title: "Timezone".to_string(),
+            subtitle: "Utility".to_string(),
+            icon: "preferences-system-time-symbolic".to_string(),
             keywords: "timezone world clock time".to_string(),
         },
         SearchItem {
             id: "utility:emoji".to_string(),
             kind: "emoji".to_string(),
             title: "Emoji".to_string(),
+            subtitle: "Utility".to_string(),
+            icon: "face-smile-symbolic".to_string(),
             keywords: "emoji picker symbols".to_string(),
         },
     ]

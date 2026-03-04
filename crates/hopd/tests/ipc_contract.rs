@@ -113,6 +113,28 @@ async fn search_query_handles_timezone_intent_for_city_phrase() {
 }
 
 #[tokio::test]
+async fn search_query_returns_normalized_rows_with_metadata() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"n1","method":"search.query","params":{"query":"weather","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let first = parsed.result["results"]
+        .as_array()
+        .expect("results array")
+        .first()
+        .expect("at least one row");
+    assert!(first["subtitle"].is_string());
+    assert!(first["icon"].is_string());
+    assert_eq!(first["primary_action"], "enter");
+    assert!(first["score"].is_number());
+}
+
+#[tokio::test]
 async fn handles_actions_execute_acknowledgement() {
     let server = HopdServer::new();
     let response = server
