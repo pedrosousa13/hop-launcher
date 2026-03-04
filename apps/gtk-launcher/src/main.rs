@@ -513,7 +513,7 @@ fn refresh_results(
 
     status.set_text(&render_status_text(QueryState::Searching));
     let mode_label = search_query_mode(query).to_ascii_uppercase();
-    match search(socket_path, query, 8) {
+    match search(socket_path, query, 12) {
         Ok(rows) => {
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
