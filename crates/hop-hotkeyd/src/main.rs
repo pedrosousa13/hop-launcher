@@ -4,6 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hop_hotkeyd::{default_control_socket_path, select_backend_mode, send_toggle};
+use serde_json::json;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
 use x11rb::protocol::Event;
@@ -12,15 +13,19 @@ use x11rb::protocol::Event;
 enum Command {
     Run,
     Trigger { socket_path: String },
+    Status,
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n"
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
     if args.len() < 2 {
         return Ok(Command::Run);
+    }
+    if args[1] == "status" {
+        return Ok(Command::Status);
     }
     if args[1] != "trigger" {
         return Err(usage().to_string());
@@ -50,7 +55,35 @@ fn run() -> Result<(), String> {
     let command = parse_command(&args)?;
     match command {
         Command::Trigger { socket_path } => send_toggle(&socket_path, "hotkey-trigger"),
+        Command::Status => {
+            let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
+            println!("{}", build_status_payload(&session_type));
+            Ok(())
+        }
         Command::Run => run_daemon_mode(),
+    }
+}
+
+fn build_status_payload(session_type: &str) -> serde_json::Value {
+    match select_backend_mode(session_type) {
+        Ok(hop_hotkeyd::BackendMode::X11) => json!({
+            "session_type": session_type,
+            "backend": "x11",
+            "global_hotkey_supported": true,
+            "mode": "daemon"
+        }),
+        Ok(hop_hotkeyd::BackendMode::Wayland) => json!({
+            "session_type": session_type,
+            "backend": "wayland",
+            "global_hotkey_supported": false,
+            "fallback": "hop-hotkeyd trigger"
+        }),
+        Err(error) => json!({
+            "session_type": session_type,
+            "backend": "unknown",
+            "global_hotkey_supported": false,
+            "error": error
+        }),
     }
 }
 
@@ -304,6 +337,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_status_subcommand() {
+        let args = vec!["hop-hotkeyd".to_string(), "status".to_string()];
+        let command = parse_command(&args).expect("status should parse");
+        assert_eq!(command, Command::Status);
+    }
+
+    #[test]
     fn variants_include_lock_modifier_combinations() {
         let variants = hotkey_modifier_variants(ModMask::M2);
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT)));
@@ -352,5 +392,20 @@ mod tests {
         assert_eq!(reconnect_backoff_secs(2), 4);
         assert_eq!(reconnect_backoff_secs(6), 64);
         assert_eq!(reconnect_backoff_secs(20), 64);
+    }
+
+    #[test]
+    fn status_payload_reports_x11_capability() {
+        let payload = build_status_payload("x11");
+        assert_eq!(payload["backend"], "x11");
+        assert_eq!(payload["global_hotkey_supported"], true);
+    }
+
+    #[test]
+    fn status_payload_reports_wayland_fallback() {
+        let payload = build_status_payload("wayland");
+        assert_eq!(payload["backend"], "wayland");
+        assert_eq!(payload["global_hotkey_supported"], false);
+        assert_eq!(payload["fallback"], "hop-hotkeyd trigger");
     }
 }

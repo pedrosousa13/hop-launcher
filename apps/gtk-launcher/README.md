@@ -33,3 +33,9 @@ After starting the app, trigger external toggle with:
 ```bash
 ~/.local/bin/hop-hotkeyd trigger
 ```
+
+Inspect active backend mode/capabilities with:
+
+```bash
+~/.local/bin/hop-hotkeyd status
+```

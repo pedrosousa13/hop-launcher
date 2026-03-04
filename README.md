@@ -67,3 +67,9 @@ On Wayland sessions, use the fallback one-shot command:
 ```bash
 ~/.local/bin/hop-hotkeyd trigger
 ```
+
+Check detected backend/capabilities with:
+
+```bash
+~/.local/bin/hop-hotkeyd status
+```

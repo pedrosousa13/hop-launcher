@@ -97,6 +97,9 @@ systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
   exit 1
 }
 
+echo "hotkey backend status:"
+~/.local/bin/hop-hotkeyd status || true
+
 echo
 echo "Manual test checklist:"
 echo "- App starts visible."
