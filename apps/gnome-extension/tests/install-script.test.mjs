@@ -63,3 +63,9 @@ test('install script also installs hop-hotkeyd companion service', () => {
   assert.match(script, /hop-hotkeyd\.service/);
   assert.match(script, /HOP_LAUNCHER_CONTROL_SOCKET/);
 });
+
+test('install script prints compositor binding helper guidance', () => {
+  const script = fs.readFileSync(path.join(rootDir, 'scripts/install-hopd-local.sh'), 'utf8');
+  assert.match(script, /print-bindings/);
+  assert.match(script, /compositor-specific/i);
+});
