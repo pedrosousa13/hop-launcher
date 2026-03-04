@@ -3,3 +3,5 @@ docs/plans/*.md
 # Rust
 crates/hopd/target/
 apps/gtk-launcher/target/
+
+crates/hop-hotkeyd/target/
