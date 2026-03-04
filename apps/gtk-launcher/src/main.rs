@@ -1127,6 +1127,10 @@ fn open_settings_window(
         .title("Advanced")
         .description("Parity controls for smart-provider behavior.")
         .build();
+    let profile = adw::PreferencesGroup::builder()
+        .title("Profile")
+        .description("Manage launcher settings profile.")
+        .build();
     let feedback = adw::PreferencesGroup::builder()
         .title("Status")
         .description("Settings save/sync feedback.")
@@ -1678,7 +1682,43 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.web_search_max_actions = value,
     );
+    let reset_row = adw::ActionRow::builder()
+        .title("Reset to defaults")
+        .subtitle("Restore all launcher settings to default values.")
+        .build();
+    let reset_button = gtk::Button::builder()
+        .label("Reset")
+        .valign(gtk::Align::Center)
+        .build();
+    reset_button.add_css_class("destructive-action");
+    reset_row.add_suffix(&reset_button);
+    reset_row.set_activatable_widget(Some(&reset_button));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
+        let parent = parent.clone();
+        reset_button.connect_clicked(move |_| {
+            let next = LauncherUiSettings::default();
+            parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
+            parent.set_decorated(!next.frameless_window);
+            apply_density_class(&parent, &next.density_mode);
+            if let Err(error) = save_ui_settings(&next) {
+                set_settings_feedback(&settings_status, &format!("Reset save failed: {error}"), true);
+                return;
+            }
+            sync_settings_to_hopd(&socket_path, &next);
+            *settings.borrow_mut() = next;
+            set_settings_feedback(
+                &settings_status,
+                "Settings reset to defaults (reopen settings to refresh controls)",
+                false,
+            );
+        });
+    }
+    profile.add(&reset_row);
     page.add(&advanced);
+    page.add(&profile);
     page.add(&feedback);
     prefs.add(&page);
     prefs.present();
