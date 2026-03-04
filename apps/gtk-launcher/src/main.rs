@@ -502,17 +502,6 @@ fn run() {
             .build();
         content.add_css_class("hop-launcher-content");
 
-        let settings_button = gtk::Button::from_icon_name("preferences-system-symbolic");
-        settings_button.add_css_class("flat");
-        settings_button.add_css_class("hop-launcher-settings-button");
-        settings_button.set_tooltip_text(Some("Launcher Settings"));
-        let header = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
-            .build();
-        let header_spacer = gtk::Box::builder().hexpand(true).build();
-        header.append(&header_spacer);
-        header.append(&settings_button);
         let entry = gtk::Entry::builder()
             .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji, calculations, currency…")
             .build();
@@ -535,21 +524,10 @@ fn run() {
         list_scroller.set_child(Some(&list));
         list_scroller.add_css_class("hop-launcher-scroll");
 
-        content.append(&header);
         content.append(&entry);
         content.append(&status);
         content.append(&list_scroller);
         window.set_content(Some(&content));
-
-        {
-            let app = app.clone();
-            let parent = window.clone();
-            let settings = ui_settings.clone();
-            let socket_path = socket_path.clone();
-            settings_button.connect_clicked(move |_| {
-                open_settings_window(&app, &parent, settings.clone(), &socket_path);
-            });
-        }
 
         let open_settings = gio::SimpleAction::new("open-settings", None);
         {
