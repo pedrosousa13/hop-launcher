@@ -40,6 +40,12 @@ Inspect active backend mode/capabilities with:
 ~/.local/bin/hop-hotkeyd status
 ```
 
+If your control socket path is customized:
+
+```bash
+~/.local/bin/hop-hotkeyd status --socket /tmp/hop-launcher-control.sock
+```
+
 Print compositor-specific binding snippets (for Wayland setups) with:
 
 ```bash

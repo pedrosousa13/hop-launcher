@@ -27,7 +27,7 @@ const HYPRLAND_TOGGLE_EVENT: &str = "hop-launcher-toggle";
 enum Command {
     Run,
     Trigger { socket_path: String },
-    Status,
+    Status { socket_path: String },
     Doctor {
         socket_path: String,
         wait_seconds: u64,
@@ -40,7 +40,7 @@ enum Command {
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status [--socket <path>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +64,22 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
         return Ok(Command::Run);
     }
     if args[1] == "status" {
-        return Ok(Command::Status);
+        let mut socket_path = default_control_socket_path();
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--socket" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--socket requires a value".to_string());
+                    }
+                    socket_path = args[i].clone();
+                }
+                unknown => return Err(format!("unknown argument: {}", unknown)),
+            }
+            i += 1;
+        }
+        return Ok(Command::Status { socket_path });
     }
     if args[1] == "doctor" {
         let mut socket_path = default_control_socket_path();
@@ -168,9 +183,12 @@ fn run() -> Result<(), String> {
     let command = parse_command(&args)?;
     match command {
         Command::Trigger { socket_path } => send_toggle(&socket_path, "hotkey-trigger"),
-        Command::Status => {
+        Command::Status { socket_path } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
-            println!("{}", build_status_payload(&session_type));
+            let mut payload = build_status_payload(&session_type);
+            let summary = summarize_probe_result(probe_control_socket(&socket_path));
+            add_control_probe_fields(&mut payload, &socket_path, summary);
+            println!("{}", payload);
             Ok(())
         }
         Command::Doctor {
@@ -350,6 +368,38 @@ fn recommended_wayland_binding(
     }
 
     socket_path.map(|path| format!("~/.local/bin/hop-hotkeyd trigger --socket {}", path))
+}
+
+fn add_control_probe_fields(
+    payload: &mut serde_json::Value,
+    socket_path: &str,
+    summary: ProbeSummary,
+) {
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "control_socket_path".to_string(),
+            serde_json::Value::String(socket_path.to_string()),
+        );
+        object.insert(
+            "control_socket_reachable".to_string(),
+            serde_json::Value::Bool(summary.reachable),
+        );
+        object.insert(
+            "control_ping_supported".to_string(),
+            serde_json::Value::Bool(summary.ping_supported),
+        );
+        object.insert(
+            "control_probe_status".to_string(),
+            serde_json::Value::String(summary.status.to_string()),
+        );
+        object.insert(
+            "control_probe_error".to_string(),
+            match summary.error {
+                Some(error) => serde_json::Value::String(error),
+                None => serde_json::Value::Null,
+            },
+        );
+    }
 }
 
 fn probe_wayland_native_backend(
@@ -917,7 +967,29 @@ mod tests {
     fn parse_status_subcommand() {
         let args = vec!["hop-hotkeyd".to_string(), "status".to_string()];
         let command = parse_command(&args).expect("status should parse");
-        assert_eq!(command, Command::Status);
+        assert_eq!(
+            command,
+            Command::Status {
+                socket_path: default_control_socket_path()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_status_subcommand_with_custom_socket() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "status".to_string(),
+            "--socket".to_string(),
+            "/tmp/status.sock".to_string(),
+        ];
+        let command = parse_command(&args).expect("status should parse");
+        assert_eq!(
+            command,
+            Command::Status {
+                socket_path: "/tmp/status.sock".to_string()
+            }
+        );
     }
 
     #[test]
@@ -1165,6 +1237,26 @@ mod tests {
         )
         .expect("fallback should provide command");
         assert!(binding.contains("hop-hotkeyd trigger --socket /tmp/hop-launcher-control.sock"));
+    }
+
+    #[test]
+    fn add_control_probe_fields_attaches_socket_health() {
+        let mut payload = json!({"backend":"x11"});
+        add_control_probe_fields(
+            &mut payload,
+            "/tmp/control.sock",
+            ProbeSummary {
+                reachable: false,
+                ping_supported: false,
+                status: "unreachable",
+                error: Some("missing socket".to_string()),
+            },
+        );
+        assert_eq!(payload["control_socket_path"], "/tmp/control.sock");
+        assert_eq!(payload["control_socket_reachable"], false);
+        assert_eq!(payload["control_ping_supported"], false);
+        assert_eq!(payload["control_probe_status"], "unreachable");
+        assert_eq!(payload["control_probe_error"], "missing socket");
     }
 
     #[test]

@@ -98,7 +98,7 @@ systemctl --user status hop-hotkeyd.service >/dev/null 2>&1 || {
 }
 
 echo "hotkey backend status:"
-~/.local/bin/hop-hotkeyd status || true
+~/.local/bin/hop-hotkeyd status --socket "$CONTROL_SOCKET_PATH" || true
 echo "hotkey binding snippets:"
 ~/.local/bin/hop-hotkeyd print-bindings || true
 echo "hotkey diagnostics:"

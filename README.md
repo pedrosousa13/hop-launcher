@@ -86,6 +86,12 @@ Check detected backend/capabilities with:
 ~/.local/bin/hop-hotkeyd status
 ```
 
+For non-default control sockets:
+
+```bash
+~/.local/bin/hop-hotkeyd status --socket /tmp/hop-launcher-control.sock
+```
+
 `status` now also reports native Wayland readiness details (`native_backend_ready`, `native_backend_socket`, `native_backend_error`) and a `recommended_binding` command for the detected compositor mode.
 
 Run structured diagnostics (with optional wait/retry) with:
