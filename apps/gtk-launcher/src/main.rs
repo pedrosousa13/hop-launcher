@@ -60,6 +60,7 @@ fn run() {
             .default_width(900)
             .default_height(560)
             .build();
+        window.set_opacity(0.94);
         window.add_css_class("hop-launcher-window");
 
         let content = gtk::Box::builder()
@@ -314,12 +315,13 @@ fn handle_control_stream(mut stream: UnixStream, toggle_tx: &mpsc::Sender<()>) -
 fn install_css() {
     let css = r#"
 .hop-launcher-window {
-  background: linear-gradient(155deg, rgba(28, 33, 42, 0.95), rgba(23, 28, 35, 0.95));
+  background: transparent;
 }
 
 .hop-launcher-content {
   border-radius: 18px;
-  background: alpha(@window_bg_color, 0.92);
+  border: 1px solid alpha(@accent_bg_color, 0.22);
+  background: linear-gradient(160deg, rgba(20, 26, 34, 0.58), rgba(17, 21, 30, 0.52));
 }
 
 .hop-launcher-title {
@@ -336,16 +338,18 @@ fn install_css() {
 
 .hop-launcher-scroll {
   border-radius: 12px;
-  background: alpha(@view_bg_color, 0.86);
+  border: 1px solid alpha(@headerbar_border_color, 0.35);
+  background: alpha(@view_bg_color, 0.42);
 }
 
 .hop-launcher-list row {
   margin: 2px 4px;
   border-radius: 10px;
+  background: alpha(@view_bg_color, 0.18);
 }
 
 .hop-launcher-list row:selected {
-  background: alpha(@accent_bg_color, 0.28);
+  background: alpha(@accent_bg_color, 0.34);
 }
 "#;
 
