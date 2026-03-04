@@ -112,6 +112,10 @@ pub fn build_search_payload(query: &str, limit: u32, request_id: &str) -> Value 
     })
 }
 
+pub fn search_query_mode(query: &str) -> String {
+    extract_query_route(query).mode
+}
+
 pub fn build_execute_payload(result_id: &str, request_id: &str) -> Value {
     json!({
         "id": request_id,
@@ -349,6 +353,11 @@ mod tests {
         let route = extract_query_route("firefox");
         assert_eq!(route.mode, "all");
         assert_eq!(route.query, "firefox");
+    }
+
+    #[test]
+    fn search_query_mode_reports_files_prefix() {
+        assert_eq!(search_query_mode("f report"), "files");
     }
 
     #[test]

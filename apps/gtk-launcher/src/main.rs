@@ -33,6 +33,7 @@ use libadwaita as adw;
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
     default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
+    search_query_mode,
     selected_result_id, start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult,
     QueryState,
 };
@@ -79,6 +80,7 @@ fn run() {
             .build();
         title.add_css_class("title-2");
         title.add_css_class("hop-launcher-title");
+        let hints = build_mode_hints();
 
         let entry = gtk::Entry::builder()
             .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji…")
@@ -103,6 +105,7 @@ fn run() {
         list_scroller.add_css_class("hop-launcher-scroll");
 
         content.append(&title);
+        content.append(&hints);
         content.append(&entry);
         content.append(&status);
         content.append(&list_scroller);
@@ -328,6 +331,18 @@ fn install_css() {
   letter-spacing: 0.02em;
 }
 
+.hop-launcher-hints {
+  margin-bottom: 2px;
+}
+
+.hop-launcher-hint-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid alpha(@headerbar_border_color, 0.35);
+  background: alpha(@view_bg_color, 0.18);
+  font-size: 0.78em;
+}
+
 .hop-launcher-entry {
   min-height: 44px;
 }
@@ -397,6 +412,32 @@ fn move_selection(list: &gtk::ListBox, delta: i32) {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn build_mode_hints() -> gtk::Box {
+    let row = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(6)
+        .build();
+    row.add_css_class("hop-launcher-hints");
+
+    for text in [
+        "a apps",
+        "w windows",
+        "f files",
+        "r recents",
+        "settings",
+        "weather",
+        "time in",
+        "emoji",
+    ] {
+        let chip = gtk::Label::builder().label(text).build();
+        chip.add_css_class("hop-launcher-hint-chip");
+        row.append(&chip);
+    }
+
+    row
+}
+
+#[cfg(feature = "gtk_ui")]
 fn refresh_results(
     list: &gtk::ListBox,
     status: &gtk::Label,
@@ -409,6 +450,7 @@ fn refresh_results(
     }
 
     status.set_text(&render_status_text(QueryState::Searching));
+    let mode_label = search_query_mode(query).to_ascii_uppercase();
     match search(socket_path, query, 8) {
         Ok(rows) => {
             results.borrow_mut().clear();
@@ -481,9 +523,12 @@ fn refresh_results(
                 }
             }
             if rows.is_empty() {
-                status.set_text(&render_status_text(QueryState::Empty));
+                status.set_text(&format!("{mode_label} · {}", render_status_text(QueryState::Empty)));
             } else {
-                status.set_text(&render_status_text(QueryState::Results { count: rows.len() }));
+                status.set_text(&format!(
+                    "{mode_label} · {}",
+                    render_status_text(QueryState::Results { count: rows.len() })
+                ));
             }
         }
         Err(error) => {
