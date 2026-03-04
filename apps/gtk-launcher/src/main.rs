@@ -2318,6 +2318,66 @@ fn mode_hint_specs() -> [(&'static str, &'static str, &'static str); 11] {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn strip_mode_prefix(raw_query: &str) -> String {
+    let trimmed = raw_query.trim_start();
+    let lowered = trimmed.to_lowercase();
+
+    if lowered.starts_with("w ") || lowered.starts_with("a ") || lowered.starts_with("f ") || lowered.starts_with("r ") {
+        return trimmed[2..].trim().to_string();
+    }
+    if lowered.starts_with("settings ") || lowered.starts_with("timezone ") || lowered.starts_with("currency ") {
+        return trimmed[9..].trim().to_string();
+    }
+    if lowered.starts_with("prefs ") || lowered.starts_with("emoji ") || lowered.starts_with("calc ") {
+        return trimmed[6..].trim().to_string();
+    }
+    if lowered.starts_with(":emoji ") || lowered.starts_with("weather ") || lowered.starts_with("time in ") {
+        return trimmed[7..].trim().to_string();
+    }
+    if lowered.starts_with("time ") || lowered.starts_with("calculator ") {
+        return trimmed[5..].trim().to_string();
+    }
+    if lowered.starts_with("tz ") || lowered.starts_with("wx ") || lowered.starts_with("fx ") {
+        return trimmed[3..].trim().to_string();
+    }
+
+    trimmed.to_string()
+}
+
+#[cfg(feature = "gtk_ui")]
+fn query_for_mode(mode: &str, seed: &str, current_query: &str) -> String {
+    let base = strip_mode_prefix(current_query);
+    match mode {
+        "all" => base,
+        "apps" => prefixed_mode_query("a", &base),
+        "windows" => prefixed_mode_query("w", &base),
+        "files" => prefixed_mode_query("f", &base),
+        "recents" => prefixed_mode_query("r", &base),
+        "settings" => prefixed_mode_query("settings", &base),
+        "weather" => prefixed_mode_query("weather", &base),
+        "timezone" => prefixed_mode_query("time in", &base),
+        "emoji" => prefixed_mode_query("emoji", &base),
+        "calculator" | "currency" => {
+            if base.is_empty() {
+                seed.to_string()
+            } else {
+                base
+            }
+        }
+        _ => current_query.to_string(),
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn prefixed_mode_query(prefix: &str, base: &str) -> String {
+    if base.is_empty() {
+        format!("{prefix} ")
+    } else {
+        format!("{prefix} {base}")
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
 fn build_mode_hints(entry: &gtk::Entry) -> (gtk::Box, Vec<(String, gtk::Button)>) {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -2326,18 +2386,22 @@ fn build_mode_hints(entry: &gtk::Entry) -> (gtk::Box, Vec<(String, gtk::Button)>
     row.add_css_class("hop-launcher-hints");
     let mut chips = Vec::new();
 
-    for (label, query, mode) in mode_hint_specs() {
+    for (label, seed, mode) in mode_hint_specs() {
         let chip = gtk::Button::with_label(label);
         chip.add_css_class("flat");
         chip.add_css_class("hop-launcher-hint-chip");
         let entry = entry.clone();
+        let mode = mode.to_string();
+        let chip_mode = mode.clone();
+        let seed = seed.to_string();
         chip.connect_clicked(move |_| {
-            entry.set_text(query);
+            let next = query_for_mode(&mode, &seed, &entry.text());
+            entry.set_text(&next);
             entry.set_position(-1);
             entry.grab_focus();
         });
         row.append(&chip);
-        chips.push((mode.to_string(), chip));
+        chips.push((chip_mode, chip));
     }
 
     (row, chips)
