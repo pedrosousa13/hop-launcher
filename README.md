@@ -86,6 +86,8 @@ Check detected backend/capabilities with:
 ~/.local/bin/hop-hotkeyd status
 ```
 
+`status` now also reports native Wayland readiness details (`native_backend_ready`, `native_backend_socket`, `native_backend_error`).
+
 Run structured diagnostics (with optional wait/retry) with:
 
 ```bash

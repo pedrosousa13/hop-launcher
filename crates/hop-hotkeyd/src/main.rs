@@ -1,6 +1,9 @@
 use std::env;
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
+use std::os::unix::fs::FileTypeExt;
+use std::path::Path;
 use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -42,6 +45,14 @@ struct ProbeSummary {
     reachable: bool,
     ping_supported: bool,
     status: &'static str,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBackendProbe {
+    ready: bool,
+    backend_mode: &'static str,
+    socket_path: Option<String>,
     error: Option<String>,
 }
 
@@ -260,11 +271,13 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             );
             let sway_socket = env::var("SWAYSOCK").unwrap_or_default();
             let hyprland_signature = env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default();
+            let runtime_dir = env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
             build_wayland_status_payload(
                 session_type,
                 compositor,
                 &sway_socket,
                 &hyprland_signature,
+                &runtime_dir,
             )
         }
         Err(error) => json!({
@@ -281,25 +294,91 @@ fn build_wayland_status_payload(
     compositor: &str,
     sway_socket: &str,
     hyprland_signature: &str,
+    runtime_dir: &str,
 ) -> serde_json::Value {
-    let native_supported = (compositor == "sway" && !sway_socket.trim().is_empty())
-        || (compositor == "hyprland" && !hyprland_signature.trim().is_empty());
-    let backend_mode = if compositor == "sway" && !sway_socket.trim().is_empty() {
-        "sway_tick"
-    } else if compositor == "hyprland" && !hyprland_signature.trim().is_empty() {
-        "hyprland_event"
-    } else {
-        "fallback"
-    };
+    let native_probe =
+        probe_wayland_native_backend(compositor, sway_socket, hyprland_signature, runtime_dir);
     json!({
         "session_type": session_type,
         "backend": "wayland",
-        "global_hotkey_supported": native_supported,
+        "global_hotkey_supported": native_probe.ready,
         "fallback": "hop-hotkeyd trigger",
         "wayland_compositor": compositor,
-        "wayland_backend_mode": backend_mode,
-        "next_step": wayland_next_step_hint(compositor)
+        "wayland_backend_mode": native_probe.backend_mode,
+        "native_backend_ready": native_probe.ready,
+        "native_backend_socket": native_probe.socket_path,
+        "native_backend_error": native_probe.error,
+        "next_step": wayland_next_step_hint(compositor),
     })
+}
+
+fn probe_wayland_native_backend(
+    compositor: &str,
+    sway_socket: &str,
+    hyprland_signature: &str,
+    runtime_dir: &str,
+) -> NativeBackendProbe {
+    if compositor == "sway" {
+        if sway_socket.trim().is_empty() {
+            return NativeBackendProbe {
+                ready: false,
+                backend_mode: "fallback",
+                socket_path: None,
+                error: Some("SWAYSOCK is not set".to_string()),
+            };
+        }
+        let socket_path = sway_socket.to_string();
+        return check_unix_socket_path("sway_tick", socket_path);
+    }
+
+    if compositor == "hyprland" {
+        if hyprland_signature.trim().is_empty() {
+            return NativeBackendProbe {
+                ready: false,
+                backend_mode: "fallback",
+                socket_path: None,
+                error: Some("HYPRLAND_INSTANCE_SIGNATURE is not set".to_string()),
+            };
+        }
+        let socket_path = format!("{}/hypr/{}/.socket2.sock", runtime_dir, hyprland_signature);
+        return check_unix_socket_path("hyprland_event", socket_path);
+    }
+
+    NativeBackendProbe {
+        ready: false,
+        backend_mode: "fallback",
+        socket_path: None,
+        error: None,
+    }
+}
+
+fn check_unix_socket_path(backend_mode: &'static str, socket_path: String) -> NativeBackendProbe {
+    let path = Path::new(&socket_path);
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_socket() {
+                NativeBackendProbe {
+                    ready: true,
+                    backend_mode,
+                    socket_path: Some(socket_path),
+                    error: None,
+                }
+            } else {
+                NativeBackendProbe {
+                    ready: false,
+                    backend_mode: "fallback",
+                    socket_path: Some(socket_path),
+                    error: Some("path exists but is not a unix socket".to_string()),
+                }
+            }
+        }
+        Err(error) => NativeBackendProbe {
+            ready: false,
+            backend_mode: "fallback",
+            socket_path: Some(socket_path),
+            error: Some(format!("socket metadata check failed: {}", error)),
+        },
+    }
 }
 
 fn detect_wayland_compositor(
@@ -760,6 +839,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn parse_defaults_to_run_when_no_subcommand() {
@@ -940,7 +1021,7 @@ mod tests {
 
     #[test]
     fn status_payload_reports_wayland_fallback() {
-        let payload = build_wayland_status_payload("wayland", "unknown", "", "");
+        let payload = build_wayland_status_payload("wayland", "unknown", "", "", "/tmp");
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], false);
         assert_eq!(payload["wayland_backend_mode"], "fallback");
@@ -948,23 +1029,60 @@ mod tests {
 
     #[test]
     fn status_payload_reports_sway_native_mode_when_socket_present() {
+        let base = unique_temp_path("sway-status");
+        fs::create_dir_all(&base).expect("create temp dir");
+        let socket_path = base.join("sway.sock");
+        let _listener = UnixListener::bind(&socket_path).expect("bind socket");
         let payload = build_wayland_status_payload(
             "wayland",
             "sway",
-            "/run/user/1000/sway-ipc.sock",
+            socket_path.to_str().unwrap_or_default(),
             "",
+            base.to_str().unwrap_or_default(),
         );
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], true);
         assert_eq!(payload["wayland_backend_mode"], "sway_tick");
+        fs::remove_file(&socket_path).ok();
+        fs::remove_dir_all(&base).ok();
     }
 
     #[test]
     fn status_payload_reports_hyprland_native_mode_when_signature_present() {
-        let payload = build_wayland_status_payload("wayland", "hyprland", "", "abc123");
+        let base = unique_temp_path("hypr-status");
+        let hypr_dir = base.join("hypr").join("abc123");
+        fs::create_dir_all(&hypr_dir).expect("create hypr dir");
+        let socket_path = hypr_dir.join(".socket2.sock");
+        let _listener = UnixListener::bind(&socket_path).expect("bind socket");
+        let payload = build_wayland_status_payload(
+            "wayland",
+            "hyprland",
+            "",
+            "abc123",
+            base.to_str().unwrap_or_default(),
+        );
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], true);
         assert_eq!(payload["wayland_backend_mode"], "hyprland_event");
+        fs::remove_file(&socket_path).ok();
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn status_payload_reports_sway_missing_socket_error() {
+        let payload = build_wayland_status_payload(
+            "wayland",
+            "sway",
+            "/tmp/does-not-exist.sock",
+            "",
+            "/tmp",
+        );
+        assert_eq!(payload["global_hotkey_supported"], false);
+        assert_eq!(payload["wayland_backend_mode"], "fallback");
+        assert!(payload["native_backend_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("socket metadata check failed"));
     }
 
     #[test]
@@ -1081,5 +1199,21 @@ mod tests {
                 error: Some("missing socket".to_string())
             }
         );
+    }
+
+    fn unique_temp_path(prefix: &str) -> std::path::PathBuf {
+        let mut path = env::temp_dir();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time moved backwards")
+            .as_nanos();
+        let stamp = format!(
+            "{}-{}-{}",
+            prefix,
+            std::process::id(),
+            nanos
+        );
+        path.push(stamp);
+        path
     }
 }
