@@ -61,7 +61,8 @@ fn run() {
             .default_width(900)
             .default_height(560)
             .build();
-        window.set_opacity(0.94);
+        window.set_opacity(0.86);
+        window.set_decorated(false);
         window.add_css_class("hop-launcher-window");
 
         let content = gtk::Box::builder()
@@ -355,8 +356,8 @@ fn install_css() {
 
 .hop-launcher-content {
   border-radius: 18px;
-  border: 1px solid alpha(@accent_bg_color, 0.22);
-  background: linear-gradient(160deg, rgba(20, 26, 34, 0.58), rgba(17, 21, 30, 0.52));
+  border: 1px solid alpha(@accent_bg_color, 0.14);
+  background: linear-gradient(160deg, rgba(20, 26, 34, 0.36), rgba(17, 21, 30, 0.30));
 }
 
 .hop-launcher-title {
@@ -370,8 +371,8 @@ fn install_css() {
 .hop-launcher-hint-chip {
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid alpha(@headerbar_border_color, 0.35);
-  background: alpha(@view_bg_color, 0.18);
+  border: 1px solid alpha(@headerbar_border_color, 0.28);
+  background: alpha(@view_bg_color, 0.10);
   font-size: 0.78em;
 }
 
@@ -389,23 +390,23 @@ fn install_css() {
 
 .hop-launcher-scroll {
   border-radius: 12px;
-  border: 1px solid alpha(@headerbar_border_color, 0.35);
-  background: alpha(@view_bg_color, 0.42);
+  border: 1px solid alpha(@headerbar_border_color, 0.28);
+  background: alpha(@view_bg_color, 0.24);
 }
 
 .hop-launcher-list row {
   margin: 1px 4px;
   border-radius: 10px;
-  background: alpha(@view_bg_color, 0.14);
+  background: alpha(@view_bg_color, 0.08);
   transition: 130ms ease;
 }
 
 .hop-launcher-list row:hover {
-  background: alpha(@view_bg_color, 0.26);
+  background: alpha(@view_bg_color, 0.16);
 }
 
 .hop-launcher-list row:selected {
-  background: alpha(@accent_bg_color, 0.38);
+  background: alpha(@accent_bg_color, 0.28);
 }
 
 .hop-launcher-kind-badge {
