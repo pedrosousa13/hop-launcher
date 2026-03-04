@@ -11,12 +11,17 @@ pub fn results(query: &str) -> Vec<SearchItem> {
         .into_iter()
         .filter(|window| is_empty_query || window.title.to_lowercase().contains(&normalized))
         .map(|window| {
+            let icon = window
+                .icon
+                .as_deref()
+                .unwrap_or("window-symbolic")
+                .to_string();
             SearchItem::new(
                 &format!("window:{}", window.id),
                 "window",
                 &window.title,
                 "Open window",
-                "window-symbolic",
+                &icon,
                 &format!("window {} {}", window.id, window.title),
             )
         })
@@ -41,6 +46,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
 struct WindowEntry {
     id: String,
     title: String,
+    icon: Option<String>,
 }
 
 fn collect_windows() -> Vec<WindowEntry> {
@@ -82,12 +88,16 @@ fn parse_wmctrl_line(line: &str) -> Option<WindowEntry> {
     let id = parts.next()?.to_string();
     let _desktop = parts.next()?;
     let _host = parts.next()?;
-    let _wm_class = parts.next()?;
+    let wm_class = parts.next()?;
     let title = parts.collect::<Vec<_>>().join(" ");
     if title.trim().is_empty() {
         return None;
     }
-    Some(WindowEntry { id, title })
+    Some(WindowEntry {
+        id,
+        title,
+        icon: normalize_icon_hint(wm_class),
+    })
 }
 
 fn hyprland_windows() -> Vec<WindowEntry> {
@@ -118,6 +128,11 @@ fn parse_hyprctl_clients(raw: &str) -> Vec<WindowEntry> {
             Some(WindowEntry {
                 id: format!("hypr:{address}"),
                 title: title.to_string(),
+                icon: row
+                    .get("class")
+                    .and_then(Value::as_str)
+                    .or_else(|| row.get("initialClass").and_then(Value::as_str))
+                    .and_then(normalize_icon_hint),
             })
         })
         .collect()
@@ -155,6 +170,16 @@ fn collect_sway_nodes(node: &Value, out: &mut Vec<WindowEntry>) {
             out.push(WindowEntry {
                 id: format!("sway:{con_id}"),
                 title: name.to_string(),
+                icon: node
+                    .get("app_id")
+                    .and_then(Value::as_str)
+                    .or_else(|| {
+                        node.get("window_properties")
+                            .and_then(Value::as_object)
+                            .and_then(|props| props.get("class"))
+                            .and_then(Value::as_str)
+                    })
+                    .and_then(normalize_icon_hint),
             });
         }
     }
@@ -168,6 +193,31 @@ fn collect_sway_nodes(node: &Value, out: &mut Vec<WindowEntry>) {
     }
 }
 
+fn normalize_icon_hint(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_lowercase();
+    let mut tokens: Vec<&str> = lower.split(['.', ' ', ':', '/']).collect();
+    tokens.retain(|token| !token.is_empty());
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let chosen = if ["org", "io", "com", "net"].contains(&tokens[0]) && tokens.len() > 1 {
+        tokens[tokens.len() - 1]
+    } else {
+        tokens[0]
+    };
+    let normalized = chosen.replace('_', "-");
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,15 +228,17 @@ mod tests {
         let entry = parse_wmctrl_line(line).expect("parsed window");
         assert_eq!(entry.id, "0x04a00007");
         assert_eq!(entry.title, "Terminal - Workspace");
+        assert_eq!(entry.icon.as_deref(), Some("terminal"));
     }
 
     #[test]
     fn parses_hyprctl_clients_json() {
-        let raw = r#"[{"address":"0x12345","title":"Alacritty"},{"address":"0x67890","title":"Firefox"}]"#;
+        let raw = r#"[{"address":"0x12345","title":"Alacritty","class":"Alacritty"},{"address":"0x67890","title":"Firefox","class":"firefox"}]"#;
         let entries = parse_hyprctl_clients(raw);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].id, "hypr:0x12345");
         assert_eq!(entries[1].title, "Firefox");
+        assert_eq!(entries[1].icon.as_deref(), Some("firefox"));
     }
 
     #[test]
@@ -216,5 +268,16 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].id, "sway:12");
         assert_eq!(entries[1].title, "Firefox");
+        assert_eq!(entries[0].icon.as_deref(), Some("terminal"));
+    }
+
+    #[test]
+    fn normalizes_icon_hints() {
+        assert_eq!(normalize_icon_hint("Firefox.desktop"), Some("firefox".to_string()));
+        assert_eq!(
+            normalize_icon_hint("org.gnome.Nautilus"),
+            Some("nautilus".to_string())
+        );
+        assert_eq!(normalize_icon_hint(""), None);
     }
 }
