@@ -523,7 +523,9 @@ fn run() {
             .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji, calculations, currency…")
             .build();
         entry.add_css_class("hop-launcher-entry");
-        let hints = build_mode_hints(&entry);
+        let (hints, mode_hint_chips) = build_mode_hints(&entry);
+        let mode_hint_chips = Rc::new(mode_hint_chips);
+        update_mode_hint_active(&mode_hint_chips, &search_query_mode(""));
         let status = gtk::Label::builder()
             .xalign(0.0)
             .build();
@@ -611,8 +613,11 @@ fn run() {
             let socket_path = socket_path.clone();
             let ui_settings = ui_settings.clone();
             let pending_search = pending_search.clone();
+            let mode_hint_chips = mode_hint_chips.clone();
             entry.connect_changed(move |entry| {
                 let query = entry.text().to_string();
+                let active_mode = search_query_mode(&query);
+                update_mode_hint_active(&mode_hint_chips, &active_mode);
                 status.set_text(&render_status_text(QueryState::Searching));
                 if let Some(source) = pending_search.borrow_mut().take() {
                     source.remove();
@@ -981,6 +986,11 @@ fn install_css() {
   border: 1px solid alpha(@headerbar_border_color, 0.35);
   background: alpha(@view_bg_color, 0.38);
   font-size: 0.78em;
+}
+
+.hop-launcher-hint-chip-active {
+  border-color: alpha(@accent_bg_color, 0.70);
+  background: alpha(@accent_bg_color, 0.24);
 }
 
 .hop-launcher-entry {
@@ -2288,30 +2298,32 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
 }
 
 #[cfg(feature = "gtk_ui")]
-fn mode_hint_specs() -> [(&'static str, &'static str); 10] {
+fn mode_hint_specs() -> [(&'static str, &'static str, &'static str); 11] {
     [
-        ("Apps", "a "),
-        ("Windows", "w "),
-        ("Files", "f "),
-        ("Recents", "r "),
-        ("Settings", "settings "),
-        ("Weather", "weather "),
-        ("Timezones", "time in "),
-        ("Emoji", "emoji "),
-        ("Calculator", "2+2"),
-        ("Currency", "12 usd to chf"),
+        ("All", "", "all"),
+        ("Apps", "a ", "apps"),
+        ("Windows", "w ", "windows"),
+        ("Files", "f ", "files"),
+        ("Recents", "r ", "recents"),
+        ("Settings", "settings ", "settings"),
+        ("Weather", "weather ", "weather"),
+        ("Timezones", "time in ", "timezone"),
+        ("Emoji", "emoji ", "emoji"),
+        ("Calculator", "2+2", "calculator"),
+        ("Currency", "12 usd to chf", "currency"),
     ]
 }
 
 #[cfg(feature = "gtk_ui")]
-fn build_mode_hints(entry: &gtk::Entry) -> gtk::Box {
+fn build_mode_hints(entry: &gtk::Entry) -> (gtk::Box, Vec<(String, gtk::Button)>) {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(6)
         .build();
     row.add_css_class("hop-launcher-hints");
+    let mut chips = Vec::new();
 
-    for (label, query) in mode_hint_specs() {
+    for (label, query, mode) in mode_hint_specs() {
         let chip = gtk::Button::with_label(label);
         chip.add_css_class("flat");
         chip.add_css_class("hop-launcher-hint-chip");
@@ -2322,9 +2334,21 @@ fn build_mode_hints(entry: &gtk::Entry) -> gtk::Box {
             entry.grab_focus();
         });
         row.append(&chip);
+        chips.push((mode.to_string(), chip));
     }
 
-    row
+    (row, chips)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn update_mode_hint_active(chips: &[(String, gtk::Button)], active_mode: &str) {
+    for (mode, chip) in chips {
+        if mode == active_mode {
+            chip.add_css_class("hop-launcher-hint-chip-active");
+        } else {
+            chip.remove_css_class("hop-launcher-hint-chip-active");
+        }
+    }
 }
 
 #[cfg(feature = "gtk_ui")]
