@@ -362,13 +362,18 @@ fn install_css() {
 }
 
 .hop-launcher-list row {
-  margin: 2px 4px;
+  margin: 1px 4px;
   border-radius: 10px;
-  background: alpha(@view_bg_color, 0.18);
+  background: alpha(@view_bg_color, 0.14);
+  transition: 130ms ease;
+}
+
+.hop-launcher-list row:hover {
+  background: alpha(@view_bg_color, 0.26);
 }
 
 .hop-launcher-list row:selected {
-  background: alpha(@accent_bg_color, 0.34);
+  background: alpha(@accent_bg_color, 0.38);
 }
 
 .hop-launcher-kind-badge {
@@ -384,6 +389,14 @@ fn install_css() {
 
 .hop-launcher-action-hint {
   font-size: 0.8em;
+}
+
+.hop-launcher-row-body {
+  min-height: 44px;
+}
+
+.hop-launcher-title-text {
+  font-weight: 600;
 }
 "#;
 
@@ -457,11 +470,12 @@ fn refresh_results(
             results.borrow_mut().extend(rows.iter().cloned());
             for row in &rows {
                 let icon = build_result_icon(row);
-                icon.set_pixel_size(20);
+                icon.set_pixel_size(icon_size_for_row(row));
                 let title = gtk::Label::builder()
                     .xalign(0.0)
                     .label(&row.title)
                     .build();
+                title.add_css_class("hop-launcher-title-text");
                 let subtitle_text = if row.subtitle.is_empty() {
                     row.kind.clone()
                 } else {
@@ -510,11 +524,13 @@ fn refresh_results(
                     .margin_start(8)
                     .margin_end(8)
                     .build();
+                body.add_css_class("hop-launcher-row-body");
                 body.append(&icon);
                 body.append(&text);
                 body.append(&meta);
                 let item_row = gtk::ListBoxRow::new();
                 item_row.set_child(Some(&body));
+                item_row.add_css_class("hop-launcher-row");
                 list.append(&item_row);
             }
             if list.first_child().is_some() {
@@ -571,6 +587,17 @@ fn action_hint_for_row(row: &LauncherResult) -> &'static str {
         "setting" => "Open",
         "weather" | "timezone" | "emoji" => "Open",
         _ => "Enter",
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn icon_size_for_row(row: &LauncherResult) -> i32 {
+    match row.kind.as_str() {
+        "app" => 24,
+        "window" => 22,
+        "setting" => 21,
+        "weather" | "timezone" | "emoji" => 21,
+        _ => 20,
     }
 }
 
