@@ -32,7 +32,7 @@ use libadwaita as adw;
 #[cfg(feature = "gtk_ui")]
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
-    default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
+    config_set, default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
     search_query_mode,
     start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
 };
@@ -211,8 +211,9 @@ fn run() {
             let app = app.clone();
             let parent = window.clone();
             let settings = ui_settings.clone();
+            let socket_path = socket_path.clone();
             settings_button.connect_clicked(move |_| {
-                open_settings_window(&app, &parent, settings.clone());
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
             });
         }
 
@@ -264,12 +265,18 @@ fn run() {
             let entry = entry.clone();
             let app = app.clone();
             let ui_settings = ui_settings.clone();
+            let socket_path_for_settings = socket_path.clone();
             entry.clone().connect_activate(move |_| {
                 if let Some(row) = list.selected_row() {
                     let index = row.index() as usize;
                     if let Some(result) = results.borrow().get(index).cloned() {
                         if result.id == "hop-launcher-settings" {
-                            open_settings_window(&app, &window, ui_settings.clone());
+                            open_settings_window(
+                                &app,
+                                &window,
+                                ui_settings.clone(),
+                                &socket_path_for_settings,
+                            );
                             status.set_text("Opened launcher settings");
                             return;
                         }
@@ -292,6 +299,7 @@ fn run() {
             let window = window.clone();
             let app = app.clone();
             let ui_settings = ui_settings.clone();
+            let socket_path = socket_path.clone();
             let controller = gtk::EventControllerKey::new();
             controller.connect_key_pressed(move |_, key, _, state| {
                 let is_ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -330,7 +338,7 @@ fn run() {
                         true.into()
                     }
                     gtk::gdk::Key::comma if is_ctrl => {
-                        open_settings_window(&app, &window, ui_settings.clone());
+                        open_settings_window(&app, &window, ui_settings.clone(), &socket_path);
                         true.into()
                     }
                     _ => false.into(),
@@ -348,11 +356,17 @@ fn run() {
             let entry = entry.clone();
             let app = app.clone();
             let ui_settings = ui_settings.clone();
+            let socket_path_for_settings = socket_path.clone();
             list.connect_row_activated(move |_, row| {
                 let index = row.index() as usize;
                 if let Some(result) = results.borrow().get(index).cloned() {
                     if result.id == "hop-launcher-settings" {
-                        open_settings_window(&app, &window, ui_settings.clone());
+                        open_settings_window(
+                            &app,
+                            &window,
+                            ui_settings.clone(),
+                            &socket_path_for_settings,
+                        );
                         status.set_text("Opened launcher settings");
                         return;
                     }
@@ -616,6 +630,7 @@ fn open_settings_window(
     app: &adw::Application,
     parent: &adw::ApplicationWindow,
     settings: Rc<RefCell<LauncherUiSettings>>,
+    socket_path: &str,
 ) {
     let prefs = adw::PreferencesWindow::builder()
         .application(app)
@@ -655,12 +670,20 @@ fn open_settings_window(
     {
         let settings = settings.clone();
         let parent = parent.clone();
+        let socket_path = socket_path.to_string();
         opacity_spin.connect_value_changed(move |spin| {
             let mut next = settings.borrow().clone();
             next.overlay_opacity_percent = spin.value_as_int().clamp(70, 100);
             parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
             if let Err(error) = save_ui_settings(&next) {
                 eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) = config_set(
+                &socket_path,
+                "ui.overlay_opacity_percent",
+                serde_json::json!(next.overlay_opacity_percent),
+            ) {
+                eprintln!("failed to sync setting to hopd: {error}");
             }
             *settings.borrow_mut() = next;
         });
@@ -680,12 +703,20 @@ fn open_settings_window(
     {
         let settings = settings.clone();
         let parent = parent.clone();
+        let socket_path = socket_path.to_string();
         frame_switch.connect_active_notify(move |toggle| {
             let mut next = settings.borrow().clone();
             next.frameless_window = toggle.is_active();
             parent.set_decorated(!next.frameless_window);
             if let Err(error) = save_ui_settings(&next) {
                 eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) = config_set(
+                &socket_path,
+                "ui.frameless_window",
+                serde_json::json!(next.frameless_window),
+            ) {
+                eprintln!("failed to sync setting to hopd: {error}");
             }
             *settings.borrow_mut() = next;
         });
@@ -710,11 +741,19 @@ fn open_settings_window(
     results_row.set_activatable_widget(Some(&results_spin));
     {
         let settings = settings.clone();
+        let socket_path = socket_path.to_string();
         results_spin.connect_value_changed(move |spin| {
             let mut next = settings.borrow().clone();
             next.max_results = spin.value_as_int().clamp(4, 24) as u32;
             if let Err(error) = save_ui_settings(&next) {
                 eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) = config_set(
+                &socket_path,
+                "ui.max_results",
+                serde_json::json!(next.max_results),
+            ) {
+                eprintln!("failed to sync setting to hopd: {error}");
             }
             *settings.borrow_mut() = next;
         });

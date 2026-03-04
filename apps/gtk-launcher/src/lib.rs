@@ -239,6 +239,28 @@ pub fn execute(socket_path: &str, result_id: &str) -> Result<(), String> {
     parse_execute_response(&response)
 }
 
+pub fn config_set(socket_path: &str, key: &str, value: Value) -> Result<(), String> {
+    let payload = json!({
+        "id": "gtk-config-set",
+        "method": "config.set",
+        "params": {
+            "key": key,
+            "value": value,
+        }
+    });
+    let response = send_ipc(socket_path, &payload)?;
+    let ok = response
+        .get("result")
+        .and_then(|result| result.get("ok"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        Err("config.set returned non-ok response".to_string())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct QueryRoute {
     mode: String,
