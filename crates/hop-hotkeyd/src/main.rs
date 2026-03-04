@@ -33,11 +33,14 @@ enum Command {
         wait_seconds: u64,
         interval_ms: u64,
     },
-    PrintBindings { compositor: Option<String> },
+    PrintBindings {
+        compositor: Option<String>,
+        socket_path: String,
+    },
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd status          # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +113,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
     }
     if args[1] == "print-bindings" {
         let mut compositor: Option<String> = None;
+        let mut socket_path = default_control_socket_path();
         let mut i = 2;
         while i < args.len() {
             match args[i].as_str() {
@@ -120,11 +124,21 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                     }
                     compositor = Some(args[i].to_ascii_lowercase());
                 }
+                "--socket" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--socket requires a value".to_string());
+                    }
+                    socket_path = args[i].clone();
+                }
                 unknown => return Err(format!("unknown argument: {}", unknown)),
             }
             i += 1;
         }
-        return Ok(Command::PrintBindings { compositor });
+        return Ok(Command::PrintBindings {
+            compositor,
+            socket_path,
+        });
     }
     if args[1] != "trigger" {
         return Err(usage().to_string());
@@ -185,8 +199,10 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         Command::Run => run_daemon_mode(),
-        Command::PrintBindings { compositor } => {
-            let control_socket = default_control_socket_path();
+        Command::PrintBindings {
+            compositor,
+            socket_path,
+        } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             let resolved = compositor.unwrap_or_else(|| {
                 if session_type.eq_ignore_ascii_case("wayland") {
@@ -203,7 +219,7 @@ fn run() -> Result<(), String> {
             });
             println!(
                 "{}",
-                build_binding_snippet_payload(&resolved, &control_socket)
+                build_binding_snippet_payload(&resolved, &socket_path)
             );
             Ok(())
         }
@@ -980,7 +996,26 @@ mod tests {
         assert_eq!(
             result,
             Command::PrintBindings {
-                compositor: Some("sway".to_string())
+                compositor: Some("sway".to_string()),
+                socket_path: default_control_socket_path()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_print_bindings_with_custom_socket() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "print-bindings".to_string(),
+            "--socket".to_string(),
+            "/tmp/custom-control.sock".to_string(),
+        ];
+        let result = parse_command(&args).expect("print-bindings should parse");
+        assert_eq!(
+            result,
+            Command::PrintBindings {
+                compositor: None,
+                socket_path: "/tmp/custom-control.sock".to_string(),
             }
         );
     }

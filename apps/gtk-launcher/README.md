@@ -45,3 +45,9 @@ Print compositor-specific binding snippets (for Wayland setups) with:
 ```bash
 ~/.local/bin/hop-hotkeyd print-bindings
 ```
+
+If you run the GTK control socket on a custom path:
+
+```bash
+~/.local/bin/hop-hotkeyd print-bindings --socket /tmp/hop-launcher-control.sock
+```

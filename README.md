@@ -99,3 +99,9 @@ Print compositor-specific binding snippets with:
 ```bash
 ~/.local/bin/hop-hotkeyd print-bindings
 ```
+
+Use a custom control socket in snippets with:
+
+```bash
+~/.local/bin/hop-hotkeyd print-bindings --socket /tmp/hop-launcher-control.sock
+```
