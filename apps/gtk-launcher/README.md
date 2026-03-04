@@ -24,7 +24,7 @@ Use `--features gtk_ui` to launch the native GTK/libadwaita app.
 
 This phase focuses on standalone usability and IPC integration.
 X11 global shortcut capture is now provided by the companion `hop-hotkeyd` service.
-Wayland remains on trigger fallback until native capture is implemented.
+Sway Wayland now supports daemon-driven toggle via `send_tick`; other Wayland compositors remain on trigger fallback.
 
 ## Phase 2 local toggle probe
 

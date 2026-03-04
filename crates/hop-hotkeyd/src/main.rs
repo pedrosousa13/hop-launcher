@@ -1,4 +1,6 @@
 use std::env;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,6 +13,11 @@ use serde_json::json;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
 use x11rb::protocol::Event;
+
+const SWAY_IPC_MAGIC: &[u8; 6] = b"i3-ipc";
+const SWAY_MSG_SUBSCRIBE: u32 = 2;
+const SWAY_EVENT_TICK: u32 = 0x8000_0007;
+const SWAY_TICK_TOGGLE_PAYLOAD: &str = "hop-launcher-toggle";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
@@ -243,26 +250,16 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             "global_hotkey_supported": true,
             "mode": "daemon"
         }),
-        Ok(hop_hotkeyd::BackendMode::Wayland) => json!({
-            "session_type": session_type,
-            "backend": "wayland",
-            "global_hotkey_supported": false,
-            "fallback": "hop-hotkeyd trigger",
-            "wayland_compositor": detect_wayland_compositor(
+        Ok(hop_hotkeyd::BackendMode::Wayland) => {
+            let compositor = detect_wayland_compositor(
                 &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
                 &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
                 &env::var("SWAYSOCK").unwrap_or_default(),
-                &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
-            ),
-            "next_step": wayland_next_step_hint(
-                &detect_wayland_compositor(
-                    &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
-                    &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
-                    &env::var("SWAYSOCK").unwrap_or_default(),
-                    &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
-                )
-            )
-        }),
+                &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
+            );
+            let sway_socket = env::var("SWAYSOCK").unwrap_or_default();
+            build_wayland_status_payload(session_type, compositor, &sway_socket)
+        }
         Err(error) => json!({
             "session_type": session_type,
             "backend": "unknown",
@@ -270,6 +267,23 @@ fn build_status_payload(session_type: &str) -> serde_json::Value {
             "error": error
         }),
     }
+}
+
+fn build_wayland_status_payload(
+    session_type: &str,
+    compositor: &str,
+    sway_socket: &str,
+) -> serde_json::Value {
+    let native_supported = compositor == "sway" && !sway_socket.trim().is_empty();
+    json!({
+        "session_type": session_type,
+        "backend": "wayland",
+        "global_hotkey_supported": native_supported,
+        "fallback": "hop-hotkeyd trigger",
+        "wayland_compositor": compositor,
+        "wayland_backend_mode": if native_supported { "sway_tick" } else { "fallback" },
+        "next_step": wayland_next_step_hint(compositor)
+    })
 }
 
 fn detect_wayland_compositor(
@@ -307,7 +321,8 @@ fn wayland_next_step_hint(compositor: &str) -> &'static str {
     match compositor {
         "gnome" => "implement gnome-shell integration path for global shortcut capture",
         "kde" => "implement KGlobalAccel integration path for global shortcut capture",
-        "sway" | "hyprland" => "use compositor config binding to call `hop-hotkeyd trigger`",
+        "sway" => "configure sway `send_tick hop-launcher-toggle` binding for native daemon toggle",
+        "hyprland" => "use compositor config binding to call `hop-hotkeyd trigger`",
         _ => "use fallback trigger and detect compositor-specific integration strategy",
     }
 }
@@ -315,8 +330,8 @@ fn wayland_next_step_hint(compositor: &str) -> &'static str {
 fn build_binding_snippet_payload(compositor: &str, control_socket: &str) -> serde_json::Value {
     let snippet = match compositor {
         "sway" => format!(
-            "Add to ~/.config/sway/config:\nbindsym Ctrl+Shift+ampersand exec ~/.local/bin/hop-hotkeyd trigger --socket {}",
-            control_socket
+            "Add to ~/.config/sway/config:\nbindsym Ctrl+Shift+ampersand exec swaymsg -q -t send_tick {}\nFallback: ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            SWAY_TICK_TOGGLE_PAYLOAD, control_socket
         ),
         "hyprland" => format!(
             "Add to ~/.config/hypr/hyprland.conf:\nbind = CTRL SHIFT, ampersand, exec, ~/.local/bin/hop-hotkeyd trigger --socket {}",
@@ -350,7 +365,7 @@ fn run_daemon_mode() -> Result<(), String> {
             eprintln!("hop-hotkeyd backend: {:?}", backend);
             match backend {
                 hop_hotkeyd::BackendMode::X11 => run_x11_daemon_loop(default_control_socket_path()),
-                hop_hotkeyd::BackendMode::Wayland => run_wayland_fallback(),
+                hop_hotkeyd::BackendMode::Wayland => run_wayland_daemon_mode(),
             }
         }
         Err(error) => {
@@ -383,11 +398,122 @@ fn reconnect_backoff_secs(attempt: u32) -> u64 {
     1u64 << capped
 }
 
+fn run_wayland_daemon_mode() -> Result<(), String> {
+    let compositor = detect_wayland_compositor(
+        &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+        &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+        &env::var("SWAYSOCK").unwrap_or_default(),
+        &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
+    );
+    if compositor == "sway" {
+        let sway_socket = env::var("SWAYSOCK").unwrap_or_default();
+        if sway_socket.trim().is_empty() {
+            eprintln!("sway compositor detected but SWAYSOCK is empty; using fallback mode");
+            return run_wayland_fallback();
+        }
+        return run_sway_daemon_loop(default_control_socket_path(), sway_socket);
+    }
+    run_wayland_fallback()
+}
+
 fn run_wayland_fallback() -> Result<(), String> {
     eprintln!("Wayland fallback active: use `hop-hotkeyd trigger` until native Wayland capture is implemented.");
     loop {
         thread::sleep(Duration::from_secs(30));
     }
+}
+
+fn run_sway_daemon_loop(control_socket_path: String, sway_socket_path: String) -> Result<(), String> {
+    let mut attempt: u32 = 0;
+    loop {
+        match run_sway_tick_loop(control_socket_path.clone(), sway_socket_path.clone()) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let delay = reconnect_backoff_secs(attempt);
+                eprintln!(
+                    "sway tick loop error: {}. reconnecting in {}s",
+                    error, delay
+                );
+                thread::sleep(Duration::from_secs(delay));
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn run_sway_tick_loop(control_socket_path: String, sway_socket_path: String) -> Result<(), String> {
+    let mut stream = UnixStream::connect(&sway_socket_path)
+        .map_err(|error| format!("sway socket connect failed: {}", error))?;
+    subscribe_sway_tick_events(&mut stream)?;
+
+    let mut last_toggle_at: Option<Instant> = None;
+    loop {
+        let (msg_type, payload) = read_sway_message(&mut stream)?;
+        if msg_type == SWAY_EVENT_TICK && parse_sway_tick_toggle_event(&payload) {
+            let now = Instant::now();
+            if should_emit_toggle(now, &mut last_toggle_at, Duration::from_millis(220)) {
+                if let Err(error) = send_toggle(&control_socket_path, "hotkey-sway-tick") {
+                    eprintln!("toggle send failed: {}", error);
+                }
+            }
+        }
+    }
+}
+
+fn subscribe_sway_tick_events(stream: &mut UnixStream) -> Result<(), String> {
+    write_sway_message(stream, SWAY_MSG_SUBSCRIBE, br#"["tick"]"#)?;
+    let (_, payload) = read_sway_message(stream)?;
+    let parsed: serde_json::Value = serde_json::from_slice(&payload)
+        .map_err(|error| format!("sway subscribe response parse failed: {}", error))?;
+    let success = parsed
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if success {
+        Ok(())
+    } else {
+        Err("sway subscribe response did not acknowledge success".to_string())
+    }
+}
+
+fn write_sway_message(stream: &mut UnixStream, msg_type: u32, payload: &[u8]) -> Result<(), String> {
+    let mut frame = Vec::with_capacity(SWAY_IPC_MAGIC.len() + 8 + payload.len());
+    frame.extend_from_slice(SWAY_IPC_MAGIC);
+    frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&msg_type.to_le_bytes());
+    frame.extend_from_slice(payload);
+    stream
+        .write_all(&frame)
+        .map_err(|error| format!("sway socket write failed: {}", error))
+}
+
+fn read_sway_message(stream: &mut UnixStream) -> Result<(u32, Vec<u8>), String> {
+    let mut header = [0u8; 14];
+    stream
+        .read_exact(&mut header)
+        .map_err(|error| format!("sway socket read header failed: {}", error))?;
+    if &header[..6] != SWAY_IPC_MAGIC {
+        return Err("sway socket returned invalid magic header".to_string());
+    }
+    let payload_len = u32::from_le_bytes([header[6], header[7], header[8], header[9]]) as usize;
+    let msg_type = u32::from_le_bytes([header[10], header[11], header[12], header[13]]);
+    let mut payload = vec![0u8; payload_len];
+    stream
+        .read_exact(&mut payload)
+        .map_err(|error| format!("sway socket read payload failed: {}", error))?;
+    Ok((msg_type, payload))
+}
+
+fn parse_sway_tick_toggle_event(payload: &[u8]) -> bool {
+    let parsed: serde_json::Value = match serde_json::from_slice(payload) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    parsed
+        .get("payload")
+        .and_then(|value| value.as_str())
+        .map(|value| value == SWAY_TICK_TOGGLE_PAYLOAD)
+        .unwrap_or(false)
 }
 
 fn run_x11_hotkey_loop(socket_path: String) -> Result<(), String> {
@@ -740,10 +866,29 @@ mod tests {
 
     #[test]
     fn status_payload_reports_wayland_fallback() {
-        let payload = build_status_payload("wayland");
+        let payload = build_wayland_status_payload("wayland", "unknown", "");
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], false);
-        assert_eq!(payload["fallback"], "hop-hotkeyd trigger");
+        assert_eq!(payload["wayland_backend_mode"], "fallback");
+    }
+
+    #[test]
+    fn status_payload_reports_sway_native_mode_when_socket_present() {
+        let payload = build_wayland_status_payload("wayland", "sway", "/run/user/1000/sway-ipc.sock");
+        assert_eq!(payload["backend"], "wayland");
+        assert_eq!(payload["global_hotkey_supported"], true);
+        assert_eq!(payload["wayland_backend_mode"], "sway_tick");
+    }
+
+    #[test]
+    fn parse_sway_tick_event_payload_matches_toggle_marker() {
+        assert!(parse_sway_tick_toggle_event(
+            br#"{"first":false,"payload":"hop-launcher-toggle"}"#
+        ));
+        assert!(!parse_sway_tick_toggle_event(
+            br#"{"first":false,"payload":"other"}"#
+        ));
+        assert!(!parse_sway_tick_toggle_event(br#"{"first":false}"#));
     }
 
     #[test]
@@ -771,7 +916,7 @@ mod tests {
     fn provides_wayland_next_step_hint() {
         assert!(wayland_next_step_hint("gnome").contains("gnome-shell"));
         assert!(wayland_next_step_hint("kde").contains("KGlobalAccel"));
-        assert!(wayland_next_step_hint("sway").contains("trigger"));
+        assert!(wayland_next_step_hint("sway").contains("send_tick"));
         assert!(wayland_next_step_hint("unknown").contains("fallback"));
     }
 
@@ -780,6 +925,8 @@ mod tests {
         let payload = build_binding_snippet_payload("sway", "/tmp/hop.sock");
         let snippet = payload["snippet"].as_str().unwrap_or_default();
         assert!(snippet.contains("bindsym"));
+        assert!(snippet.contains("send_tick"));
+        assert!(snippet.contains("hop-launcher-toggle"));
         assert!(snippet.contains("hop-hotkeyd trigger"));
         assert!(snippet.contains("/tmp/hop.sock"));
     }
