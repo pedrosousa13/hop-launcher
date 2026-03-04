@@ -2492,7 +2492,7 @@ fn action_hint_for_row(row: &LauncherResult) -> &'static str {
     match row.kind.as_str() {
         "window" => "Focus",
         "setting" => "Open",
-        "weather" | "timezone" | "emoji" | "calculator" | "currency" => "Open",
+        "utility" | "weather" | "timezone" | "emoji" | "calculator" | "currency" => "Copy",
         _ => "Enter",
     }
 }
