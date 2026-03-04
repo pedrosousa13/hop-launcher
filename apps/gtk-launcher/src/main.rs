@@ -1105,6 +1105,7 @@ fn open_settings_window(
         .transient_for(parent)
         .modal(true)
         .build();
+    prefs.set_search_enabled(true);
 
     let page = adw::PreferencesPage::new();
     let appearance = adw::PreferencesGroup::builder()
