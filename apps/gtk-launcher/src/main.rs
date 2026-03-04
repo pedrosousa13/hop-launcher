@@ -30,8 +30,9 @@ use libadwaita as adw;
 #[cfg(feature = "gtk_ui")]
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
-    default_hopd_socket_path, execute, parse_control_request, search, start_visible_on_launch,
-    toggle_accelerator, ControlMethod, LauncherResult,
+    default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
+    selected_result_id, start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult,
+    QueryState,
 };
 
 fn main() {
@@ -126,11 +127,13 @@ fn run() {
             entry.connect_activate(move |_| {
                 if let Some(row) = list.selected_row() {
                     let index = row.index() as usize;
-                    if let Some(item) = results.borrow().get(index) {
-                        if let Err(error) = execute(&socket_path, &item.id) {
-                            status.set_text(&format!("Execute failed: {error}"));
+                    if let Some(result_id) = selected_result_id(&results.borrow(), index) {
+                        if let Err(error) = execute(&socket_path, result_id) {
+                            status.set_text(&render_status_text(QueryState::Error(format!(
+                                "execute failed: {error}"
+                            ))));
                         } else {
-                            status.set_text("Executed");
+                            status.set_text(&render_status_text(QueryState::Executed));
                         }
                     }
                 }
@@ -144,11 +147,13 @@ fn run() {
             let socket_path = socket_path.clone();
             list.connect_row_activated(move |_, row| {
                 let index = row.index() as usize;
-                if let Some(item) = results.borrow().get(index) {
-                    if let Err(error) = execute(&socket_path, &item.id) {
-                        status.set_text(&format!("Execute failed: {error}"));
+                if let Some(result_id) = selected_result_id(&results.borrow(), index) {
+                    if let Err(error) = execute(&socket_path, result_id) {
+                        status.set_text(&render_status_text(QueryState::Error(format!(
+                            "execute failed: {error}"
+                        ))));
                     } else {
-                        status.set_text("Executed");
+                        status.set_text(&render_status_text(QueryState::Executed));
                     }
                 }
             });
@@ -267,18 +272,19 @@ fn refresh_results(
 
     if query.trim().is_empty() {
         results.borrow_mut().clear();
-        status.set_text("Ready");
+        status.set_text(&render_status_text(QueryState::Ready));
         return;
     }
 
+    status.set_text(&render_status_text(QueryState::Searching));
     match search(socket_path, query, 8) {
         Ok(rows) => {
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
-            for row in rows {
+            for row in &rows {
                 let label = gtk::Label::builder()
                     .xalign(0.0)
-                    .label(format!("{}  ·  {}", row.title, row.kind))
+                    .label(format!("{}  ·  {}  ·  {}", row.title, row.subtitle, row.kind))
                     .build();
                 let item_row = gtk::ListBoxRow::new();
                 item_row.set_child(Some(&label));
@@ -289,11 +295,17 @@ fn refresh_results(
                     list.select_row(Some(&first));
                 }
             }
-            status.set_text("Connected to hopd");
+            if rows.is_empty() {
+                status.set_text(&render_status_text(QueryState::Empty));
+            } else {
+                status.set_text(&render_status_text(QueryState::Results { count: rows.len() }));
+            }
         }
         Err(error) => {
             results.borrow_mut().clear();
-            status.set_text(&format!("hopd unavailable: {error}"));
+            status.set_text(&render_status_text(QueryState::Error(format!(
+                "hopd unavailable: {error}"
+            ))));
         }
     }
 }

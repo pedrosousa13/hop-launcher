@@ -9,6 +9,18 @@ pub struct LauncherResult {
     pub id: String,
     pub kind: String,
     pub title: String,
+    pub subtitle: String,
+    pub icon: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueryState {
+    Ready,
+    Searching,
+    Results { count: usize },
+    Empty,
+    Error(String),
+    Executed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,11 +132,42 @@ pub fn parse_search_results(response: &Value) -> Vec<LauncherResult> {
                     let id = row.get("id")?.as_str()?.to_string();
                     let kind = row.get("kind")?.as_str()?.to_string();
                     let title = row.get("title")?.as_str()?.to_string();
-                    Some(LauncherResult { id, kind, title })
+                    let subtitle = row
+                        .get("subtitle")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let icon = row
+                        .get("icon")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    Some(LauncherResult {
+                        id,
+                        kind,
+                        title,
+                        subtitle,
+                        icon,
+                    })
                 })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+pub fn render_status_text(state: QueryState) -> String {
+    match state {
+        QueryState::Ready => "Ready".to_string(),
+        QueryState::Searching => "Searching...".to_string(),
+        QueryState::Results { count } => format!("{count} results"),
+        QueryState::Empty => "No results".to_string(),
+        QueryState::Error(message) => format!("Error: {message}"),
+        QueryState::Executed => "Executed".to_string(),
+    }
+}
+
+pub fn selected_result_id(results: &[LauncherResult], index: usize) -> Option<&str> {
+    results.get(index).map(|row| row.id.as_str())
 }
 
 fn send_ipc(socket_path: &str, payload: &Value) -> Result<Value, String> {
@@ -180,8 +223,8 @@ mod tests {
             "id": "gtk-1",
             "result": {
                 "results": [
-                    {"id": "utility:weather", "kind": "weather", "title": "Weather"},
-                    {"id": "utility:emoji", "kind": "emoji", "title": "Emoji"}
+                    {"id": "utility:weather", "kind": "weather", "title": "Weather", "subtitle":"Utility", "icon":"weather-clear-symbolic"},
+                    {"id": "utility:emoji", "kind": "emoji", "title": "Emoji", "subtitle":"Utility", "icon":"face-smile-symbolic"}
                 ]
             }
         });
@@ -190,6 +233,28 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, "utility:weather");
         assert_eq!(rows[1].kind, "emoji");
+        assert_eq!(rows[0].subtitle, "Utility");
+        assert_eq!(rows[1].icon, "face-smile-symbolic");
+    }
+
+    #[test]
+    fn parses_normalized_row_metadata() {
+        let raw = serde_json::json!({
+            "id":"gtk-1",
+            "result":{"results":[{
+                "id":"app:terminal",
+                "kind":"app",
+                "title":"Terminal",
+                "subtitle":"System app",
+                "icon":"utilities-terminal-symbolic",
+                "primary_action":"enter",
+                "score":220
+            }]}
+        });
+
+        let rows = parse_search_results(&raw);
+        assert_eq!(rows[0].subtitle, "System app");
+        assert_eq!(rows[0].icon, "utilities-terminal-symbolic");
     }
 
     #[test]
@@ -258,5 +323,24 @@ mod tests {
         assert_eq!(response["id"], "ctrl-1");
         assert_eq!(response["error"]["code"], -32601);
         assert_eq!(response["error"]["message"], "method not found");
+    }
+
+    #[test]
+    fn status_for_non_empty_results_reports_count() {
+        let text = render_status_text(QueryState::Results { count: 8 });
+        assert_eq!(text, "8 results");
+    }
+
+    #[test]
+    fn enter_uses_selected_row_result_id() {
+        let selected = vec![LauncherResult {
+            id: "app:terminal".into(),
+            kind: "app".into(),
+            title: "Terminal".into(),
+            subtitle: "".into(),
+            icon: "".into(),
+        }];
+        let id = selected_result_id(&selected, 0);
+        assert_eq!(id, Some("app:terminal"));
     }
 }
