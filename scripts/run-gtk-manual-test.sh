@@ -120,6 +120,7 @@ echo "- Wayland fallback: ~/.local/bin/hop-hotkeyd trigger --socket $CONTROL_SOC
 echo "- Wayland bindings helper: ~/.local/bin/hop-hotkeyd print-bindings"
 echo "- Optional readiness probe: ~/.local/bin/hop-hotkeyd doctor --socket $CONTROL_SOCKET_PATH --wait-seconds 5 --interval-ms 200"
 echo "- Optional strict readiness probe (non-zero on failure): ~/.local/bin/hop-hotkeyd doctor --socket $CONTROL_SOCKET_PATH --strict"
+echo "- Validate apps/windows/files/settings routes: try terminal / w terminal / f readme / settings bluetooth"
 echo "- Type: weather zurich / time in tokyo / emoji smile"
 echo "- Press Enter on a result to trigger actions.execute"
 echo

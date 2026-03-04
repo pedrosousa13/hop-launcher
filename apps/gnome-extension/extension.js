@@ -141,6 +141,7 @@ export default class HopLauncherExtension extends Extension {
             hopd: new HopdProvider({
                 requestIpc: createHopdRequestIpc(resolveHopdSocketPath(), () => this._destroyed),
                 limit: this._settings.get_int('max-results'),
+                isConvergenceEnabled: () => this._settings.get_boolean('feature-hopd-convergence-enabled'),
             }),
         });
         this._providers = providers.map(([provider, key]) =>

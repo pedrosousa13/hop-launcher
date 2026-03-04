@@ -71,6 +71,11 @@
       <summary>hopd daemon provider enabled</summary>
       <description>Route utility-intent queries through the external hopd daemon.</description>
     </key>
+    <key name="feature-hopd-convergence-enabled" type="b">
+      <default>false</default>
+      <summary>hopd convergence routes enabled</summary>
+      <description>Allow hopd daemon to serve non-utility routes (apps/windows/files/settings/recents) for staged convergence testing.</description>
+    </key>
     <key name="open-animation-ms" type="i">
       <default>140</default>
       <summary>Open animation duration</summary>

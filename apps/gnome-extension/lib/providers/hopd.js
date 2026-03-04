@@ -9,6 +9,8 @@ function cacheKey(query, mode) {
 }
 
 function shouldHandleQuery(query, mode) {
+    if (mode === 'apps' || mode === 'windows' || mode === 'files' || mode === 'settings' || mode === 'recents')
+        return true;
     if (mode === 'weather' || mode === 'timezone' || mode === 'emoji')
         return true;
     if (mode !== 'all')
@@ -68,6 +70,10 @@ export class HopdProvider {
         this._inflight = new Map();
         this._onUpdate = null;
         this._destroyed = false;
+        this._convergenceEnabled = Boolean(options.convergenceEnabled);
+        this._isConvergenceEnabled = typeof options.isConvergenceEnabled === 'function'
+            ? options.isConvergenceEnabled
+            : null;
     }
 
     setUpdateCallback(callback) {
@@ -76,6 +82,18 @@ export class HopdProvider {
 
     _isStale(entry) {
         return !entry || (Date.now() - entry.updatedAtMs) > this._ttlMs;
+    }
+
+    setConvergenceEnabled(enabled) {
+        this._convergenceEnabled = Boolean(enabled);
+        this._cache.clear();
+        this._onUpdate?.();
+    }
+
+    _convergenceEnabledNow() {
+        if (this._isConvergenceEnabled)
+            return Boolean(this._isConvergenceEnabled());
+        return this._convergenceEnabled;
     }
 
     _toRows(items = []) {
@@ -147,6 +165,10 @@ export class HopdProvider {
 
         const normalized = normalizeQuery(query);
         if (!normalized)
+            return [];
+        const convergenceEnabled = this._convergenceEnabledNow();
+        const isConvergenceMode = mode === 'apps' || mode === 'windows' || mode === 'files' || mode === 'settings' || mode === 'recents';
+        if (!convergenceEnabled && isConvergenceMode)
             return [];
         if (!shouldHandleQuery(normalized, mode))
             return [];

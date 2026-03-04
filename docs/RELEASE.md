@@ -12,6 +12,8 @@ cd ../../crates/hopd && cargo test
 cd ../hop-hotkeyd && cargo test
 cd ../../apps/gtk-launcher && cargo test
 cargo test --features gtk_ui
+cd ../..
+./scripts/run-gtk-manual-test.sh
 ```
 
 ## 2) Prepare release metadata
@@ -52,6 +54,13 @@ On a clean Linux user account:
    - `~/.local/bin/hop-hotkeyd status`
    - `~/.local/bin/hop-hotkeyd doctor --strict`
    - `~/.local/bin/hop-hotkeyd setup-shortcut --dry-run`
+4. Verify launcher parity behavior in GTK:
+   - Query utility routes (`weather zurich`, `time in tokyo`, `emoji smile`).
+   - Query non-utility routes (`terminal`, `w terminal`, `f readme`, `settings bluetooth`).
+   - Confirm status transitions (`Searching...`, `<n> results`, `No results`) and Enter action execution.
+5. (Optional staged rollout) If validating GNOME convergence path, enable:
+   - `feature-hopd-enabled=true`
+   - `feature-hopd-convergence-enabled=true`
 
 ## 5) Linux package publishing
 

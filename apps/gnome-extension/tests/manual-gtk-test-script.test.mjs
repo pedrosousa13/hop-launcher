@@ -40,3 +40,8 @@ test('manual gtk test script includes setup-shortcut guidance', () => {
   const script = readScript();
   assert.match(script, /setup-shortcut/);
 });
+
+test('manual gtk test script includes non-utility parity checks', () => {
+  const script = readScript();
+  assert.match(script, /apps\/windows\/files\/settings/);
+});

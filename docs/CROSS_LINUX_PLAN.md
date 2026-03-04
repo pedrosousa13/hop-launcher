@@ -15,11 +15,23 @@ Completed in this branch:
 3. Integrated GNOME adapter against daemon socket calls.
 4. Added a KDE adapter prototype contract helper.
 
+## Milestone Status (2026-03-04)
+
+Completed in this branch:
+
+1. Expanded `hopd` search rows to normalized metadata (`subtitle`, `icon`, `primary_action`, `score`).
+2. Added parity result-kind scaffolding for `app`, `window`, `file`, `recent`, `setting`, and `utility`.
+3. Added `search.query` mode routing (`apps`, `windows`, `files`, `recents`, `settings`, plus utility modes).
+4. Updated `actions.execute` response shape with execution metadata (`result_id`, `action`).
+5. Updated GTK UI status flow to report contextual states (`Searching...`, `<n> results`, `No results`, `Error`).
+6. Added staged GNOME convergence toggle (`feature-hopd-convergence-enabled`) for non-utility `hopd` routes.
+
 ## Next Milestones
 
 1. Expand `search.query` providers from catalog heuristics to real data-backed provider modules.
-2. Add KDE transport integration (actual socket client path), not only request-contract scaffolding.
-3. Add daemon benchmarks and latency telemetry assertions for utility-intent queries.
+2. Replace deterministic provider scaffolds with real desktop-backed data sources and execution handlers.
+3. Add KDE transport integration (actual socket client path), not only request-contract scaffolding.
+4. Add daemon benchmarks and latency telemetry assertions for non-utility + utility-intent queries.
 
 ## Local Install (Required for Adapter Integration)
 

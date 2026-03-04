@@ -47,6 +47,7 @@ test('schema declares main feature toggles', () => {
     assert.match(schema, /<key name="feature-weather-enabled" type="b">/);
     assert.match(schema, /<key name="feature-web-search-enabled" type="b">/);
     assert.match(schema, /<key name="feature-hopd-enabled" type="b">/);
+    assert.match(schema, /<key name="feature-hopd-convergence-enabled" type="b">/);
 });
 
 test('schema declares overlay translucency key', () => {
