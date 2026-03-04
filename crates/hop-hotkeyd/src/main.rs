@@ -322,8 +322,14 @@ fn build_binding_snippet_payload(compositor: &str, control_socket: &str) -> serd
             "Add to ~/.config/hypr/hyprland.conf:\nbind = CTRL SHIFT, ampersand, exec, ~/.local/bin/hop-hotkeyd trigger --socket {}",
             control_socket
         ),
-        "kde" => "Use System Settings > Shortcuts > Custom Shortcuts to run: ~/.local/bin/hop-hotkeyd trigger".to_string(),
-        "gnome" => "GNOME Wayland requires GNOME Shell extension/API path for true global capture; use fallback trigger for now.".to_string(),
+        "kde" => format!(
+            "Use System Settings > Shortcuts > Custom Shortcuts to run: ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            control_socket
+        ),
+        "gnome" => format!(
+            "GNOME Wayland requires GNOME Shell extension/API path for true global capture; use fallback trigger for now: ~/.local/bin/hop-hotkeyd trigger --socket {}",
+            control_socket
+        ),
         "x11" => "X11 uses built-in hotkey daemon capture; no compositor binding snippet needed.".to_string(),
         _ => format!(
             "Unknown compositor. Use fallback command in your compositor config:\n~/.local/bin/hop-hotkeyd trigger --socket {}",
@@ -783,6 +789,14 @@ mod tests {
         let payload = build_binding_snippet_payload("x11", "/tmp/hop.sock");
         let snippet = payload["snippet"].as_str().unwrap_or_default();
         assert!(snippet.contains("built-in hotkey daemon capture"));
+    }
+
+    #[test]
+    fn binding_payload_for_kde_includes_socket_path() {
+        let payload = build_binding_snippet_payload("kde", "/tmp/hop.sock");
+        let snippet = payload["snippet"].as_str().unwrap_or_default();
+        assert!(snippet.contains("hop-hotkeyd trigger"));
+        assert!(snippet.contains("/tmp/hop.sock"));
     }
 
     #[test]
