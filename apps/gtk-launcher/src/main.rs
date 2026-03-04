@@ -65,6 +65,7 @@ struct LauncherUiSettings {
     animations_enabled: bool,
     open_animation_ms: i32,
     close_animation_ms: i32,
+    debounce_ms: i32,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -90,6 +91,7 @@ impl Default for LauncherUiSettings {
             animations_enabled: true,
             open_animation_ms: 140,
             close_animation_ms: 110,
+            debounce_ms: 15,
         }
     }
 }
@@ -203,6 +205,11 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(1, 500) as i32)
         .unwrap_or(default.close_animation_ms);
+    let debounce_ms = json
+        .get("debounce_ms")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(0, 500) as i32)
+        .unwrap_or(default.debounce_ms);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -224,6 +231,7 @@ fn load_ui_settings() -> LauncherUiSettings {
         animations_enabled,
         open_animation_ms,
         close_animation_ms,
+        debounce_ms,
     }
 }
 
@@ -255,6 +263,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "animations_enabled": settings.animations_enabled,
         "open_animation_ms": settings.open_animation_ms,
         "close_animation_ms": settings.close_animation_ms,
+        "debounce_ms": settings.debounce_ms,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -283,6 +292,7 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ui.animations_enabled", serde_json::json!(settings.animations_enabled)),
         ("ui.open_animation_ms", serde_json::json!(settings.open_animation_ms)),
         ("ui.close_animation_ms", serde_json::json!(settings.close_animation_ms)),
+        ("ui.debounce_ms", serde_json::json!(settings.debounce_ms)),
     ];
     for (key, value) in values {
         if let Err(error) = config_set(socket_path, key, value) {
@@ -304,6 +314,7 @@ fn run() {
         let socket_path = Rc::new(default_hopd_socket_path());
         let results = Rc::new(RefCell::new(Vec::<LauncherResult>::new()));
         let ui_settings = Rc::new(RefCell::new(load_ui_settings()));
+        let pending_search = Rc::new(RefCell::new(None::<gtk::glib::SourceId>));
 
         let window = adw::ApplicationWindow::builder()
             .application(app)
@@ -421,18 +432,37 @@ fn run() {
             let results = results.clone();
             let socket_path = socket_path.clone();
             let ui_settings = ui_settings.clone();
+            let pending_search = pending_search.clone();
             entry.connect_changed(move |entry| {
                 let query = entry.text().to_string();
-                let current_settings = ui_settings.borrow().clone();
-                refresh_results(
-                    &list,
-                    &status,
-                    &results,
-                    &socket_path,
-                    current_settings.max_results,
-                    &current_settings,
-                    &query,
+                status.set_text(&render_status_text(QueryState::Searching));
+                if let Some(source) = pending_search.borrow_mut().take() {
+                    source.remove();
+                }
+                let debounce_ms = ui_settings.borrow().debounce_ms.max(0) as u64;
+                let list = list.clone();
+                let status = status.clone();
+                let results = results.clone();
+                let socket_path = socket_path.clone();
+                let ui_settings = ui_settings.clone();
+                let pending_search_for_timeout = pending_search.clone();
+                let source = gtk::glib::timeout_add_local_once(
+                    Duration::from_millis(debounce_ms),
+                    move || {
+                        let current_settings = ui_settings.borrow().clone();
+                        refresh_results(
+                            &list,
+                            &status,
+                            &results,
+                            &socket_path,
+                            current_settings.max_results,
+                            &current_settings,
+                            &query,
+                        );
+                        pending_search_for_timeout.borrow_mut().take();
+                    },
                 );
+                *pending_search.borrow_mut() = Some(source);
             });
         }
 
@@ -1042,6 +1072,18 @@ fn open_settings_window(
     }
     behavior.add(&animations_row);
 
+    add_integer_spin_row(
+        &behavior,
+        "Debounce (ms)",
+        "Delay before triggering query refresh while typing.",
+        settings.borrow().debounce_ms,
+        0,
+        500,
+        "ui.debounce_ms",
+        settings.clone(),
+        socket_path,
+        |state, value| state.debounce_ms = value,
+    );
     add_integer_spin_row(
         &behavior,
         "Open animation (ms)",
