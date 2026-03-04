@@ -1,7 +1,7 @@
 use std::env;
 use std::process;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use hop_hotkeyd::{default_control_socket_path, select_backend_mode, send_toggle};
 use x11rb::connection::Connection;
@@ -90,27 +90,52 @@ fn run_x11_hotkey_loop(socket_path: String) -> Result<(), String> {
     }
 
     for keycode in keycodes {
-        conn.grab_key(
-            false,
-            root,
-            ModMask::CONTROL | ModMask::SHIFT,
-            keycode,
-            GrabMode::ASYNC,
-            GrabMode::ASYNC,
-        )
-        .map_err(|error| format!("x11 grab key failed: {}", error))?;
+        for modifiers in hotkey_modifier_variants() {
+            conn.grab_key(
+                false,
+                root,
+                modifiers,
+                keycode,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+            )
+            .map_err(|error| format!("x11 grab key failed: {}", error))?;
+        }
     }
     conn.flush()
         .map_err(|error| format!("x11 flush failed: {}", error))?;
 
+    let mut last_toggle_at: Option<Instant> = None;
     loop {
         let event = conn
             .wait_for_event()
             .map_err(|error| format!("x11 wait event failed: {}", error))?;
         if let Event::KeyPress(_) = event {
-            if let Err(error) = send_toggle(&socket_path, "hotkey-x11") {
-                eprintln!("toggle send failed: {}", error);
+            let now = Instant::now();
+            if should_emit_toggle(now, &mut last_toggle_at, Duration::from_millis(220)) {
+                if let Err(error) = send_toggle(&socket_path, "hotkey-x11") {
+                    eprintln!("toggle send failed: {}", error);
+                }
             }
+        }
+    }
+}
+
+fn hotkey_modifier_variants() -> [ModMask; 4] {
+    [
+        ModMask::CONTROL | ModMask::SHIFT,
+        ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK,
+        ModMask::CONTROL | ModMask::SHIFT | ModMask::M2,
+        ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK | ModMask::M2,
+    ]
+}
+
+fn should_emit_toggle(now: Instant, last: &mut Option<Instant>, min_gap: Duration) -> bool {
+    match *last {
+        Some(prev) if now.duration_since(prev) < min_gap => false,
+        _ => {
+            *last = Some(now);
+            true
         }
     }
 }
@@ -183,5 +208,30 @@ mod tests {
         let args = vec!["hop-hotkeyd".to_string(), "unknown".to_string()];
         let result = parse_command(&args);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn variants_include_lock_modifier_combinations() {
+        let variants = hotkey_modifier_variants();
+        assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT)));
+        assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK)));
+        assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT | ModMask::M2)));
+    }
+
+    #[test]
+    fn debounce_blocks_rapid_retrigger() {
+        let base = Instant::now();
+        let mut last = None;
+        assert!(should_emit_toggle(base, &mut last, Duration::from_millis(220)));
+        assert!(!should_emit_toggle(
+            base + Duration::from_millis(50),
+            &mut last,
+            Duration::from_millis(220)
+        ));
+        assert!(should_emit_toggle(
+            base + Duration::from_millis(300),
+            &mut last,
+            Duration::from_millis(220)
+        ));
     }
 }
