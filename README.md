@@ -10,6 +10,17 @@ This repository now contains multiple Linux launcher components in one codebase.
 - `crates/hop-hotkeyd` - companion Rust daemon for global hotkey -> GTK toggle IPC
 - `docs` - shared architecture and planning docs
 
+## Install options
+
+- Local/dev install (recommended while iterating):
+  - `cd apps/gnome-extension && npm run install:hopd:local`
+- Release artifacts:
+  - GNOME extension zip is published by GitHub Actions release workflow.
+  - `hopd` and `hop-hotkeyd` Linux tarballs are also attached to release artifacts.
+- Packaging/distribution docs:
+  - APT + Linux packaging guide: `docs/LINUX_PACKAGING.md`
+  - Maintainer release checklist: `docs/RELEASE.md`
+
 ## Per-folder commands
 
 ### GNOME extension
@@ -152,3 +163,10 @@ Use a custom control socket in snippets with:
 ```bash
 ~/.local/bin/hop-hotkeyd print-bindings --socket /tmp/hop-launcher-control.sock
 ```
+
+## Maintainer release flow
+
+Use `docs/RELEASE.md` for a complete checklist including:
+- pre-release verification
+- tag/release artifact flow
+- Linux package publishing (APT and alternatives)

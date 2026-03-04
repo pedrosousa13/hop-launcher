@@ -31,16 +31,34 @@ jobs:
         run: |
           npm test
           glib-compile-schemas --strict --dry-run schemas
-          bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh
+          bash -n scripts/install-local.sh scripts/install-hopd-local.sh scripts/package-extension.sh scripts/bump-version.sh
         working-directory: apps/gnome-extension
 
       - name: Run hopd tests
         run: cargo test
         working-directory: crates/hopd
 
+      - name: Run hop-hotkeyd tests
+        run: cargo test
+        working-directory: crates/hop-hotkeyd
+
       - name: Run GTK launcher tests
         run: cargo test
         working-directory: apps/gtk-launcher
+
+      - name: Build daemon binaries
+        run: |
+          cargo build --release --manifest-path crates/hopd/Cargo.toml
+          cargo build --release --manifest-path crates/hop-hotkeyd/Cargo.toml
+
+      - name: Package daemon artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp crates/hopd/target/release/hopd dist/hopd
+          cp crates/hop-hotkeyd/target/release/hop-hotkeyd dist/hop-hotkeyd
+          tar -C dist -czf dist/hopd-linux-x86_64.tar.gz hopd
+          tar -C dist -czf dist/hop-hotkeyd-linux-x86_64.tar.gz hop-hotkeyd
 
       - name: Build distributable zip
         run: npm run package
@@ -60,8 +78,11 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hop-launcher-zip
-          path: ${{ steps.asset.outputs.asset_path }}
+          name: hop-launcher-release-assets
+          path: |
+            ${{ steps.asset.outputs.asset_path }}
+            dist/hopd-linux-x86_64.tar.gz
+            dist/hop-hotkeyd-linux-x86_64.tar.gz
           if-no-files-found: error
 
       - name: Create GitHub release and upload zip
@@ -72,5 +93,8 @@ jobs:
           name: Main build
           prerelease: true
           overwrite_files: true
-          files: ${{ steps.asset.outputs.asset_path }}
+          files: |
+            ${{ steps.asset.outputs.asset_path }}
+            dist/hopd-linux-x86_64.tar.gz
+            dist/hop-hotkeyd-linux-x86_64.tar.gz
           generate_release_notes: true

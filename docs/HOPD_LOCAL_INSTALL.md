@@ -68,3 +68,7 @@ After installing and starting `hopd`, open Hop Launcher preferences and enable:
 - `Main features` -> `hopd daemon`
 
 `hopd` integration is off by default. Once enabled, utility-intent queries (weather/timezone/emoji routes) can be served by the daemon.
+
+For packaged distribution (`.deb`/APT and other Linux channels), see:
+
+- `docs/LINUX_PACKAGING.md`

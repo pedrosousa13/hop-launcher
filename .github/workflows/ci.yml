@@ -34,7 +34,7 @@ jobs:
         working-directory: apps/gnome-extension
 
       - name: Validate helper scripts syntax
-        run: bash -n scripts/install-local.sh scripts/package-extension.sh scripts/bump-version.sh
+        run: bash -n scripts/install-local.sh scripts/install-hopd-local.sh scripts/package-extension.sh scripts/bump-version.sh
         working-directory: apps/gnome-extension
 
       - name: Build distributable zip
@@ -57,6 +57,16 @@ jobs:
       - name: Run hopd tests
         run: cargo test
         working-directory: crates/hopd
+
+  hop-hotkeyd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run hop-hotkeyd tests
+        run: cargo test
+        working-directory: crates/hop-hotkeyd
 
   gtk-launcher:
     runs-on: ubuntu-latest
