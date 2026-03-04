@@ -155,6 +155,35 @@ pub fn parse_search_results(response: &Value) -> Vec<LauncherResult> {
         .unwrap_or_default()
 }
 
+pub fn parse_execute_response(response: &Value) -> Result<(), String> {
+    let result = response
+        .get("result")
+        .ok_or_else(|| "missing result".to_string())?;
+
+    let resolved = result
+        .get("action_resolved")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let spawned = result
+        .get("launch_spawned")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    if resolved && spawned {
+        return Ok(());
+    }
+
+    if let Some(message) = result.get("error_message").and_then(Value::as_str) {
+        return Err(message.to_string());
+    }
+
+    let status = result
+        .get("execution_status")
+        .and_then(Value::as_str)
+        .unwrap_or("execution failed");
+    Err(status.to_string())
+}
+
 pub fn render_status_text(state: QueryState) -> String {
     match state {
         QueryState::Ready => "Ready".to_string(),
@@ -200,8 +229,8 @@ pub fn search(socket_path: &str, query: &str, limit: u32) -> Result<Vec<Launcher
 
 pub fn execute(socket_path: &str, result_id: &str) -> Result<(), String> {
     let payload = build_execute_payload(result_id, "gtk-execute");
-    let _ = send_ipc(socket_path, &payload)?;
-    Ok(())
+    let response = send_ipc(socket_path, &payload)?;
+    parse_execute_response(&response)
 }
 
 #[cfg(test)]
@@ -342,5 +371,24 @@ mod tests {
         }];
         let id = selected_result_id(&selected, 0);
         assert_eq!(id, Some("app:terminal"));
+    }
+
+    #[test]
+    fn parse_execute_response_returns_reason_on_unresolved_id() {
+        let raw = serde_json::json!({
+            "id": "gtk-execute",
+            "result": {
+                "ok": true,
+                "executed": true,
+                "action_resolved": false,
+                "launch_spawned": false,
+                "execution_status": "unresolved",
+                "error_message": "unsupported result id"
+            }
+        });
+
+        let parsed = parse_execute_response(&raw);
+        assert!(parsed.is_err());
+        assert_eq!(parsed.err().as_deref(), Some("unsupported result id"));
     }
 }

@@ -14,8 +14,12 @@ pub fn execute(params: &Value) -> Value {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let mut action_resolved = false;
     let mut launch_spawned = false;
+    let mut execution_status = "unresolved".to_string();
+    let mut error_message: Option<String> = Some("unsupported result id".to_string());
     if let Some((cmd, args)) = command_for_result_id_with_desktop(result_id, &desktop) {
         action_resolved = true;
+        execution_status = "resolved".to_string();
+        error_message = None;
         launch_spawned = Command::new(&cmd)
             .args(&args)
             .stdin(Stdio::null())
@@ -23,6 +27,10 @@ pub fn execute(params: &Value) -> Value {
             .stderr(Stdio::null())
             .spawn()
             .is_ok();
+        if !launch_spawned {
+            execution_status = "spawn_failed".to_string();
+            error_message = Some(format!("failed to spawn {}", cmd));
+        }
     }
 
     json!({
@@ -30,6 +38,8 @@ pub fn execute(params: &Value) -> Value {
         "executed": !result_id.is_empty(),
         "action_resolved": action_resolved,
         "launch_spawned": launch_spawned,
+        "execution_status": execution_status,
+        "error_message": error_message,
         "result_id": result_id,
         "action": action,
     })
@@ -121,5 +131,16 @@ mod tests {
             .expect("kde settings command");
         assert_eq!(resolved.0, "systemsettings5");
         assert_eq!(resolved.1, vec!["network".to_string()]);
+    }
+
+    #[test]
+    fn execute_reports_unresolved_result_id_reason() {
+        let payload = serde_json::json!({
+            "result_id": "unknown-id",
+            "action": "enter",
+        });
+        let response = execute(&payload);
+        assert_eq!(response["execution_status"], "unresolved");
+        assert_eq!(response["error_message"], "unsupported result id");
     }
 }
