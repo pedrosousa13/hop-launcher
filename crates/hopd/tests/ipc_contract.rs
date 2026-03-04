@@ -113,6 +113,40 @@ async fn search_query_handles_timezone_intent_for_city_phrase() {
 }
 
 #[tokio::test]
+async fn search_query_returns_calculator_row_for_math_expression() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2f","method":"search.query","params":{"query":"2+2","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected calculator result");
+    assert_eq!(results[0]["kind"], "calculator");
+    assert_eq!(results[0]["id"], "utility:calculator:2+2");
+}
+
+#[tokio::test]
+async fn search_query_returns_currency_row_for_conversion_phrase() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2g","method":"search.query","params":{"query":"12 usd to chf","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected currency result");
+    assert_eq!(results[0]["kind"], "currency");
+    assert_eq!(results[0]["id"], "utility:currency:12:USD:CHF");
+}
+
+#[tokio::test]
 async fn search_query_returns_normalized_rows_with_metadata() {
     let server = HopdServer::new();
     let response = server

@@ -84,7 +84,7 @@ fn run() {
         let hints = build_mode_hints();
 
         let entry = gtk::Entry::builder()
-            .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji…")
+            .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji, calculations, currency…")
             .build();
         entry.add_css_class("hop-launcher-entry");
         let status = gtk::Label::builder()
@@ -490,6 +490,8 @@ fn build_mode_hints() -> gtk::Box {
         "weather",
         "time in",
         "emoji",
+        "2+2",
+        "12 usd to chf",
     ] {
         let chip = gtk::Label::builder().label(text).build();
         chip.add_css_class("hop-launcher-hint-chip");
@@ -630,6 +632,8 @@ fn build_result_icon(row: &LauncherResult) -> gtk::Image {
         "weather" => "weather-clear-symbolic",
         "timezone" => "preferences-system-time-symbolic",
         "emoji" => "face-smile-symbolic",
+        "calculator" => "accessories-calculator-symbolic",
+        "currency" => "accessories-calculator-symbolic",
         _ => "system-search-symbolic",
     };
     gtk::Image::from_icon_name(fallback)
@@ -640,7 +644,7 @@ fn action_hint_for_row(row: &LauncherResult) -> &'static str {
     match row.kind.as_str() {
         "window" => "Focus",
         "setting" => "Open",
-        "weather" | "timezone" | "emoji" => "Open",
+        "weather" | "timezone" | "emoji" | "calculator" | "currency" => "Open",
         _ => "Enter",
     }
 }
@@ -651,7 +655,7 @@ fn icon_size_for_row(row: &LauncherResult) -> i32 {
         "app" => 24,
         "window" => 22,
         "setting" => 21,
-        "weather" | "timezone" | "emoji" => 21,
+        "weather" | "timezone" | "emoji" | "calculator" | "currency" => 21,
         _ => 20,
     }
 }

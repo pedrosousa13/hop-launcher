@@ -120,16 +120,54 @@ fn command_for_result_id_with_desktop(
         if utility_key.is_empty() {
             return None;
         }
+        if let Some(expression) = utility_key.strip_prefix("calculator:") {
+            if expression.is_empty() {
+                return None;
+            }
+            let query = format!("https://www.google.com/search?q={}", encode_component(expression));
+            return Some(("xdg-open".to_string(), vec![query]));
+        }
+        if let Some(payload) = utility_key.strip_prefix("currency:") {
+            let parts: Vec<&str> = payload.split(':').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let url = format!(
+                "https://www.xe.com/currencyconverter/convert/?Amount={}&From={}&To={}",
+                encode_component(parts[0]),
+                encode_component(parts[1]),
+                encode_component(parts[2])
+            );
+            return Some(("xdg-open".to_string(), vec![url]));
+        }
         let url = match utility_key {
             "weather" => "https://wttr.in",
             "timezone" => "https://time.is",
             "emoji" => "https://emojipedia.org",
+            "calculator" => "https://www.google.com/search?q=calculator",
+            "currency" => "https://www.xe.com/currencyconverter/",
             _ => return None,
         };
         return Some(("xdg-open".to_string(), vec![url.to_string()]));
     }
 
     None
+}
+
+fn encode_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        let ch = byte as char;
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~') {
+            out.push(ch);
+        } else if ch == ' ' {
+            out.push('+');
+        } else {
+            out.push('%');
+            out.push_str(&format!("{byte:02X}"));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -208,5 +246,31 @@ mod tests {
             .expect("utility command");
         assert_eq!(resolved.0, "xdg-open");
         assert_eq!(resolved.1, vec!["https://wttr.in".to_string()]);
+    }
+
+    #[test]
+    fn resolves_utility_calculator_expression_to_browser_command() {
+        let resolved = command_for_result_id_with_desktop("utility:calculator:2+2", "GNOME")
+            .expect("calculator command");
+        assert_eq!(resolved.0, "xdg-open");
+        assert_eq!(
+            resolved.1,
+            vec!["https://www.google.com/search?q=2%2B2".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolves_utility_currency_payload_to_browser_command() {
+        let resolved =
+            command_for_result_id_with_desktop("utility:currency:12:USD:CHF", "GNOME")
+                .expect("currency command");
+        assert_eq!(resolved.0, "xdg-open");
+        assert_eq!(
+            resolved.1,
+            vec![
+                "https://www.xe.com/currencyconverter/convert/?Amount=12&From=USD&To=CHF"
+                    .to_string()
+            ]
+        );
     }
 }

@@ -243,11 +243,15 @@ impl SearchItem {
 fn aggregate_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
     let mut items = providers::collect_provider_items(query, mode);
     match mode {
+        "calculator" => items.extend(calculator_provider(query)),
+        "currency" => items.extend(currency_provider(query)),
         "weather" => items.extend(weather_provider(query)),
         "timezone" => items.extend(timezone_provider(query)),
         "emoji" => items.extend(emoji_provider(query)),
         "apps" | "windows" | "files" | "recents" | "settings" => {}
         _ => {
+            items.extend(calculator_provider(query));
+            items.extend(currency_provider(query));
             items.extend(weather_provider(query));
             items.extend(timezone_provider(query));
             items.extend(emoji_provider(query));
@@ -288,11 +292,75 @@ fn score_item(query: &str, item: &SearchItem) -> i32 {
 
 fn kind_priority(kind: &str) -> i32 {
     match kind {
+        "calculator" => 35,
+        "currency" => 32,
         "weather" => 30,
         "timezone" => 20,
         "emoji" => 10,
         _ => 0,
     }
+}
+
+fn looks_like_math(query: &str) -> bool {
+    let trimmed = query.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().any(|ch| ch.is_ascii_digit())
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || "+-*/(). %".contains(ch))
+}
+
+fn parse_currency_query(query: &str) -> Option<(String, String, String)> {
+    let parts: Vec<&str> = query.split_whitespace().collect();
+    if parts.len() != 4 || parts[2].to_lowercase() != "to" {
+        return None;
+    }
+    let amount = parts[0];
+    let src = parts[1];
+    let dst = parts[3];
+    let amount_ok = amount
+        .chars()
+        .all(|ch| ch.is_ascii_digit() || ch == '.')
+        && amount.chars().any(|ch| ch.is_ascii_digit());
+    let src_ok = src.chars().all(|ch| ch.is_ascii_alphabetic()) && src.len() == 3;
+    let dst_ok = dst.chars().all(|ch| ch.is_ascii_alphabetic()) && dst.len() == 3;
+    if !amount_ok || !src_ok || !dst_ok {
+        return None;
+    }
+    Some((
+        amount.to_string(),
+        src.to_uppercase(),
+        dst.to_uppercase(),
+    ))
+}
+
+fn calculator_provider(query: &str) -> Vec<SearchItem> {
+    if !looks_like_math(query) {
+        return Vec::new();
+    }
+    let expression = query.trim();
+    vec![SearchItem {
+        id: format!("utility:calculator:{expression}"),
+        kind: "calculator".to_string(),
+        title: format!("Calculate {expression}"),
+        subtitle: "Utility".to_string(),
+        icon: "accessories-calculator-symbolic".to_string(),
+        keywords: "calculator math arithmetic expression".to_string(),
+    }]
+}
+
+fn currency_provider(query: &str) -> Vec<SearchItem> {
+    let Some((amount, src, dst)) = parse_currency_query(query) else {
+        return Vec::new();
+    };
+    vec![SearchItem {
+        id: format!("utility:currency:{amount}:{src}:{dst}"),
+        kind: "currency".to_string(),
+        title: format!("{amount} {src} -> {dst}"),
+        subtitle: "Currency conversion".to_string(),
+        icon: "accessories-calculator-symbolic".to_string(),
+        keywords: "currency exchange convert forex".to_string(),
+    }]
 }
 
 fn weather_provider(query: &str) -> Vec<SearchItem> {
@@ -410,6 +478,22 @@ fn default_catalog_items() -> Vec<SearchItem> {
             subtitle: "Utility".to_string(),
             icon: "face-smile-symbolic".to_string(),
             keywords: "emoji picker symbols".to_string(),
+        },
+        SearchItem {
+            id: "utility:calculator".to_string(),
+            kind: "calculator".to_string(),
+            title: "Calculator".to_string(),
+            subtitle: "Utility".to_string(),
+            icon: "accessories-calculator-symbolic".to_string(),
+            keywords: "calculator math arithmetic expression".to_string(),
+        },
+        SearchItem {
+            id: "utility:currency".to_string(),
+            kind: "currency".to_string(),
+            title: "Currency".to_string(),
+            subtitle: "Utility".to_string(),
+            icon: "accessories-calculator-symbolic".to_string(),
+            keywords: "currency exchange convert forex".to_string(),
         },
         SearchItem {
             id: "utility:catalog".to_string(),
