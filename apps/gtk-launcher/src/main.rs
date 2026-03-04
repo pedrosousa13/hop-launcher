@@ -960,7 +960,7 @@ fn install_css() {
 .hop-launcher-content {
   border-radius: 18px;
   border: 1px solid alpha(@accent_bg_color, 0.20);
-  background: linear-gradient(160deg, rgba(20, 26, 34, 0.62), rgba(17, 21, 30, 0.56));
+  background: linear-gradient(160deg, rgba(20, 26, 34, 0.88), rgba(17, 21, 30, 0.84));
 }
 
 .hop-launcher-title {
@@ -980,7 +980,7 @@ fn install_css() {
   padding: 3px 8px;
   border-radius: 999px;
   border: 1px solid alpha(@headerbar_border_color, 0.35);
-  background: alpha(@view_bg_color, 0.22);
+  background: alpha(@view_bg_color, 0.38);
   font-size: 0.78em;
 }
 
@@ -999,18 +999,18 @@ fn install_css() {
 .hop-launcher-scroll {
   border-radius: 12px;
   border: 1px solid alpha(@headerbar_border_color, 0.35);
-  background: alpha(@view_bg_color, 0.48);
+  background: alpha(@view_bg_color, 0.70);
 }
 
 .hop-launcher-list row {
   margin: 1px 4px;
   border-radius: 10px;
-  background: alpha(@view_bg_color, 0.20);
+  background: alpha(@view_bg_color, 0.42);
   transition: 130ms ease;
 }
 
 .hop-launcher-list row:hover {
-  background: alpha(@view_bg_color, 0.30);
+  background: alpha(@view_bg_color, 0.56);
 }
 
 .hop-launcher-list row:selected {
