@@ -4,13 +4,11 @@ use crate::SearchItem;
 
 pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Vec::new();
-    }
+    let is_empty_query = normalized.is_empty();
 
     let mut rows = wmctrl_windows()
         .into_iter()
-        .filter(|window| window.title.to_lowercase().contains(&normalized))
+        .filter(|window| is_empty_query || window.title.to_lowercase().contains(&normalized))
         .map(|window| {
             SearchItem::new(
                 &format!("window:{}", window.id),
@@ -21,7 +19,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
                 &format!("window {} {}", window.id, window.title),
             )
         })
-        .take(20)
+        .take(if is_empty_query { 8 } else { 20 })
         .collect::<Vec<_>>();
 
     if rows.is_empty() {

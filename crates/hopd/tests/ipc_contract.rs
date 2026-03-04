@@ -135,6 +135,23 @@ async fn search_query_returns_normalized_rows_with_metadata() {
 }
 
 #[tokio::test]
+async fn search_query_returns_default_suggestions_for_empty_query() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(r#"{"id":"n2","method":"search.query","params":{"query":"","limit":8}}"#)
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected default suggestions");
+    assert!(
+        results.iter().any(|row| row["kind"] == "setting"),
+        "expected settings suggestions for empty query"
+    );
+}
+
+#[tokio::test]
 async fn handles_actions_execute_acknowledgement() {
     let server = HopdServer::new();
     let response = server

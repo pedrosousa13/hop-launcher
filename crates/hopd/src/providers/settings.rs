@@ -2,9 +2,6 @@ use crate::SearchItem;
 
 pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Vec::new();
-    }
 
     let mut catalog = vec![
         SearchItem::new(
@@ -47,7 +44,8 @@ pub fn results(query: &str) -> Vec<SearchItem> {
     catalog
         .into_iter()
         .filter(|item| {
-            item.title.to_lowercase().contains(&normalized)
+            normalized.is_empty()
+                || item.title.to_lowercase().contains(&normalized)
                 || item.keywords.to_lowercase().contains(&normalized)
         })
         .collect()

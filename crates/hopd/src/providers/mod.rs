@@ -8,6 +8,7 @@ pub mod utility;
 pub mod windows;
 
 pub fn collect_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
+    let is_empty_query = query.trim().is_empty();
     match mode {
         "apps" => apps::results(query),
         "windows" => windows::results(query),
@@ -18,7 +19,9 @@ pub fn collect_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
             let mut items = Vec::new();
             items.extend(apps::results(query));
             items.extend(windows::results(query));
-            items.extend(files::results(query));
+            if !is_empty_query {
+                items.extend(files::results(query));
+            }
             items.extend(recents::results(query));
             items.extend(settings::results(query));
             items.extend(utility::results(query));

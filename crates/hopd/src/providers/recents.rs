@@ -5,13 +5,11 @@ use crate::SearchItem;
 
 pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Vec::new();
-    }
+    let is_empty_query = normalized.is_empty();
 
     let mut rows = load_recent_file_paths()
         .into_iter()
-        .filter(|path| path.to_lowercase().contains(&normalized))
+        .filter(|path| is_empty_query || path.to_lowercase().contains(&normalized))
         .take(12)
         .map(|path| {
             let title = Path::new(&path)

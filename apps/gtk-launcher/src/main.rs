@@ -68,7 +68,7 @@ fn run() {
             .build();
 
         let entry = gtk::Entry::builder()
-            .placeholder_text("Type a utility query (weather/timezone/emoji)…")
+            .placeholder_text("Search apps, windows, files, recents, settings, weather, timezone, emoji…")
             .build();
         let status = gtk::Label::builder()
             .xalign(0.0)
@@ -158,6 +158,8 @@ fn run() {
                 }
             });
         }
+
+        refresh_results(&list, &status, &results, &socket_path, "");
 
         if start_visible_on_launch() {
             window.present();
@@ -270,24 +272,38 @@ fn refresh_results(
         list.remove(&child);
     }
 
-    if query.trim().is_empty() {
-        results.borrow_mut().clear();
-        status.set_text(&render_status_text(QueryState::Ready));
-        return;
-    }
-
     status.set_text(&render_status_text(QueryState::Searching));
     match search(socket_path, query, 8) {
         Ok(rows) => {
             results.borrow_mut().clear();
             results.borrow_mut().extend(rows.iter().cloned());
             for row in &rows {
-                let label = gtk::Label::builder()
+                let title = gtk::Label::builder()
                     .xalign(0.0)
-                    .label(format!("{}  ·  {}  ·  {}", row.title, row.subtitle, row.kind))
+                    .label(&row.title)
                     .build();
+                let subtitle_text = if row.subtitle.is_empty() {
+                    row.kind.clone()
+                } else {
+                    format!("{}  ·  {}", row.subtitle, row.kind)
+                };
+                let subtitle = gtk::Label::builder()
+                    .xalign(0.0)
+                    .label(&subtitle_text)
+                    .build();
+                subtitle.add_css_class("dim-label");
+                let body = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .spacing(2)
+                    .margin_top(4)
+                    .margin_bottom(4)
+                    .margin_start(4)
+                    .margin_end(4)
+                    .build();
+                body.append(&title);
+                body.append(&subtitle);
                 let item_row = gtk::ListBoxRow::new();
-                item_row.set_child(Some(&label));
+                item_row.set_child(Some(&body));
                 list.append(&item_row);
             }
             if list.first_child().is_some() {

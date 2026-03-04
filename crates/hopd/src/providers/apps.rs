@@ -6,9 +6,7 @@ use crate::SearchItem;
 
 pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Vec::new();
-    }
+    let is_empty_query = normalized.is_empty();
 
     let mut items: Vec<SearchItem> = desktop_entry_files()
         .into_iter()
@@ -21,8 +19,8 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             let content = fs::read_to_string(path).ok()?;
             parse_desktop_entry(&content, &file_name)
         })
-        .filter(|item| matches_query(item, &normalized))
-        .take(24)
+        .filter(|item| is_empty_query || matches_query(item, &normalized))
+        .take(if is_empty_query { 12 } else { 24 })
         .collect();
 
     if items.is_empty() {
