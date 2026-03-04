@@ -20,12 +20,13 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             if !haystack.contains(&normalized) {
                 return None;
             }
+            let icon = icon_for_path(&path);
             Some(SearchItem::new(
                 &format!("file:{full}"),
                 "file",
                 &display,
                 "Filesystem",
-                "text-x-generic-symbolic",
+                &icon,
                 &haystack,
             ))
         })
@@ -64,4 +65,51 @@ fn read_dir_entries(path: PathBuf) -> Vec<PathBuf> {
         return Vec::new();
     };
     entries.flatten().map(|entry| entry.path()).collect()
+}
+
+fn icon_for_path(path: &Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let icon = match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "heic" => "image-x-generic-symbolic",
+        "mp3" | "wav" | "flac" | "ogg" | "m4a" => "audio-x-generic-symbolic",
+        "mp4" | "mkv" | "mov" | "avi" | "webm" => "video-x-generic-symbolic",
+        "pdf" => "application-pdf-symbolic",
+        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" | "rar" => "package-x-generic-symbolic",
+        "desktop" | "appimage" => "application-x-executable-symbolic",
+        "rs" | "c" | "cpp" | "h" | "hpp" | "py" | "js" | "ts" | "tsx" | "java" | "go"
+        | "sh" | "bash" | "zsh" | "toml" | "json" | "yaml" | "yml" | "xml" => {
+            "text-x-script-symbolic"
+        }
+        _ => "text-x-generic-symbolic",
+    };
+    icon.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_icons_match_common_extensions() {
+        assert_eq!(
+            icon_for_path(Path::new("/tmp/photo.png")),
+            "image-x-generic-symbolic"
+        );
+        assert_eq!(
+            icon_for_path(Path::new("/tmp/report.pdf")),
+            "application-pdf-symbolic"
+        );
+        assert_eq!(
+            icon_for_path(Path::new("/tmp/archive.zip")),
+            "package-x-generic-symbolic"
+        );
+        assert_eq!(
+            icon_for_path(Path::new("/tmp/script.rs")),
+            "text-x-script-symbolic"
+        );
+    }
 }
