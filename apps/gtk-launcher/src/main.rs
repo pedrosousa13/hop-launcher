@@ -35,7 +35,6 @@ use libadwaita as adw;
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
     config_set, default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
-    search_query_mode,
     start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
 };
 
@@ -525,7 +524,6 @@ fn run() {
         list_scroller.add_css_class("hop-launcher-scroll");
 
         content.append(&entry);
-        content.append(&status);
         content.append(&list_scroller);
         window.set_content(Some(&content));
 
@@ -2304,7 +2302,6 @@ fn refresh_results(
     }
 
     status.set_text(&render_status_text(QueryState::Searching));
-    let mode_label = search_query_mode(query).to_ascii_uppercase();
     match search(socket_path, query, max_results) {
         Ok(rows) => {
             let rows = filter_results_by_settings(rows, ui_settings);
@@ -2386,14 +2383,11 @@ fn refresh_results(
                     list.select_row(Some(&first));
                 }
             }
-            if rows.is_empty() {
-                status.set_text(&format!("{mode_label} · {}", render_status_text(QueryState::Empty)));
+            status.set_text(&render_status_text(if rows.is_empty() {
+                QueryState::Empty
             } else {
-                status.set_text(&format!(
-                    "{mode_label} · {}",
-                    render_status_text(QueryState::Results { count: rows.len() })
-                ));
-            }
+                QueryState::Results { count: rows.len() }
+            }));
         }
         Err(error) => {
             results.borrow_mut().clear();
