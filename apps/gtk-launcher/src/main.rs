@@ -31,7 +31,7 @@ use libadwaita as adw;
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
     default_hopd_socket_path, execute, parse_control_request, search, start_visible_on_launch,
-    toggle_accelerator, LauncherResult,
+    toggle_accelerator, ControlMethod, LauncherResult,
 };
 
 fn main() {
@@ -228,12 +228,15 @@ fn handle_control_stream(mut stream: UnixStream, toggle_tx: &mpsc::Sender<()>) -
         .unwrap_or("unknown");
 
     let response = match parse_control_request(&payload) {
-        Ok(_) => {
-            if toggle_tx.send(()).is_err() {
-                build_control_error_response(request_id, -32000, "toggle dispatch failed")
-            } else {
-                build_control_ok_response(request_id)
+        Ok(request) => match request.method {
+            ControlMethod::Toggle => {
+                if toggle_tx.send(()).is_err() {
+                    build_control_error_response(request_id, -32000, "toggle dispatch failed")
+                } else {
+                    build_control_ok_response(request_id)
+                }
             }
+            ControlMethod::Ping => build_control_ok_response(request_id),
         }
         Err(error) => build_control_error_response(request_id, -32601, &error),
     };

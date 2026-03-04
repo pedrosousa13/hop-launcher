@@ -14,6 +14,13 @@ pub struct LauncherResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControlRequest {
     pub id: String,
+    pub method: ControlMethod,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlMethod {
+    Toggle,
+    Ping,
 }
 
 pub fn default_hopd_socket_path() -> String {
@@ -50,10 +57,15 @@ pub fn parse_control_request(payload: &Value) -> Result<ControlRequest, String> 
         .get("method")
         .and_then(Value::as_str)
         .ok_or_else(|| "missing string method".to_string())?;
-    if method != "ui.toggle" {
-        return Err(format!("unsupported method: {}", method));
-    }
-    Ok(ControlRequest { id: id.to_string() })
+    let method = match method {
+        "ui.toggle" => ControlMethod::Toggle,
+        "ui.ping" => ControlMethod::Ping,
+        other => return Err(format!("unsupported method: {}", other)),
+    };
+    Ok(ControlRequest {
+        id: id.to_string(),
+        method,
+    })
 }
 
 pub fn build_control_ok_response(id: &str) -> Value {
@@ -218,6 +230,19 @@ mod tests {
 
         let request = parse_control_request(&payload).expect("toggle request should parse");
         assert_eq!(request.id, "ctrl-1");
+        assert_eq!(request.method, ControlMethod::Toggle);
+    }
+
+    #[test]
+    fn control_parse_ping_request_accepts_ui_ping() {
+        let payload = serde_json::json!({
+            "id": "ctrl-2",
+            "method": "ui.ping"
+        });
+
+        let request = parse_control_request(&payload).expect("ping request should parse");
+        assert_eq!(request.id, "ctrl-2");
+        assert_eq!(request.method, ControlMethod::Ping);
     }
 
     #[test]
