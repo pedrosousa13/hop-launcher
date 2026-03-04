@@ -84,13 +84,14 @@ fn run_x11_hotkey_loop(socket_path: String) -> Result<(), String> {
     let screen = &conn.setup().roots[screen_num];
     let root = screen.root;
 
+    let numlock_mask = detect_numlock_mask(&conn)?.unwrap_or(ModMask::M2);
     let keycodes = find_toggle_keycodes(&conn)?;
     if keycodes.is_empty() {
         return Err("no keycode found for ampersand/7".to_string());
     }
 
     for keycode in keycodes {
-        for modifiers in hotkey_modifier_variants() {
+        for modifiers in hotkey_modifier_variants(numlock_mask) {
             conn.grab_key(
                 false,
                 root,
@@ -121,12 +122,12 @@ fn run_x11_hotkey_loop(socket_path: String) -> Result<(), String> {
     }
 }
 
-fn hotkey_modifier_variants() -> [ModMask; 4] {
+fn hotkey_modifier_variants(numlock_mask: ModMask) -> [ModMask; 4] {
     [
         ModMask::CONTROL | ModMask::SHIFT,
         ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK,
-        ModMask::CONTROL | ModMask::SHIFT | ModMask::M2,
-        ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK | ModMask::M2,
+        ModMask::CONTROL | ModMask::SHIFT | numlock_mask,
+        ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK | numlock_mask,
     ]
 }
 
@@ -166,6 +167,75 @@ fn find_toggle_keycodes(conn: &impl Connection) -> Result<Vec<u8>, String> {
         }
     }
     Ok(keycodes)
+}
+
+fn detect_numlock_mask(conn: &impl Connection) -> Result<Option<ModMask>, String> {
+    const XK_NUM_LOCK: u32 = 0xFF7F;
+
+    let setup = conn.setup();
+    let min_keycode = setup.min_keycode;
+    let max_keycode = setup.max_keycode;
+    let keycode_count = max_keycode.saturating_sub(min_keycode).saturating_add(1);
+
+    let mapping = conn
+        .get_keyboard_mapping(min_keycode, keycode_count)
+        .map_err(|error| format!("x11 get keyboard mapping request failed: {}", error))?
+        .reply()
+        .map_err(|error| format!("x11 get keyboard mapping reply failed: {}", error))?;
+    let per_keycode = mapping.keysyms_per_keycode as usize;
+    if per_keycode == 0 {
+        return Ok(None);
+    }
+
+    let modifier_mapping = conn
+        .get_modifier_mapping()
+        .map_err(|error| format!("x11 get modifier mapping request failed: {}", error))?
+        .reply()
+        .map_err(|error| format!("x11 get modifier mapping reply failed: {}", error))?;
+    let keys_per_mod = modifier_mapping.keycodes_per_modifier() as usize;
+    if keys_per_mod == 0 {
+        return Ok(None);
+    }
+
+    for (mod_index, keycode_chunk) in modifier_mapping
+        .keycodes
+        .chunks(keys_per_mod)
+        .enumerate()
+    {
+        for keycode in keycode_chunk {
+            if *keycode == 0 {
+                continue;
+            }
+            let idx = (*keycode).saturating_sub(min_keycode) as usize;
+            let start = idx.saturating_mul(per_keycode);
+            let end = start.saturating_add(per_keycode);
+            if end > mapping.keysyms.len() {
+                continue;
+            }
+            if mapping.keysyms[start..end]
+                .iter()
+                .any(|keysym| *keysym == XK_NUM_LOCK)
+            {
+                return Ok(mod_index_to_mask(mod_index));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn mod_index_to_mask(index: usize) -> Option<ModMask> {
+    match index {
+        0 => Some(ModMask::SHIFT),
+        1 => Some(ModMask::LOCK),
+        2 => Some(ModMask::CONTROL),
+        3 => Some(ModMask::M1),
+        4 => Some(ModMask::M2),
+        5 => Some(ModMask::M3),
+        6 => Some(ModMask::M4),
+        7 => Some(ModMask::M5),
+        _ => None,
+    }
 }
 
 fn main() {
@@ -212,10 +282,19 @@ mod tests {
 
     #[test]
     fn variants_include_lock_modifier_combinations() {
-        let variants = hotkey_modifier_variants();
+        let variants = hotkey_modifier_variants(ModMask::M2);
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT)));
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK)));
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT | ModMask::M2)));
+    }
+
+    #[test]
+    fn variants_use_detected_numlock_mask() {
+        let variants = hotkey_modifier_variants(ModMask::M4);
+        assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT | ModMask::M4)));
+        assert!(variants.contains(
+            &(ModMask::CONTROL | ModMask::SHIFT | ModMask::LOCK | ModMask::M4)
+        ));
     }
 
     #[test]
@@ -233,5 +312,13 @@ mod tests {
             &mut last,
             Duration::from_millis(220)
         ));
+    }
+
+    #[test]
+    fn modifier_index_mapping_matches_x11_order() {
+        assert_eq!(mod_index_to_mask(3), Some(ModMask::M1));
+        assert_eq!(mod_index_to_mask(4), Some(ModMask::M2));
+        assert_eq!(mod_index_to_mask(7), Some(ModMask::M5));
+        assert_eq!(mod_index_to_mask(9), None);
     }
 }
