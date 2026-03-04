@@ -66,6 +66,7 @@ struct LauncherUiSettings {
     open_animation_ms: i32,
     close_animation_ms: i32,
     debounce_ms: i32,
+    density_mode: String,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -92,7 +93,34 @@ impl Default for LauncherUiSettings {
             open_animation_ms: 140,
             close_animation_ms: 110,
             debounce_ms: 15,
+            density_mode: "default".to_string(),
         }
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn sanitize_density_mode(raw: &str) -> String {
+    match raw {
+        "compact" | "comfortable" | "default" => raw.to_string(),
+        _ => "default".to_string(),
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn density_mode_to_index(mode: &str) -> u32 {
+    match mode {
+        "compact" => 0,
+        "comfortable" => 2,
+        _ => 1,
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn density_index_to_mode(index: u32) -> String {
+    match index {
+        0 => "compact".to_string(),
+        2 => "comfortable".to_string(),
+        _ => "default".to_string(),
     }
 }
 
@@ -210,6 +238,11 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(0, 500) as i32)
         .unwrap_or(default.debounce_ms);
+    let density_mode = json
+        .get("density_mode")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_density_mode)
+        .unwrap_or(default.density_mode);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -232,6 +265,7 @@ fn load_ui_settings() -> LauncherUiSettings {
         open_animation_ms,
         close_animation_ms,
         debounce_ms,
+        density_mode,
     }
 }
 
@@ -264,6 +298,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "open_animation_ms": settings.open_animation_ms,
         "close_animation_ms": settings.close_animation_ms,
         "debounce_ms": settings.debounce_ms,
+        "density_mode": settings.density_mode,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -293,12 +328,30 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ui.open_animation_ms", serde_json::json!(settings.open_animation_ms)),
         ("ui.close_animation_ms", serde_json::json!(settings.close_animation_ms)),
         ("ui.debounce_ms", serde_json::json!(settings.debounce_ms)),
+        ("ui.density_mode", serde_json::json!(settings.density_mode)),
     ];
     for (key, value) in values {
         if let Err(error) = config_set(socket_path, key, value) {
             eprintln!("failed to sync setting {key} to hopd: {error}");
         }
     }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn apply_density_class(window: &adw::ApplicationWindow, mode: &str) {
+    for class_name in [
+        "hop-density-compact",
+        "hop-density-default",
+        "hop-density-comfortable",
+    ] {
+        window.remove_css_class(class_name);
+    }
+    let class_name = match mode {
+        "compact" => "hop-density-compact",
+        "comfortable" => "hop-density-comfortable",
+        _ => "hop-density-default",
+    };
+    window.add_css_class(class_name);
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -326,6 +379,7 @@ fn run() {
             let settings = ui_settings.borrow().clone();
             window.set_opacity(settings.overlay_opacity_percent as f64 / 100.0);
             window.set_decorated(!settings.frameless_window);
+            apply_density_class(&window, &settings.density_mode);
         }
         window.add_css_class("hop-launcher-window");
 
@@ -859,6 +913,34 @@ fn install_css() {
   font-weight: 600;
 }
 
+.hop-launcher-window.hop-density-compact .hop-launcher-list row {
+  margin: 0 3px;
+}
+
+.hop-launcher-window.hop-density-compact .hop-launcher-row-body {
+  min-height: 36px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.hop-launcher-window.hop-density-compact .hop-launcher-subtitle {
+  font-size: 0.82em;
+}
+
+.hop-launcher-window.hop-density-comfortable .hop-launcher-list row {
+  margin: 3px 5px;
+}
+
+.hop-launcher-window.hop-density-comfortable .hop-launcher-row-body {
+  min-height: 52px;
+  margin-top: 9px;
+  margin-bottom: 9px;
+}
+
+.hop-launcher-window.hop-density-comfortable .hop-launcher-subtitle {
+  font-size: 0.98em;
+}
+
 .hop-launcher-icon {
   margin-end: 2px;
 }
@@ -1084,6 +1166,35 @@ fn open_settings_window(
         socket_path,
         |state, value| state.debounce_ms = value,
     );
+    let density_row = adw::ActionRow::builder()
+        .title("Layout density")
+        .subtitle("Adjust row spacing and compactness in results.")
+        .build();
+    let density = gtk::DropDown::from_strings(&["Compact", "Default", "Comfortable"]);
+    density.set_selected(density_mode_to_index(&settings.borrow().density_mode));
+    density.set_valign(gtk::Align::Center);
+    density_row.add_suffix(&density);
+    density_row.set_activatable_widget(Some(&density));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let parent = parent.clone();
+        density.connect_selected_notify(move |widget| {
+            let mut next = settings.borrow().clone();
+            next.density_mode = density_index_to_mode(widget.selected());
+            apply_density_class(&parent, &next.density_mode);
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) =
+                config_set(&socket_path, "ui.density_mode", serde_json::json!(next.density_mode))
+            {
+                eprintln!("failed to sync setting to hopd: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    behavior.add(&density_row);
     add_integer_spin_row(
         &behavior,
         "Open animation (ms)",
