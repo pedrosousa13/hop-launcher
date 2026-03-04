@@ -15,6 +15,8 @@ use std::thread;
 #[cfg(feature = "gtk_ui")]
 use std::time::Duration;
 #[cfg(feature = "gtk_ui")]
+use std::time::Instant;
+#[cfg(feature = "gtk_ui")]
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "gtk_ui")]
@@ -60,6 +62,9 @@ struct LauncherUiSettings {
     weight_emoji: i32,
     weight_utility: i32,
     min_fuzzy_score: i32,
+    animations_enabled: bool,
+    open_animation_ms: i32,
+    close_animation_ms: i32,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -82,6 +87,9 @@ impl Default for LauncherUiSettings {
             weight_emoji: 8,
             weight_utility: 6,
             min_fuzzy_score: 30,
+            animations_enabled: true,
+            open_animation_ms: 140,
+            close_animation_ms: 110,
         }
     }
 }
@@ -181,6 +189,20 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(0, 400) as i32)
         .unwrap_or(default.min_fuzzy_score);
+    let animations_enabled = json
+        .get("animations_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default.animations_enabled);
+    let open_animation_ms = json
+        .get("open_animation_ms")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 500) as i32)
+        .unwrap_or(default.open_animation_ms);
+    let close_animation_ms = json
+        .get("close_animation_ms")
+        .and_then(serde_json::Value::as_i64)
+        .map(|v| v.clamp(1, 500) as i32)
+        .unwrap_or(default.close_animation_ms);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -199,6 +221,9 @@ fn load_ui_settings() -> LauncherUiSettings {
         weight_emoji,
         weight_utility,
         min_fuzzy_score,
+        animations_enabled,
+        open_animation_ms,
+        close_animation_ms,
     }
 }
 
@@ -227,6 +252,9 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "weight_emoji": settings.weight_emoji,
         "weight_utility": settings.weight_utility,
         "min_fuzzy_score": settings.min_fuzzy_score,
+        "animations_enabled": settings.animations_enabled,
+        "open_animation_ms": settings.open_animation_ms,
+        "close_animation_ms": settings.close_animation_ms,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -252,6 +280,9 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ranking.weight_emoji", serde_json::json!(settings.weight_emoji)),
         ("ranking.weight_utility", serde_json::json!(settings.weight_utility)),
         ("ranking.min_fuzzy_score", serde_json::json!(settings.min_fuzzy_score)),
+        ("ui.animations_enabled", serde_json::json!(settings.animations_enabled)),
+        ("ui.open_animation_ms", serde_json::json!(settings.open_animation_ms)),
+        ("ui.close_animation_ms", serde_json::json!(settings.close_animation_ms)),
     ];
     for (key, value) in values {
         if let Err(error) = config_set(socket_path, key, value) {
@@ -359,8 +390,9 @@ fn run() {
         {
             let window = window.clone();
             let entry = entry.clone();
+            let ui_settings = ui_settings.clone();
             toggle.connect_activate(move |_, _| {
-                toggle_window(&window, &entry);
+                toggle_window(&window, &entry, &ui_settings.borrow());
             });
         }
         app.add_action(&toggle);
@@ -370,9 +402,10 @@ fn run() {
         {
             let window = window.clone();
             let entry = entry.clone();
+            let ui_settings = ui_settings.clone();
             gtk::glib::timeout_add_local(Duration::from_millis(30), move || {
                 while toggle_rx.try_recv().is_ok() {
-                    toggle_window(&window, &entry);
+                    toggle_window(&window, &entry, &ui_settings.borrow());
                 }
                 gtk::glib::ControlFlow::Continue
             });
@@ -433,7 +466,7 @@ fn run() {
                             ))));
                         } else {
                             status.set_text(&render_status_text(QueryState::Executed));
-                            window.hide();
+                            hide_window(&window, &ui_settings.borrow());
                             entry.set_text("");
                         }
                     }
@@ -481,7 +514,7 @@ fn run() {
                         true.into()
                     }
                     gtk::gdk::Key::Escape => {
-                        window.hide();
+                        hide_window(&window, &ui_settings.borrow());
                         true.into()
                     }
                     gtk::gdk::Key::comma if is_ctrl => {
@@ -523,7 +556,7 @@ fn run() {
                         ))));
                     } else {
                         status.set_text(&render_status_text(QueryState::Executed));
-                        window.hide();
+                        hide_window(&window, &ui_settings.borrow());
                         entry.set_text("");
                     }
                 }
@@ -541,10 +574,9 @@ fn run() {
         );
 
         if start_visible_on_launch() {
-            window.present();
-            entry.grab_focus();
+            present_window(&window, &entry, &ui_settings.borrow());
         } else {
-            window.hide();
+            hide_window(&window, &ui_settings.borrow());
         }
     });
 
@@ -552,14 +584,79 @@ fn run() {
 }
 
 #[cfg(feature = "gtk_ui")]
-fn toggle_window(window: &adw::ApplicationWindow, entry: &gtk::Entry) {
+fn toggle_window(
+    window: &adw::ApplicationWindow,
+    entry: &gtk::Entry,
+    settings: &LauncherUiSettings,
+) {
     if window.is_visible() {
-        window.hide();
+        hide_window(window, settings);
     } else {
-        window.present();
-        entry.grab_focus();
-        entry.set_position(-1);
+        present_window(window, entry, settings);
     }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn present_window(window: &adw::ApplicationWindow, entry: &gtk::Entry, settings: &LauncherUiSettings) {
+    let target_opacity = settings.overlay_opacity_percent as f64 / 100.0;
+    if settings.animations_enabled {
+        window.set_opacity(0.0);
+        window.present();
+        animate_window_opacity(window.clone(), 0.0, target_opacity, settings.open_animation_ms);
+    } else {
+        window.set_opacity(target_opacity);
+        window.present();
+    }
+    entry.grab_focus();
+    entry.set_position(-1);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn hide_window(window: &adw::ApplicationWindow, settings: &LauncherUiSettings) {
+    let target_opacity = settings.overlay_opacity_percent as f64 / 100.0;
+    if !window.is_visible() {
+        window.set_opacity(target_opacity);
+        return;
+    }
+    if settings.animations_enabled {
+        let from = window.opacity();
+        let duration = settings.close_animation_ms;
+        animate_window_opacity(window.clone(), from, 0.0, duration);
+        let window_clone = window.clone();
+        gtk::glib::timeout_add_local_once(Duration::from_millis(duration.max(1) as u64), move || {
+            window_clone.hide();
+            window_clone.set_opacity(target_opacity);
+        });
+    } else {
+        window.hide();
+        window.set_opacity(target_opacity);
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn animate_window_opacity(
+    window: adw::ApplicationWindow,
+    from: f64,
+    to: f64,
+    duration_ms: i32,
+) {
+    if duration_ms <= 1 {
+        window.set_opacity(to);
+        return;
+    }
+    let duration = duration_ms as f64;
+    let started = Instant::now();
+    gtk::glib::timeout_add_local(Duration::from_millis(16), move || {
+        let elapsed = started.elapsed().as_millis() as f64;
+        let progress = (elapsed / duration).clamp(0.0, 1.0);
+        let current = from + (to - from) * progress;
+        window.set_opacity(current);
+        if progress >= 1.0 {
+            gtk::glib::ControlFlow::Break
+        } else {
+            gtk::glib::ControlFlow::Continue
+        }
+    });
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -915,6 +1012,60 @@ fn open_settings_window(
         });
     }
     behavior.add(&results_row);
+
+    let animations_row = adw::ActionRow::builder()
+        .title("Animations enabled")
+        .subtitle("Animate launcher open and close transitions.")
+        .build();
+    let animations_switch = gtk::Switch::builder()
+        .active(settings.borrow().animations_enabled)
+        .valign(gtk::Align::Center)
+        .build();
+    animations_row.add_suffix(&animations_switch);
+    animations_row.set_activatable_widget(Some(&animations_switch));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        animations_switch.connect_active_notify(move |widget| {
+            let mut next = settings.borrow().clone();
+            next.animations_enabled = widget.is_active();
+            if let Err(error) = save_ui_settings(&next) {
+                eprintln!("failed to save launcher settings: {error}");
+            }
+            if let Err(error) =
+                config_set(&socket_path, "ui.animations_enabled", serde_json::json!(next.animations_enabled))
+            {
+                eprintln!("failed to sync setting to hopd: {error}");
+            }
+            *settings.borrow_mut() = next;
+        });
+    }
+    behavior.add(&animations_row);
+
+    add_integer_spin_row(
+        &behavior,
+        "Open animation (ms)",
+        "Duration for launcher open transition.",
+        settings.borrow().open_animation_ms,
+        1,
+        500,
+        "ui.open_animation_ms",
+        settings.clone(),
+        socket_path,
+        |state, value| state.open_animation_ms = value,
+    );
+    add_integer_spin_row(
+        &behavior,
+        "Close animation (ms)",
+        "Duration for launcher close transition.",
+        settings.borrow().close_animation_ms,
+        1,
+        500,
+        "ui.close_animation_ms",
+        settings.clone(),
+        socket_path,
+        |state, value| state.close_animation_ms = value,
+    );
 
     add_provider_switch_row(
         &providers,
