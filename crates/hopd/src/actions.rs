@@ -35,7 +35,7 @@ pub fn execute(params: &Value) -> Value {
 
     json!({
         "ok": true,
-        "executed": !result_id.is_empty(),
+        "executed": action_resolved,
         "action_resolved": action_resolved,
         "launch_spawned": launch_spawned,
         "execution_status": execution_status,
@@ -236,6 +236,7 @@ mod tests {
             "action": "enter",
         });
         let response = execute(&payload);
+        assert_eq!(response["executed"], false);
         assert_eq!(response["execution_status"], "unresolved");
         assert_eq!(response["error_message"], "unsupported result id");
     }

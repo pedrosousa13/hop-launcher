@@ -537,7 +537,7 @@ mod tests {
             "id": "gtk-execute",
             "result": {
                 "ok": true,
-                "executed": true,
+                "executed": false,
                 "action_resolved": false,
                 "launch_spawned": false,
                 "execution_status": "unresolved",
