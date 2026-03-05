@@ -55,6 +55,7 @@ Completed in this branch:
 23. Switched release workflow to semver-tag/manual-tag operation and added `SHA256SUMS` generation for published assets.
 24. Expanded release artifact packaging to include multi-arch (`x86_64`, `aarch64`) daemon/helper tarballs with manifest/checksum coverage.
 25. Centralized GTK settings shortcut accelerators (`Ctrl+,`, `Super+,`, `Meta+,`) into shared library contract for keyboard consistency.
+26. Ran full verification matrix and benchmark guard checks; documented packaging dry-run prerequisite constraints in release checklist.
 
 ## Next Milestones
 

@@ -73,3 +73,22 @@ On a clean Linux user account:
 For `.deb`/APT and cross-distro guidance, follow:
 
 - `docs/LINUX_PACKAGING.md`
+
+## Verification Snapshot (2026-03-05)
+
+Observed passing commands in this branch:
+
+```bash
+cd crates/hopd && cargo test
+cd ../hop-hotkeyd && cargo test
+cd ../../apps/gtk-launcher && cargo test --features gtk_ui
+cd ../gnome-extension && npm test
+cd ../../crates/hopd && cargo run --bin hopd-bench -- 5 > /tmp/hopd-bench-final.txt
+bash scripts/check-bench-thresholds.sh /tmp/hopd-bench-final.txt
+bash scripts/bench-trend-report.sh /tmp/hopd-bench-final.txt > /tmp/hopd-bench-final-summary.md
+```
+
+Packaging dry-run note:
+
+- `dpkg-buildpackage -us -uc -b` currently requires Debian build dependencies (`dh-cargo`, etc.) preinstalled.
+- In restricted environments without `sudo`, package dry-runs may be blocked until dependencies are available.
