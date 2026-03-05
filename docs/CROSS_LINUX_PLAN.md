@@ -49,6 +49,7 @@ Completed in this branch:
 17. Wired CI baseline retrieval for `hopd-bench` artifacts so summary reports can include cross-run deltas automatically when prior artifacts exist.
 18. Extended KDE helper CLI with runner output format (`--format runner`) for adapter-friendly tabular result consumption.
 19. Upgraded explicit `utility ...` provider behavior from static filtering to intent-aware rows (calculator/currency/weather/timezone/emoji with location parsing).
+20. Included `kde-hopd-query` in Debian package install targets so KDE adapter helper ships as an installable artifact.
 
 ## Next Milestones
 

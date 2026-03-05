@@ -1,2 +1,3 @@
 target/release/hopd usr/bin/
+target/release/kde-hopd-query usr/bin/
 debian/hopd.service usr/lib/systemd/user/

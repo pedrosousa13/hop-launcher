@@ -13,3 +13,4 @@ Depends: ${misc:Depends}, ${shlibs:Depends}, ${cargo:Depends}
 Description: Hop Launcher daemon providing launcher IPC methods
  hopd serves Unix-socket IPC methods used by Hop Launcher frontends.
  It supports utility intent execution and health/metrics endpoints.
+ This package also ships the kde-hopd-query adapter helper CLI.

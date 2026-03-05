@@ -7,6 +7,7 @@ This guide covers practical distribution paths for Hop Launcher components.
 Current shippable pieces in this repository:
 
 - `hopd` (Rust daemon)
+- `kde-hopd-query` (KDE adapter helper CLI, shipped inside `hopd` package)
 - `hop-hotkeyd` (Rust global hotkey agent)
 - GNOME extension zip (`apps/gnome-extension/dist/*.zip`)
 
