@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -136,6 +137,7 @@ fn default_params() -> Value {
 }
 
 fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value {
+    let started_at = Instant::now();
     let query = params
         .get("query")
         .and_then(Value::as_str)
@@ -189,11 +191,12 @@ fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value
             })
         })
         .collect();
+    let elapsed_ms = started_at.elapsed().as_millis() as u64;
 
     json!({
         "results": results,
         "telemetry": {
-            "elapsed_ms": 0,
+            "elapsed_ms": elapsed_ms,
         }
     })
 }
