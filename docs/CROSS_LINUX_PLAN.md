@@ -42,11 +42,12 @@ Completed in this branch:
 10. Replaced utility placeholder provider with explicit utility catalog rows (calculator/currency/weather/timezone/emoji) plus intent-term filtering.
 11. Extended KDE adapter transport with `actions.execute` socket requests and added CLI execute mode (`kde-hopd-query --execute <result_id>`).
 12. Added CI benchmark guardrail enforcement (`check-bench-thresholds.sh`) so p95 latency regressions fail the `hopd` job.
+13. Replaced static settings rows with desktop-entry-backed settings discovery and `settingcmd:` execution wiring for real settings launch commands.
 
 ## Next Milestones
 
 1. Expand `search.query` providers from catalog heuristics to real data-backed provider modules.
-2. Replace deterministic provider scaffolds with real desktop-backed data sources and execution handlers.
+2. Replace remaining deterministic provider scaffolds with real desktop-backed data sources and execution handlers (utility first).
 3. Integrate KDE transport helper into a real KDE launcher/runner adapter surface.
 4. Add trend reporting for benchmark artifacts so CI history highlights latency drift, not only threshold failures.
 

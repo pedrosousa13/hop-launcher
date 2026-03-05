@@ -52,6 +52,10 @@ fn command_for_result_id_with_desktop(
     result_id: &str,
     desktop: &str,
 ) -> Option<(String, Vec<String>)> {
+    if let Some(payload) = result_id.strip_prefix("settingcmd:") {
+        return parse_setting_command_payload(payload);
+    }
+
     if let Some(desktop_id) = result_id.strip_prefix("app:") {
         if desktop_id.is_empty() {
             return None;
@@ -157,6 +161,25 @@ fn command_for_result_id_with_desktop(
     None
 }
 
+fn parse_setting_command_payload(payload: &str) -> Option<(String, Vec<String>)> {
+    if payload.trim().is_empty() {
+        return None;
+    }
+
+    let mut parts = payload
+        .split('|')
+        .map(decode_component)
+        .collect::<Option<Vec<String>>>()?;
+    if parts.is_empty() {
+        return None;
+    }
+    let command = parts.remove(0);
+    if command.trim().is_empty() {
+        return None;
+    }
+    Some((command, parts))
+}
+
 fn encode_component(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for byte in raw.bytes() {
@@ -171,6 +194,27 @@ fn encode_component(raw: &str) -> String {
         }
     }
     out
+}
+
+fn decode_component(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(raw.len());
+    let bytes = raw.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
+            }
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+            let value = u8::from_str_radix(hex, 16).ok()?;
+            out.push(value as char);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    Some(out)
 }
 
 fn spawn_with_fallback(cmd: &str, args: &[String]) -> bool {
@@ -254,6 +298,17 @@ mod tests {
             .expect("kde settings command");
         assert_eq!(resolved.0, "systemsettings5");
         assert_eq!(resolved.1, vec!["network".to_string()]);
+    }
+
+    #[test]
+    fn resolves_settingcmd_result_id_to_direct_command() {
+        let resolved = command_for_result_id_with_desktop(
+            "settingcmd:gnome-control-center|privacy",
+            "GNOME",
+        )
+        .expect("settingcmd command");
+        assert_eq!(resolved.0, "gnome-control-center");
+        assert_eq!(resolved.1, vec!["privacy".to_string()]);
     }
 
     #[test]
