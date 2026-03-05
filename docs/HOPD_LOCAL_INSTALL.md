@@ -25,6 +25,17 @@ What this does:
 6. On GNOME sessions, attempts to configure a custom keybinding for `hop-hotkeyd trigger`.
 7. On KDE sessions, prints KGlobalAccel helper guidance and probe command hints.
 
+## KDE Adapter Helper
+
+- Query utility intent (default route guard):  
+  `cargo run --bin kde-hopd-query -- weather zurich`
+- Query full provider routes explicitly:  
+  `cargo run --bin kde-hopd-query -- --mode all firefox`
+- Emit runner-friendly tab-separated rows (`id<TAB>title<TAB>subtitle<TAB>icon<TAB>kind`):  
+  `cargo run --bin kde-hopd-query -- --mode all --format runner firefox`
+- Execute a selected row:  
+  `cargo run --bin kde-hopd-query -- --execute app:firefox.desktop`
+
 ## Useful options
 
 ```bash

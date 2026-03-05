@@ -47,6 +47,7 @@ Completed in this branch:
 15. Improved utility-intent coverage with dynamic weather/time location parsing (`weather <city>`, `<city> weather`, `<city> time`) and weather-location execution URLs.
 16. Added benchmark summary/trend reporting script (`bench-trend-report.sh`) and CI artifact publication for markdown latency snapshots.
 17. Wired CI baseline retrieval for `hopd-bench` artifacts so summary reports can include cross-run deltas automatically when prior artifacts exist.
+18. Extended KDE helper CLI with runner output format (`--format runner`) for adapter-friendly tabular result consumption.
 
 ## Next Milestones
 
