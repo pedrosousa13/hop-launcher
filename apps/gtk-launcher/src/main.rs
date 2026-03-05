@@ -2549,6 +2549,18 @@ fn build_result_icon(row: &LauncherResult) -> gtk::Image {
             }
         }
     }
+    if matches!(row.kind.as_str(), "file" | "recent") {
+        if let Some(path) = result_local_path(row) {
+            let file = gio::File::for_path(path);
+            if let Ok(info) =
+                file.query_info("standard::icon", gio::FileQueryInfoFlags::NONE, None::<&gio::Cancellable>)
+            {
+                if let Some(icon) = info.icon() {
+                    return gtk::Image::from_gicon(&icon);
+                }
+            }
+        }
+    }
     if row.kind == "window" {
         if let Some(desktop_id) = resolve_desktop_id_for_window_hint(&row.icon) {
             if let Some(app_info) = gio::DesktopAppInfo::new(&desktop_id) {
@@ -2581,6 +2593,24 @@ fn build_result_icon(row: &LauncherResult) -> gtk::Image {
         _ => "system-search-symbolic",
     };
     gtk::Image::from_icon_name(fallback)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn result_local_path(row: &LauncherResult) -> Option<String> {
+    let raw = if let Some(path) = row.id.strip_prefix("file:") {
+        path
+    } else if let Some(path) = row.id.strip_prefix("recent:") {
+        path
+    } else {
+        return None;
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    gtk::glib::uri_unescape_string(trimmed, None::<&str>)
+        .map(|value| value.to_string())
+        .or_else(|| Some(trimmed.to_string()))
 }
 
 #[cfg(feature = "gtk_ui")]
