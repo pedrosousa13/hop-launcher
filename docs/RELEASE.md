@@ -32,7 +32,11 @@ The release workflow currently builds:
 
 - GNOME extension zip (`apps/gnome-extension/dist/*.zip`)
 - `hopd-linux-x86_64.tar.gz`
+- `hopd-linux-aarch64.tar.gz`
 - `hop-hotkeyd-linux-x86_64.tar.gz`
+- `hop-hotkeyd-linux-aarch64.tar.gz`
+- `kde-hopd-query-linux-x86_64.tar.gz`
+- `kde-hopd-query-linux-aarch64.tar.gz`
 - `.deb` packages for `hopd` and `hop-hotkeyd`
 - artifact manifest (`dist/ARTIFACT_MANIFEST.txt`) validated before upload/release
 - `SHA256SUMS` checksum file for all release assets

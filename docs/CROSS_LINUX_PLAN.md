@@ -53,6 +53,7 @@ Completed in this branch:
 21. Applied GTK minimal-noise status policy (silent steady-state status text; transient searching/errors only) and updated manual polish checklist.
 22. Hardened CI/release artifact validation with reusable manifest verification script and enabled `gtk_ui` test coverage in workflow gates.
 23. Switched release workflow to semver-tag/manual-tag operation and added `SHA256SUMS` generation for published assets.
+24. Expanded release artifact packaging to include multi-arch (`x86_64`, `aarch64`) daemon/helper tarballs with manifest/checksum coverage.
 
 ## Next Milestones
 

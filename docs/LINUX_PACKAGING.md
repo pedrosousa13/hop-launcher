@@ -75,9 +75,15 @@ systemctl --user enable --now hop-hotkeyd.service
 Already produced by release workflow:
 
 - `hopd-linux-x86_64.tar.gz`
+- `hopd-linux-aarch64.tar.gz`
 - `hop-hotkeyd-linux-x86_64.tar.gz`
+- `hop-hotkeyd-linux-aarch64.tar.gz`
+- `kde-hopd-query-linux-x86_64.tar.gz`
+- `kde-hopd-query-linux-aarch64.tar.gz`
 
 Good for early adopters and non-Debian distros.
+
+Note: `.deb` packages are currently built for the runner host architecture in CI/release.
 
 ## Option C: Other distro channels
 

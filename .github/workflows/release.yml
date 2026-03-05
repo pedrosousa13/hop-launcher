@@ -58,8 +58,11 @@ jobs:
 
       - name: Build daemon binaries
         run: |
-          cargo build --release --manifest-path crates/hopd/Cargo.toml
-          cargo build --release --manifest-path crates/hop-hotkeyd/Cargo.toml
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          cargo build --release --target x86_64-unknown-linux-gnu --manifest-path crates/hopd/Cargo.toml
+          cargo build --release --target aarch64-unknown-linux-gnu --manifest-path crates/hopd/Cargo.toml
+          cargo build --release --target x86_64-unknown-linux-gnu --manifest-path crates/hop-hotkeyd/Cargo.toml
+          cargo build --release --target aarch64-unknown-linux-gnu --manifest-path crates/hop-hotkeyd/Cargo.toml
 
       - name: Install Debian packaging dependencies
         run: |
@@ -75,12 +78,21 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp crates/hopd/target/release/hopd dist/hopd
-          cp crates/hopd/target/release/kde-hopd-query dist/kde-hopd-query
-          cp crates/hop-hotkeyd/target/release/hop-hotkeyd dist/hop-hotkeyd
-          tar -C dist -czf dist/hopd-linux-x86_64.tar.gz hopd
-          tar -C dist -czf dist/kde-hopd-query-linux-x86_64.tar.gz kde-hopd-query
-          tar -C dist -czf dist/hop-hotkeyd-linux-x86_64.tar.gz hop-hotkeyd
+
+          cp crates/hopd/target/x86_64-unknown-linux-gnu/release/hopd dist/hopd-x86_64
+          cp crates/hopd/target/x86_64-unknown-linux-gnu/release/kde-hopd-query dist/kde-hopd-query-x86_64
+          cp crates/hop-hotkeyd/target/x86_64-unknown-linux-gnu/release/hop-hotkeyd dist/hop-hotkeyd-x86_64
+          tar -C dist -czf dist/hopd-linux-x86_64.tar.gz hopd-x86_64
+          tar -C dist -czf dist/kde-hopd-query-linux-x86_64.tar.gz kde-hopd-query-x86_64
+          tar -C dist -czf dist/hop-hotkeyd-linux-x86_64.tar.gz hop-hotkeyd-x86_64
+
+          cp crates/hopd/target/aarch64-unknown-linux-gnu/release/hopd dist/hopd-aarch64
+          cp crates/hopd/target/aarch64-unknown-linux-gnu/release/kde-hopd-query dist/kde-hopd-query-aarch64
+          cp crates/hop-hotkeyd/target/aarch64-unknown-linux-gnu/release/hop-hotkeyd dist/hop-hotkeyd-aarch64
+          tar -C dist -czf dist/hopd-linux-aarch64.tar.gz hopd-aarch64
+          tar -C dist -czf dist/kde-hopd-query-linux-aarch64.tar.gz kde-hopd-query-aarch64
+          tar -C dist -czf dist/hop-hotkeyd-linux-aarch64.tar.gz hop-hotkeyd-aarch64
+
           mkdir -p dist/deb
           find crates -maxdepth 2 -type f -name '*.deb' -exec cp {} dist/deb/ \;
 
@@ -103,9 +115,7 @@ jobs:
         shell: bash
         run: |
           bash scripts/release/verify-artifacts.sh dist/ARTIFACT_MANIFEST.txt \
-            dist/hopd-linux-x86_64.tar.gz \
-            dist/kde-hopd-query-linux-x86_64.tar.gz \
-            dist/hop-hotkeyd-linux-x86_64.tar.gz \
+            dist \
             dist/deb \
             "${{ steps.asset.outputs.asset_path }}"
 
@@ -114,9 +124,7 @@ jobs:
         run: |
           bash scripts/release/generate-checksums.sh dist/SHA256SUMS \
             "${{ steps.asset.outputs.asset_path }}" \
-            dist/hopd-linux-x86_64.tar.gz \
-            dist/kde-hopd-query-linux-x86_64.tar.gz \
-            dist/hop-hotkeyd-linux-x86_64.tar.gz \
+            dist \
             dist/deb \
             dist/ARTIFACT_MANIFEST.txt
 
@@ -126,9 +134,7 @@ jobs:
           name: hop-launcher-release-assets
           path: |
             ${{ steps.asset.outputs.asset_path }}
-            dist/hopd-linux-x86_64.tar.gz
-            dist/kde-hopd-query-linux-x86_64.tar.gz
-            dist/hop-hotkeyd-linux-x86_64.tar.gz
+            dist/*linux-*.tar.gz
             dist/deb/*.deb
             dist/ARTIFACT_MANIFEST.txt
             dist/SHA256SUMS
@@ -143,9 +149,7 @@ jobs:
           overwrite_files: true
           files: |
             ${{ steps.asset.outputs.asset_path }}
-            dist/hopd-linux-x86_64.tar.gz
-            dist/kde-hopd-query-linux-x86_64.tar.gz
-            dist/hop-hotkeyd-linux-x86_64.tar.gz
+            dist/*linux-*.tar.gz
             dist/deb/*.deb
             dist/ARTIFACT_MANIFEST.txt
             dist/SHA256SUMS
