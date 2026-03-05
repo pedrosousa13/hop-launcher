@@ -3280,6 +3280,8 @@ fn refresh_results(
                 let icon = build_result_icon(row);
                 icon.set_pixel_size(icon_size_for_row(row));
                 icon.set_valign(gtk::Align::Center);
+                icon.set_halign(gtk::Align::Center);
+                icon.set_size_request(24, -1);
                 icon.add_css_class("hop-launcher-icon");
                 if row.kind == "app" {
                     icon.add_css_class("hop-launcher-icon-app");
@@ -3341,9 +3343,9 @@ fn refresh_results(
             }
             let rows_visible = rows.len().min(max_results as usize);
             let estimated_row_height = match ui_settings.density_mode.as_str() {
-                "compact" => 40,
-                "comfortable" => 58,
-                _ => 48,
+                "compact" => 42,
+                "comfortable" => 62,
+                _ => 54,
             };
             let target_height = (rows_visible as i32 * estimated_row_height).clamp(0, 420);
             apply_scroller_height(list_scroller, target_height);
