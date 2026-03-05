@@ -46,6 +46,7 @@ fn main() {
 #[derive(Clone, Debug)]
 struct LauncherUiSettings {
     overlay_opacity_percent: i32,
+    blur_mode: String,
     max_results: u32,
     frameless_window: bool,
     feature_apps_enabled: bool,
@@ -79,6 +80,7 @@ impl Default for LauncherUiSettings {
     fn default() -> Self {
         Self {
             overlay_opacity_percent: 96,
+            blur_mode: "soft".to_string(),
             max_results: 12,
             frameless_window: true,
             feature_apps_enabled: true,
@@ -118,11 +120,37 @@ fn sanitize_density_mode(raw: &str) -> String {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn sanitize_blur_mode(raw: &str) -> String {
+    match raw {
+        "off" | "soft" | "strong" => raw.to_string(),
+        _ => "soft".to_string(),
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
 fn density_mode_to_index(mode: &str) -> u32 {
     match mode {
         "compact" => 0,
         "comfortable" => 2,
         _ => 1,
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn blur_mode_to_index(mode: &str) -> u32 {
+    match mode {
+        "off" => 0,
+        "strong" => 2,
+        _ => 1,
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn blur_index_to_mode(index: u32) -> String {
+    match index {
+        0 => "off".to_string(),
+        2 => "strong".to_string(),
+        _ => "soft".to_string(),
     }
 }
 
@@ -162,6 +190,11 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(80, 100) as i32)
         .unwrap_or(default.overlay_opacity_percent);
+    let blur_mode = json
+        .get("blur_mode")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_blur_mode)
+        .unwrap_or(default.blur_mode);
     let max_results = json
         .get("max_results")
         .and_then(serde_json::Value::as_u64)
@@ -290,6 +323,7 @@ fn load_ui_settings() -> LauncherUiSettings {
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
+        blur_mode,
         max_results,
         frameless_window: frameless,
         feature_apps_enabled,
@@ -329,6 +363,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
     }
     let payload = serde_json::json!({
         "overlay_opacity_percent": settings.overlay_opacity_percent,
+        "blur_mode": settings.blur_mode,
         "max_results": settings.max_results,
         "frameless_window": settings.frameless_window,
         "feature_apps_enabled": settings.feature_apps_enabled,
@@ -365,6 +400,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
 fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
     let values = [
         ("ui.overlay_opacity_percent", serde_json::json!(settings.overlay_opacity_percent)),
+        ("ui.blur_mode", serde_json::json!(settings.blur_mode)),
         ("ui.max_results", serde_json::json!(settings.max_results)),
         ("ui.frameless_window", serde_json::json!(settings.frameless_window)),
         ("features.apps", serde_json::json!(settings.feature_apps_enabled)),
@@ -421,6 +457,19 @@ fn apply_density_class(window: &adw::ApplicationWindow, mode: &str) {
         "compact" => "hop-density-compact",
         "comfortable" => "hop-density-comfortable",
         _ => "hop-density-default",
+    };
+    window.add_css_class(class_name);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn apply_blur_class(window: &adw::ApplicationWindow, mode: &str) {
+    for class_name in ["hop-blur-off", "hop-blur-soft", "hop-blur-strong"] {
+        window.remove_css_class(class_name);
+    }
+    let class_name = match mode {
+        "off" => "hop-blur-off",
+        "strong" => "hop-blur-strong",
+        _ => "hop-blur-soft",
     };
     window.add_css_class(class_name);
 }
@@ -488,6 +537,7 @@ fn run() {
             window.set_opacity(settings.overlay_opacity_percent as f64 / 100.0);
             window.set_decorated(!settings.frameless_window);
             apply_density_class(&window, &settings.density_mode);
+            apply_blur_class(&window, &settings.blur_mode);
         }
         window.add_css_class("hop-launcher-window");
 
@@ -955,6 +1005,33 @@ fn install_css() {
   border-radius: 18px;
   border: 1px solid alpha(@accent_bg_color, 0.20);
   background: linear-gradient(160deg, rgba(20, 26, 34, 0.88), rgba(17, 21, 30, 0.84));
+  box-shadow: 0 16px 32px alpha(black, 0.35);
+}
+
+.hop-launcher-window.hop-blur-off .hop-launcher-content {
+  background: alpha(@window_bg_color, 0.96);
+  border: 1px solid alpha(@headerbar_border_color, 0.42);
+  box-shadow: 0 6px 14px alpha(black, 0.20);
+}
+
+.hop-launcher-window.hop-blur-soft .hop-launcher-content {
+  background: linear-gradient(
+    155deg,
+    alpha(@window_bg_color, 0.70),
+    alpha(@view_bg_color, 0.62)
+  );
+  border: 1px solid alpha(@accent_bg_color, 0.28);
+  box-shadow: 0 16px 32px alpha(black, 0.35);
+}
+
+.hop-launcher-window.hop-blur-strong .hop-launcher-content {
+  background: linear-gradient(
+    150deg,
+    alpha(@window_bg_color, 0.54),
+    alpha(@view_bg_color, 0.46)
+  );
+  border: 1px solid alpha(@accent_bg_color, 0.34);
+  box-shadow: 0 20px 44px alpha(black, 0.42);
 }
 
 .hop-launcher-settings-button {
@@ -1199,6 +1276,47 @@ fn open_settings_window(
         });
     }
     appearance.add(&opacity_row);
+
+    let blur_row = adw::ActionRow::builder()
+        .title("Background blur")
+        .subtitle("Frosted panel intensity for the launcher surface.")
+        .build();
+    let blur = gtk::DropDown::from_strings(&["Off", "Soft", "Strong"]);
+    blur.set_selected(blur_mode_to_index(&settings.borrow().blur_mode));
+    blur.set_valign(gtk::Align::Center);
+    blur_row.add_suffix(&blur);
+    blur_row.set_activatable_widget(Some(&blur));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let parent = parent.clone();
+        let settings_status = settings_status.clone();
+        blur.connect_selected_notify(move |widget| {
+            let mut next = settings.borrow().clone();
+            next.blur_mode = blur_index_to_mode(widget.selected());
+            apply_blur_class(&parent, &next.blur_mode);
+            if let Err(error) = save_ui_settings(&next) {
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
+            }
+            if let Err(error) = config_set(&socket_path, "ui.blur_mode", serde_json::json!(next.blur_mode))
+            {
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Sync failed: {error}"),
+                    true,
+                );
+                return;
+            }
+            set_settings_feedback(&settings_status, "Saved blur mode", false);
+            *settings.borrow_mut() = next;
+        });
+    }
+    appearance.add(&blur_row);
 
     let frame_row = adw::ActionRow::builder()
         .title("Frameless launcher window")
@@ -1721,6 +1839,7 @@ fn open_settings_window(
                 move |path| {
                     let payload = serde_json::json!({
                         "overlay_opacity_percent": settings.borrow().overlay_opacity_percent,
+                        "blur_mode": settings.borrow().blur_mode,
                         "max_results": settings.borrow().max_results,
                         "frameless_window": settings.borrow().frameless_window,
                         "feature_apps_enabled": settings.borrow().feature_apps_enabled,
@@ -1816,6 +1935,7 @@ fn open_settings_window(
                 parent.set_opacity(imported.overlay_opacity_percent as f64 / 100.0);
                 parent.set_decorated(!imported.frameless_window);
                 apply_density_class(&parent, &imported.density_mode);
+                apply_blur_class(&parent, &imported.blur_mode);
                 if let Err(error) = save_ui_settings(&imported) {
                     set_settings_feedback(
                         &settings_status,
@@ -1855,6 +1975,7 @@ fn open_settings_window(
             parent.set_opacity(next.overlay_opacity_percent as f64 / 100.0);
             parent.set_decorated(!next.frameless_window);
             apply_density_class(&parent, &next.density_mode);
+            apply_blur_class(&parent, &next.blur_mode);
             if let Err(error) = save_ui_settings(&next) {
                 set_settings_feedback(&settings_status, &format!("Reset save failed: {error}"), true);
                 return;
@@ -2051,6 +2172,7 @@ fn load_settings_from_path(path: &std::path::Path) -> Result<LauncherUiSettings,
     let default = LauncherUiSettings::default();
     let merged = serde_json::json!({
         "overlay_opacity_percent": json.get("overlay_opacity_percent").cloned().unwrap_or(serde_json::json!(default.overlay_opacity_percent)),
+        "blur_mode": json.get("blur_mode").cloned().unwrap_or(serde_json::json!(default.blur_mode)),
         "max_results": json.get("max_results").cloned().unwrap_or(serde_json::json!(default.max_results)),
         "frameless_window": json.get("frameless_window").cloned().unwrap_or(serde_json::json!(default.frameless_window)),
         "feature_apps_enabled": json.get("feature_apps_enabled").cloned().unwrap_or(serde_json::json!(default.feature_apps_enabled)),
@@ -2109,6 +2231,11 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(80, 100) as i32)
         .unwrap_or(default.overlay_opacity_percent);
+    let blur_mode = json
+        .get("blur_mode")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_blur_mode)
+        .unwrap_or(default.blur_mode);
     let max_results = json
         .get("max_results")
         .and_then(serde_json::Value::as_u64)
@@ -2237,6 +2364,7 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
+        blur_mode,
         max_results,
         frameless_window: frameless,
         feature_apps_enabled,
