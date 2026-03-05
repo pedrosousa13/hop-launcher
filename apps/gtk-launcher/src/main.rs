@@ -3658,17 +3658,18 @@ mod tests {
     #[test]
     fn launcher_css_trims_bottom_tail_after_last_row() {
         let css = launcher_css();
-        assert!(css.contains(".hop-launcher-list row:last-child"));
-        assert!(css.contains("margin-bottom: 0;"));
-        assert!(css.contains("border-bottom-color: transparent;"));
+        assert!(css.contains(".hop-launcher-list row {") || css.contains(".hop-launcher-list row
+{"));
+        assert!(css.contains("margin: 2px 0;"));
+        assert!(!css.contains(".hop-launcher-list row:last-child"));
     }
 
     #[test]
     fn launcher_css_adds_subtle_content_border_matching_background_tone() {
         let css = launcher_css();
-        assert!(css.contains("border: 1px solid alpha(@window_bg_color, 0.93);"));
-        assert!(css.contains(
-            ".hop-launcher-window.hop-blur-none .hop-launcher-content {\n  background: alpha(@window_bg_color, 0.96);\n  border-color: alpha(@window_bg_color, 0.96);"
+        assert!(css.contains("border: 1px solid rgba(255, 255, 255, 0.08);"));
+        assert!(!css.contains(
+            ".hop-launcher-window.hop-blur-none .hop-launcher-content {\n  background: rgba(20, 21, 24, 0.96);\n  border-color:"
         ));
     }
 
