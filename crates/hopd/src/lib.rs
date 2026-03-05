@@ -153,7 +153,8 @@ fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value
         .unwrap_or("all");
 
     let rank = RankSettings::from_config(config);
-    let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query, mode)
+    let indexed_folders = indexed_folders_from_config(config);
+    let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query, mode, &indexed_folders)
         .into_iter()
         .filter_map(|item| {
             let score = score_item(&query, &item, &rank);
@@ -309,8 +310,8 @@ impl SearchItem {
     }
 }
 
-fn aggregate_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
-    let mut items = providers::collect_provider_items(query, mode);
+fn aggregate_provider_items(query: &str, mode: &str, indexed_folders: &[String]) -> Vec<SearchItem> {
+    let mut items = providers::collect_provider_items(query, mode, indexed_folders);
     match mode {
         "calculator" => items.extend(calculator_provider(query)),
         "currency" => items.extend(currency_provider(query)),
@@ -330,6 +331,21 @@ fn aggregate_provider_items(query: &str, mode: &str) -> Vec<SearchItem> {
         }
     }
     items
+}
+
+fn indexed_folders_from_config(config: &HashMap<String, Value>) -> Vec<String> {
+    config
+        .get("search.indexed_folders")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(Value::as_str)
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn score_item(query: &str, item: &SearchItem, rank: &RankSettings) -> i32 {

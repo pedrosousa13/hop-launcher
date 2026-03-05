@@ -3,15 +3,23 @@ use std::path::{Path, PathBuf};
 
 use crate::SearchItem;
 
-pub fn results(query: &str) -> Vec<SearchItem> {
+pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
     if normalized.is_empty() {
         return Vec::new();
     }
 
-    let mut rows = candidate_roots()
+    let mut roots = candidate_roots();
+    roots.extend(
+        indexed_roots
+            .iter()
+            .map(|root| root.trim())
+            .filter(|root| !root.is_empty())
+            .map(PathBuf::from),
+    );
+
+    let mut rows = collect_candidate_files(&roots, 3)
         .into_iter()
-        .flat_map(read_dir_entries)
         .filter(|path| path.is_file())
         .filter_map(|path| {
             let display = path.file_name()?.to_str()?.to_string();
@@ -60,11 +68,40 @@ fn candidate_roots() -> Vec<PathBuf> {
     roots
 }
 
-fn read_dir_entries(path: PathBuf) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(path) else {
-        return Vec::new();
-    };
-    entries.flatten().map(|entry| entry.path()).collect()
+fn collect_candidate_files(roots: &[PathBuf], max_depth: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack: Vec<(PathBuf, usize)> = roots
+        .iter()
+        .cloned()
+        .map(|path| (path, 0))
+        .collect();
+    let mut seen_dirs = std::collections::HashSet::new();
+
+    while let Some((path, depth)) = stack.pop() {
+        let key = path.to_string_lossy().to_string();
+        if !seen_dirs.insert(key) {
+            continue;
+        }
+
+        let Ok(entries) = fs::read_dir(&path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                if depth < max_depth {
+                    stack.push((entry_path, depth + 1));
+                }
+                continue;
+            }
+            out.push(entry_path);
+            if out.len() >= 5000 {
+                return out;
+            }
+        }
+    }
+
+    out
 }
 
 fn icon_for_path(path: &Path) -> String {
@@ -92,6 +129,7 @@ fn icon_for_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn file_icons_match_common_extensions() {
@@ -111,5 +149,34 @@ mod tests {
             icon_for_path(Path::new("/tmp/script.rs")),
             "text-x-script-symbolic"
         );
+    }
+
+    #[test]
+    fn results_with_roots_finds_nested_file_in_indexed_folder() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "hopd-files-provider-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("epoch")
+                .as_nanos()
+        ));
+        let nested_dir = temp_dir.join("projects").join("nested");
+        std::fs::create_dir_all(&nested_dir).expect("create nested dirs");
+        let file_path = nested_dir.join("roadmap-notes.txt");
+        let mut file = std::fs::File::create(&file_path).expect("create file");
+        writeln!(file, "notes").expect("write");
+
+        let rows = results_with_roots(
+            "roadmap-notes",
+            &[temp_dir.to_string_lossy().to_string()],
+        );
+
+        assert!(
+            rows.iter().any(|row| row.id.contains("roadmap-notes.txt")),
+            "expected nested indexed-folder file in results"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
