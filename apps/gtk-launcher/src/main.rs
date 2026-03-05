@@ -1307,11 +1307,11 @@ fn launcher_css() -> &'static str {
 }
 
 .hop-launcher-scroll {
-  border-radius: 12px;
-  border: none;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   outline: none;
   box-shadow: none;
-  background: transparent;
+  background: rgba(13, 14, 16, 0.46);
 }
 
 .hop-launcher-list row {
