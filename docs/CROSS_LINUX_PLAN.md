@@ -26,12 +26,21 @@ Completed in this branch:
 5. Updated GTK UI status flow to report contextual states (`Searching...`, `<n> results`, `No results`, `Error`).
 6. Added staged GNOME convergence toggle (`feature-hopd-convergence-enabled`) for non-utility `hopd` routes.
 
+## Milestone Status (2026-03-05)
+
+Completed in this branch:
+
+1. Extended `actions.execute` contract with explicit command-resolution metadata (`resolved_command`, `resolved_args`) plus `success` semantics in integration tests.
+2. Added real KDE-side socket transport helper (`request_hopd_search_over_socket`) and integration tests against a Unix socket listener.
+3. Added telemetry assertions that validate `elapsed_ms` for both non-utility and utility-intent `search.query` paths.
+4. Added local daemon benchmark entrypoint (`cargo run --bin hopd-bench -- <iterations>`) reporting mean/p95/max search latency for utility and app queries.
+
 ## Next Milestones
 
 1. Expand `search.query` providers from catalog heuristics to real data-backed provider modules.
 2. Replace deterministic provider scaffolds with real desktop-backed data sources and execution handlers.
-3. Add KDE transport integration (actual socket client path), not only request-contract scaffolding.
-4. Add daemon benchmarks and latency telemetry assertions for non-utility + utility-intent queries.
+3. Integrate KDE transport helper into a real KDE launcher/runner adapter surface.
+4. Expand benchmark coverage to include cold/warm-path comparisons and file-index scale scenarios.
 
 ## Local Install (Required for Adapter Integration)
 
