@@ -40,6 +40,7 @@ Completed in this branch:
 8. Improved app provider desktop-entry parsing with XDG data directory discovery, hidden/no-display filtering, localized-name fallback, and cleaned `Exec` keyword extraction.
 9. Improved recents provider parsing to consume bookmark metadata and order rows by `modified` timestamp (most recent first).
 10. Replaced utility placeholder provider with explicit utility catalog rows (calculator/currency/weather/timezone/emoji) plus intent-term filtering.
+11. Extended KDE adapter transport with `actions.execute` socket requests and added CLI execute mode (`kde-hopd-query --execute <result_id>`).
 
 ## Next Milestones
 

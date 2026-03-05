@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
-use hopd::kde_adapter::request_hopd_search_over_socket;
+use hopd::kde_adapter::{request_hopd_execute_over_socket, request_hopd_search_over_socket};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mut query_parts = Vec::new();
+    let mut execute_result_id: Option<String> = None;
+    let mut action = "enter".to_string();
     let mut socket_path = default_socket_path();
     let mut limit: u32 = 8;
 
@@ -23,12 +25,37 @@ async fn main() {
                     }
                 }
             }
+            "--execute" => {
+                if let Some(value) = args.next() {
+                    execute_result_id = Some(value);
+                }
+            }
+            "--action" => {
+                if let Some(value) = args.next() {
+                    action = value;
+                }
+            }
             _ => query_parts.push(arg),
         }
     }
 
+    if let Some(result_id) = execute_result_id {
+        match request_hopd_execute_over_socket(&socket_path, &result_id, &action).await {
+            Ok(response) => {
+                println!("{response}");
+                return;
+            }
+            Err(error) => {
+                eprintln!("hopd execute failed: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     if query_parts.is_empty() {
-        eprintln!("usage: kde-hopd-query [--socket <path>] [--limit <n>] <query text>");
+        eprintln!(
+            "usage: kde-hopd-query [--socket <path>] [--limit <n>] <query text>\n       kde-hopd-query [--socket <path>] --execute <result_id> [--action <action>]"
+        );
         std::process::exit(2);
     }
 
