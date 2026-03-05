@@ -232,7 +232,7 @@ fn copy_text_for_result_id(result_id: &str) -> Option<String> {
             return None;
         }
         let decoded = decode_component(expression)?;
-        if let Ok(value) = meval::eval_str(&decoded) {
+        if let Ok(value) = fasteval::ez_eval(&decoded, &mut fasteval::EmptyNamespace) {
             if value.is_finite() {
                 return Some(format_calculated_value(value));
             }

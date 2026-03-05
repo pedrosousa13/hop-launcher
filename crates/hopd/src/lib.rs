@@ -849,7 +849,7 @@ fn decode_component(raw: &str) -> Option<String> {
 }
 
 fn evaluate_calculator_expression(expression: &str) -> Option<f64> {
-    let value = meval::eval_str(expression).ok()?;
+    let value = fasteval::ez_eval(expression, &mut fasteval::EmptyNamespace).ok()?;
     if value.is_finite() {
         Some(value)
     } else {
