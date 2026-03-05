@@ -20,13 +20,7 @@ pub fn execute(params: &Value) -> Value {
         action_resolved = true;
         execution_status = "resolved".to_string();
         error_message = None;
-        launch_spawned = Command::new(&cmd)
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .is_ok();
+        launch_spawned = spawn_with_fallback(&cmd, &args);
         if !launch_spawned {
             execution_status = "spawn_failed".to_string();
             error_message = Some(format!("failed to spawn {}", cmd));
@@ -170,6 +164,30 @@ fn encode_component(raw: &str) -> String {
     out
 }
 
+fn spawn_with_fallback(cmd: &str, args: &[String]) -> bool {
+    for (candidate, candidate_args) in spawn_candidates(cmd, args) {
+        let spawned = Command::new(&candidate)
+            .args(&candidate_args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .is_ok();
+        if spawned {
+            return true;
+        }
+    }
+    false
+}
+
+fn spawn_candidates(cmd: &str, args: &[String]) -> Vec<(String, Vec<String>)> {
+    let mut candidates = vec![(cmd.to_string(), args.to_vec())];
+    if cmd == "systemsettings5" {
+        candidates.push(("systemsettings".to_string(), args.to_vec()));
+    }
+    candidates
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,6 +245,15 @@ mod tests {
             .expect("kde settings command");
         assert_eq!(resolved.0, "systemsettings5");
         assert_eq!(resolved.1, vec!["network".to_string()]);
+    }
+
+    #[test]
+    fn spawn_candidates_include_systemsettings_fallback_for_kde() {
+        let args = vec!["network".to_string()];
+        let candidates = spawn_candidates("systemsettings5", &args);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].0, "systemsettings5");
+        assert_eq!(candidates[1].0, "systemsettings");
     }
 
     #[test]
