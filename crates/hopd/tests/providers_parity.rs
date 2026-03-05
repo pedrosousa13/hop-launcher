@@ -16,8 +16,8 @@ async fn search_query_supports_all_primary_modes_without_scaffolds() {
         ("currency", vec!["currency"]),
     ] {
         let query = match mode {
-            "weather" => "weather zurich",
-            "timezone" => "time tokyo",
+            "weather" => "zurich",
+            "timezone" => "tokyo",
             "emoji" => "emoji smile",
             "calculator" => "2+2",
             "currency" => "12 usd to chf",
@@ -31,6 +31,12 @@ async fn search_query_supports_all_primary_modes_without_scaffolds() {
             .expect("response expected");
         let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
         let results = parsed.result["results"].as_array().expect("results array");
+        if matches!(mode, "weather" | "timezone" | "emoji" | "calculator" | "currency") {
+            assert!(
+                !results.is_empty(),
+                "expected non-empty results for mode {mode} and query {query}"
+            );
+        }
         for row in results {
             let kind = row["kind"].as_str().expect("kind string");
             assert!(

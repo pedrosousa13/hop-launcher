@@ -52,6 +52,6 @@ async fn actions_execute_copy_returns_copied_text_for_utility_result() {
     assert_eq!(parsed.result["success"], true);
     assert_eq!(parsed.result["action_resolved"], true);
     assert_eq!(parsed.result["execution_status"], "copied");
-    assert_eq!(parsed.result["copied_text"], "2+2");
+    assert_eq!(parsed.result["copied_text"], "4");
     assert_eq!(parsed.result["launch_spawned"], false);
 }

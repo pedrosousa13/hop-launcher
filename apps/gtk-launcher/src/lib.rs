@@ -305,9 +305,13 @@ fn extract_query_route(raw_query: &str) -> QueryRoute {
     let lowered = trimmed.to_lowercase();
 
     let route = if lowered.starts_with("w ") {
-        ("windows", trimmed[2..].to_string())
+        ("weather", trimmed[2..].to_string())
     } else if lowered.starts_with("a ") {
         ("apps", trimmed[2..].to_string())
+    } else if lowered.starts_with("win ") {
+        ("windows", trimmed[4..].to_string())
+    } else if lowered.starts_with("windows ") {
+        ("windows", trimmed[8..].to_string())
     } else if lowered.starts_with("f ") {
         ("files", trimmed[2..].to_string())
     } else if lowered.starts_with("r ") {
@@ -318,8 +322,12 @@ fn extract_query_route(raw_query: &str) -> QueryRoute {
         ("settings", trimmed[6..].to_string())
     } else if lowered.starts_with(":emoji ") {
         ("emoji", trimmed[7..].to_string())
+    } else if lowered.starts_with("e ") {
+        ("emoji", trimmed[2..].to_string())
     } else if lowered.starts_with("emoji ") {
         ("emoji", trimmed[6..].to_string())
+    } else if lowered.starts_with("t ") {
+        ("timezone", trimmed[2..].to_string())
     } else if lowered.starts_with("tz ") {
         ("timezone", trimmed[3..].to_string())
     } else if lowered.starts_with("timezone ") {
@@ -332,10 +340,14 @@ fn extract_query_route(raw_query: &str) -> QueryRoute {
         ("weather", trimmed[8..].to_string())
     } else if lowered.starts_with("wx ") {
         ("weather", trimmed[3..].to_string())
+    } else if lowered.starts_with("c ") {
+        ("calculator", trimmed[2..].to_string())
     } else if lowered.starts_with("calc ") {
         ("calculator", trimmed[5..].to_string())
     } else if lowered.starts_with("calculator ") {
         ("calculator", trimmed[11..].to_string())
+    } else if lowered.starts_with("x ") {
+        ("currency", trimmed[2..].to_string())
     } else if lowered.starts_with("currency ") {
         ("currency", trimmed[9..].to_string())
     } else if lowered.starts_with("fx ") {
@@ -371,8 +383,15 @@ mod tests {
     }
 
     #[test]
-    fn route_prefix_w_maps_to_windows_mode() {
-        let route = extract_query_route("w terminal");
+    fn route_prefix_w_maps_to_weather_mode() {
+        let route = extract_query_route("w zurich");
+        assert_eq!(route.mode, "weather");
+        assert_eq!(route.query, "zurich");
+    }
+
+    #[test]
+    fn route_prefix_win_maps_to_windows_mode() {
+        let route = extract_query_route("win terminal");
         assert_eq!(route.mode, "windows");
         assert_eq!(route.query, "terminal");
     }
@@ -415,6 +434,14 @@ mod tests {
         let route = extract_query_route("currency 12 usd to chf");
         assert_eq!(route.mode, "currency");
         assert_eq!(route.query, "12 usd to chf");
+    }
+
+    #[test]
+    fn route_single_letter_utility_prefixes_map_to_utility_modes() {
+        assert_eq!(extract_query_route("t zurich").mode, "timezone");
+        assert_eq!(extract_query_route("e smile").mode, "emoji");
+        assert_eq!(extract_query_route("c 2+2").mode, "calculator");
+        assert_eq!(extract_query_route("x 12 usd to chf").mode, "currency");
     }
 
     #[test]

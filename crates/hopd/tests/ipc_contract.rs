@@ -98,6 +98,22 @@ async fn search_query_returns_ranked_results_when_matches_exist() {
 }
 
 #[tokio::test]
+async fn search_query_returns_web_search_action_rows_for_web_prefix() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2b-web","method":"search.query","params":{"query":"web rust","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected web action result");
+    assert!(results.iter().any(|row| row["kind"] == "action"));
+}
+
+#[tokio::test]
 async fn search_query_respects_limit() {
     let server = HopdServer::new();
     let response = server
@@ -181,6 +197,24 @@ async fn search_query_returns_weather_row_for_city_phrase() {
 }
 
 #[tokio::test]
+async fn search_query_weather_mode_accepts_bare_city_query() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2f-weather-mode","method":"search.query","params":{"query":"zurich","mode":"weather","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected weather result");
+    assert_eq!(results[0]["kind"], "weather");
+    assert_eq!(results[0]["id"], "utility:weather:Zurich");
+    assert_eq!(results[0]["title"], "Weather in Zurich");
+}
+
+#[tokio::test]
 async fn search_query_returns_currency_row_for_conversion_phrase() {
     let server = HopdServer::new();
     let response = server
@@ -212,6 +246,23 @@ async fn search_query_handles_timezone_intent_for_suffix_phrase() {
     assert!(!results.is_empty(), "expected timezone result");
     assert_eq!(results[0]["kind"], "timezone");
     assert_eq!(results[0]["title"], "Time in Zurich");
+}
+
+#[tokio::test]
+async fn search_query_timezone_mode_accepts_bare_city_query() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2g-time-mode","method":"search.query","params":{"query":"tokyo","mode":"timezone","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected timezone result");
+    assert_eq!(results[0]["kind"], "timezone");
+    assert_eq!(results[0]["title"], "Time in Tokyo");
 }
 
 #[tokio::test]
@@ -388,15 +439,6 @@ async fn actions_execute_resolves_commands_for_representative_result_kinds() {
         ("exec-recent", "recent:/tmp/demo.txt", "xdg-open"),
         ("exec-setting", "setting:network", "gnome-control-center"),
         ("exec-window", "window:0x04200004", "wmctrl"),
-        ("exec-weather", "utility:weather", "xdg-open"),
-        ("exec-timezone", "utility:timezone", "xdg-open"),
-        ("exec-emoji", "utility:emoji", "xdg-open"),
-        ("exec-calc", "utility:calculator:2+2", "xdg-open"),
-        (
-            "exec-currency",
-            "utility:currency:12:USD:CHF",
-            "xdg-open",
-        ),
     ] {
         let response = server
             .handle_json_line(&format!(
@@ -410,6 +452,31 @@ async fn actions_execute_resolves_commands_for_representative_result_kinds() {
         assert_eq!(parsed.result["action_resolved"], true);
         assert_eq!(parsed.result["resolved_command"], expected_command);
         assert!(parsed.result["resolved_args"].is_array());
+        assert!(parsed.error.is_none());
+    }
+
+    for (id, result_id) in [
+        ("exec-weather", "utility:weather"),
+        ("exec-timezone", "utility:timezone"),
+        ("exec-emoji", "utility:emoji"),
+        ("exec-calc", "utility:calculator:2+2"),
+        ("exec-currency", "utility:currency:12:USD:CHF"),
+    ] {
+        let response = server
+            .handle_json_line(&format!(
+                r#"{{"id":"{id}","method":"actions.execute","params":{{"result_id":"{result_id}","action":"enter"}}}}"#
+            ))
+            .await
+            .expect("response expected");
+        let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(parsed.id, id);
+        assert_eq!(parsed.result["ok"], true);
+        assert_eq!(parsed.result["action_resolved"], true);
+        assert_eq!(parsed.result["execution_status"], "copied");
+        assert_eq!(parsed.result["resolved_command"], serde_json::Value::Null);
+        assert_eq!(parsed.result["launch_spawned"], false);
+        assert!(parsed.result["copied_text"].is_string());
+        assert_eq!(parsed.result["action_effective"], "copy");
         assert!(parsed.error.is_none());
     }
 }

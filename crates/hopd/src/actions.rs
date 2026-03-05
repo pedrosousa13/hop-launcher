@@ -11,6 +11,11 @@ pub fn execute(params: &Value) -> Value {
         .get("action")
         .and_then(Value::as_str)
         .unwrap_or("enter");
+    let effective_action = if action == "enter" && result_id.starts_with("utility:") {
+        "copy"
+    } else {
+        action
+    };
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let mut action_resolved = false;
     let mut launch_spawned = false;
@@ -20,7 +25,7 @@ pub fn execute(params: &Value) -> Value {
     let mut resolved_args: Option<Vec<String>> = None;
     let mut copied_text: Option<String> = None;
 
-    if action == "copy" {
+    if effective_action == "copy" {
         if let Some(text) = copy_text_for_result_id(result_id) {
             action_resolved = true;
             execution_status = "copied".to_string();
@@ -40,7 +45,7 @@ pub fn execute(params: &Value) -> Value {
         }
     }
 
-    let success = if action == "copy" {
+    let success = if effective_action == "copy" {
         action_resolved
     } else {
         action_resolved && launch_spawned
@@ -59,6 +64,7 @@ pub fn execute(params: &Value) -> Value {
         "copied_text": copied_text,
         "result_id": result_id,
         "action": action,
+        "action_effective": effective_action,
     })
 }
 
@@ -187,6 +193,17 @@ fn command_for_result_id_with_desktop(
         return Some(("xdg-open".to_string(), vec![url.to_string()]));
     }
 
+    if let Some(payload) = result_id.strip_prefix("web-search:") {
+        let mut parts = payload.splitn(3, ':');
+        let _service_id = parts.next()?;
+        let encoded_url = parts.next()?;
+        let url = decode_component(encoded_url)?;
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return None;
+        }
+        return Some(("xdg-open".to_string(), vec![url]));
+    }
+
     None
 }
 
@@ -214,7 +231,13 @@ fn copy_text_for_result_id(result_id: &str) -> Option<String> {
         if expression.trim().is_empty() {
             return None;
         }
-        return Some(decode_component(expression)?);
+        let decoded = decode_component(expression)?;
+        if let Ok(value) = meval::eval_str(&decoded) {
+            if value.is_finite() {
+                return Some(format_calculated_value(value));
+            }
+        }
+        return Some(decoded);
     }
     if let Some(payload) = result_id.strip_prefix("utility:currency:") {
         let parts: Vec<&str> = payload.split(':').collect();
@@ -240,6 +263,18 @@ fn copy_text_for_result_id(result_id: &str) -> Option<String> {
         return Some("emoji".to_string());
     }
     None
+}
+
+fn format_calculated_value(value: f64) -> String {
+    let rounded = (value * 1_000_000.0).round() / 1_000_000.0;
+    let mut text = format!("{rounded:.6}");
+    while text.contains('.') && text.ends_with('0') {
+        text.pop();
+    }
+    if text.ends_with('.') {
+        text.pop();
+    }
+    text
 }
 
 fn encode_component(raw: &str) -> String {
@@ -401,46 +436,18 @@ mod tests {
     }
 
     #[test]
-    fn resolves_utility_weather_to_browser_command() {
-        let resolved = command_for_result_id_with_desktop("utility:weather", "GNOME")
-            .expect("utility command");
-        assert_eq!(resolved.0, "xdg-open");
-        assert_eq!(resolved.1, vec!["https://wttr.in".to_string()]);
-    }
-
-    #[test]
-    fn resolves_utility_weather_with_location_to_browser_command() {
-        let resolved =
-            command_for_result_id_with_desktop("utility:weather:San+Francisco", "GNOME")
-                .expect("utility command");
-        assert_eq!(resolved.0, "xdg-open");
-        assert_eq!(resolved.1, vec!["https://wttr.in/San+Francisco".to_string()]);
-    }
-
-    #[test]
-    fn resolves_utility_calculator_expression_to_browser_command() {
-        let resolved = command_for_result_id_with_desktop("utility:calculator:2+2", "GNOME")
-            .expect("calculator command");
-        assert_eq!(resolved.0, "xdg-open");
-        assert_eq!(
-            resolved.1,
-            vec!["https://www.google.com/search?q=2%2B2".to_string()]
-        );
-    }
-
-    #[test]
-    fn resolves_utility_currency_payload_to_browser_command() {
-        let resolved =
-            command_for_result_id_with_desktop("utility:currency:12:USD:CHF", "GNOME")
-                .expect("currency command");
-        assert_eq!(resolved.0, "xdg-open");
-        assert_eq!(
-            resolved.1,
-            vec![
-                "https://www.xe.com/currencyconverter/convert/?Amount=12&From=USD&To=CHF"
-                    .to_string()
-            ]
-        );
+    fn utility_enter_defaults_to_copy_semantics() {
+        let payload = serde_json::json!({
+            "result_id": "utility:weather:San+Francisco",
+            "action": "enter",
+        });
+        let response = execute(&payload);
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["success"], true);
+        assert_eq!(response["execution_status"], "copied");
+        assert_eq!(response["action_effective"], "copy");
+        assert_eq!(response["resolved_command"], serde_json::Value::Null);
+        assert_eq!(response["copied_text"], "San Francisco");
     }
 
     #[test]
@@ -453,8 +460,18 @@ mod tests {
         assert_eq!(response["ok"], true);
         assert_eq!(response["success"], true);
         assert_eq!(response["execution_status"], "copied");
-        assert_eq!(response["copied_text"], "2+2");
+        assert_eq!(response["copied_text"], "4");
         assert_eq!(response["launch_spawned"], false);
         assert_eq!(response["resolved_command"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn resolves_web_search_result_to_xdg_open_command() {
+        let encoded = encode_component("https://www.google.com/search?q=rust");
+        let result_id = format!("web-search:google:{encoded}");
+        let resolved = command_for_result_id_with_desktop(&result_id, "GNOME")
+            .expect("web search command");
+        assert_eq!(resolved.0, "xdg-open");
+        assert_eq!(resolved.1, vec!["https://www.google.com/search?q=rust".to_string()]);
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -65,7 +66,7 @@ impl HopdServer {
                 let config = self.config.read().await.clone();
                 IpcResponse {
                     id: request.id,
-                    result: json!(build_search_result(&request.params, &config)),
+                    result: json!(build_search_result(&request.params, &config).await),
                     error: None,
                 }
             }
@@ -136,7 +137,7 @@ fn default_params() -> Value {
     json!({})
 }
 
-fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value {
+async fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value {
     let started_at = Instant::now();
     let query = params
         .get("query")
@@ -157,7 +158,9 @@ fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value
     let rank = RankSettings::from_config(config);
     let features = FeatureSettings::from_config(config);
     let indexed_folders = indexed_folders_from_config(config);
-    let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query, mode, &indexed_folders)
+    let items = aggregate_provider_items(&query, mode, &indexed_folders, config);
+    let enriched_items = enrich_utility_live_data(items);
+    let mut matches: Vec<(i32, SearchItem)> = enriched_items
         .into_iter()
         .filter(|item| features.is_enabled(&item.kind))
         .filter_map(|item| {
@@ -199,6 +202,163 @@ fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value
             "elapsed_ms": elapsed_ms,
         }
     })
+}
+
+fn enrich_utility_live_data(mut items: Vec<SearchItem>) -> Vec<SearchItem> {
+    for item in &mut items {
+        if item.kind == "weather" {
+            if let Some(location) = extract_weather_location_from_item(item) {
+                if let Some(summary) = fetch_weather_subtitle(&location) {
+                    item.subtitle = summary;
+                }
+            }
+        } else if item.kind == "timezone" {
+            if let Some(location) = extract_time_location_from_item(item) {
+                if let Some(summary) = fetch_time_subtitle(&location) {
+                    item.subtitle = summary;
+                }
+            }
+        }
+    }
+    items
+}
+
+fn extract_weather_location_from_item(item: &SearchItem) -> Option<String> {
+    if let Some(encoded) = item.id.strip_prefix("utility:weather:") {
+        return decode_component(encoded);
+    }
+    item.title
+        .strip_prefix("Weather in ")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn extract_time_location_from_item(item: &SearchItem) -> Option<String> {
+    item.title
+        .strip_prefix("Time in ")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn geocode_location(location: &str) -> Option<Value> {
+    if location.trim().is_empty() {
+        return None;
+    }
+    let url = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
+        encode_component(location)
+    );
+    let payload = fetch_json_with_curl(&url)?;
+    payload
+        .get("results")
+        .and_then(Value::as_array)
+        .and_then(|rows| rows.first().cloned())
+}
+
+fn fetch_weather_subtitle(location: &str) -> Option<String> {
+    let geo = geocode_location(location)?;
+    let latitude = geo.get("latitude").and_then(Value::as_f64)?;
+    let longitude = geo.get("longitude").and_then(Value::as_f64)?;
+    let url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,weather_code,wind_speed_10m&temperature_unit=celsius&wind_speed_unit=kmh"
+    );
+    let forecast = fetch_json_with_curl(&url)?;
+    let current = forecast.get("current")?;
+    let temperature = current.get("temperature_2m").and_then(Value::as_f64)?;
+    let weather_code = current.get("weather_code").and_then(Value::as_i64)? as i32;
+    let wind_speed = current.get("wind_speed_10m").and_then(Value::as_f64)?;
+    let (condition, icon) = weather_code_to_condition(weather_code);
+    let place = place_label(&geo).unwrap_or_else(|| location.to_string());
+    Some(format!(
+        "{place}: {condition} {icon} {}C Wind {} km/h",
+        temperature.round() as i32,
+        wind_speed.round() as i32
+    ))
+}
+
+fn fetch_time_subtitle(location: &str) -> Option<String> {
+    let geo = geocode_location(location)?;
+    let timezone = geo.get("timezone").and_then(Value::as_str)?.to_string();
+    let now = time_for_timezone(&timezone)?;
+    let place = place_label(&geo).unwrap_or_else(|| location.to_string());
+    Some(format!("{place} • {now} ({timezone})"))
+}
+
+fn place_label(geo: &Value) -> Option<String> {
+    let mut segments = Vec::new();
+    if let Some(name) = geo.get("name").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+        segments.push(name.to_string());
+    }
+    if let Some(admin1) = geo.get("admin1").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+        if !segments.iter().any(|existing| existing.eq_ignore_ascii_case(admin1)) {
+            segments.push(admin1.to_string());
+        }
+    }
+    if let Some(country) = geo.get("country_code").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+        segments.push(country.to_string());
+    }
+    if segments.is_empty() {
+        None
+    } else {
+        Some(segments.join(", "))
+    }
+}
+
+fn fetch_json_with_curl(url: &str) -> Option<Value> {
+    for bin in ["curl", "/usr/bin/curl"] {
+        let output = match Command::new(bin)
+            .args(["--silent", "--show-error", "--max-time", "1.1", url])
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => continue,
+        };
+        if !output.status.success() {
+            continue;
+        }
+        if let Ok(parsed) = serde_json::from_slice::<Value>(&output.stdout) {
+            return Some(parsed);
+        }
+    }
+    None
+}
+
+fn time_for_timezone(timezone: &str) -> Option<String> {
+    for bin in ["date", "/usr/bin/date"] {
+        let output = match Command::new(bin)
+            .env("TZ", timezone)
+            .args(["+%H:%M"])
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => continue,
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let text = String::from_utf8(output.stdout).ok()?;
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
+fn weather_code_to_condition(code: i32) -> (&'static str, &'static str) {
+    match code {
+        0 => ("Clear", "☀"),
+        1 | 2 => ("Partly cloudy", "⛅"),
+        3 => ("Overcast", "☁"),
+        45 | 48 => ("Fog", "🌫"),
+        51 | 53 | 55 | 56 | 57 => ("Drizzle", "🌦"),
+        61 | 63 | 65 | 66 | 67 | 80 | 81 | 82 => ("Rain", "🌧"),
+        71 | 73 | 75 | 77 | 85 | 86 => ("Snow", "❄"),
+        95 | 96 | 99 => ("Thunderstorm", "⛈"),
+        _ => ("Weather", "🌡"),
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -373,21 +533,27 @@ impl SearchItem {
     }
 }
 
-fn aggregate_provider_items(query: &str, mode: &str, indexed_folders: &[String]) -> Vec<SearchItem> {
+fn aggregate_provider_items(
+    query: &str,
+    mode: &str,
+    indexed_folders: &[String],
+    config: &HashMap<String, Value>,
+) -> Vec<SearchItem> {
     let mut items = providers::collect_provider_items(query, mode, indexed_folders);
     match mode {
         "calculator" => items.extend(calculator_provider(query)),
         "currency" => items.extend(currency_provider(query)),
-        "weather" => items.extend(weather_provider(query)),
-        "timezone" => items.extend(timezone_provider(query)),
+        "weather" => items.extend(weather_provider(query, true)),
+        "timezone" => items.extend(timezone_provider(query, true)),
         "emoji" => items.extend(emoji_provider(query)),
         "apps" | "windows" | "files" | "recents" | "settings" => {}
         _ => {
             items.extend(calculator_provider(query));
             items.extend(currency_provider(query));
-            items.extend(weather_provider(query));
-            items.extend(timezone_provider(query));
+            items.extend(weather_provider(query, false));
+            items.extend(timezone_provider(query, false));
             items.extend(emoji_provider(query));
+            items.extend(web_search_provider(query, config));
         }
     }
     items
@@ -447,6 +613,7 @@ fn kind_priority(kind: &str, rank: &RankSettings) -> i32 {
         "file" => rank.weight_files,
         "emoji" => rank.weight_emoji,
         "calculator" | "currency" | "weather" | "timezone" | "utility" => rank.weight_utility,
+        "action" => rank.weight_utility,
         _ => 0,
     }
 }
@@ -489,11 +656,14 @@ fn calculator_provider(query: &str) -> Vec<SearchItem> {
         return Vec::new();
     }
     let expression = query.trim();
+    let calculated = evaluate_calculator_expression(expression)
+        .map(format_calculated_value)
+        .unwrap_or_else(|| "?".to_string());
     vec![SearchItem {
         id: format!("utility:calculator:{expression}"),
         kind: "calculator".to_string(),
-        title: format!("Calculate {expression}"),
-        subtitle: "Utility".to_string(),
+        title: format!("{expression} = {calculated}"),
+        subtitle: "Calculator".to_string(),
         icon: "accessories-calculator-symbolic".to_string(),
         keywords: "calculator math arithmetic expression".to_string(),
     }]
@@ -513,15 +683,19 @@ fn currency_provider(query: &str) -> Vec<SearchItem> {
     }]
 }
 
-fn weather_provider(query: &str) -> Vec<SearchItem> {
+fn weather_provider(query: &str, explicit_weather_mode: bool) -> Vec<SearchItem> {
     if query.is_empty() {
         return Vec::new();
     }
 
     let lower = query.to_lowercase();
-    let location = extract_weather_location(&lower);
+    let location = if explicit_weather_mode {
+        to_title_case(&lower)
+    } else {
+        extract_weather_location(&lower)
+    };
     let has_weather_intent = lower.contains("weather") || lower.starts_with("wx ");
-    if !has_weather_intent && location.is_none() {
+    if !explicit_weather_mode && !has_weather_intent && location.is_none() {
         return Vec::new();
     }
     let weather_id = location
@@ -547,20 +721,24 @@ fn weather_provider(query: &str) -> Vec<SearchItem> {
     }]
 }
 
-fn timezone_provider(query: &str) -> Vec<SearchItem> {
+fn timezone_provider(query: &str, explicit_timezone_mode: bool) -> Vec<SearchItem> {
     if query.is_empty() {
         return Vec::new();
     }
 
     let lower = query.to_lowercase();
-    let city = extract_time_location(&lower);
+    let city = if explicit_timezone_mode {
+        to_title_case(&lower)
+    } else {
+        extract_time_location(&lower)
+    };
 
     let has_time_intent = lower.contains("time ") || lower.starts_with("time")
         || lower.contains("tz ")
         || lower.starts_with("tz")
         || lower.contains("timezone")
         || lower.ends_with(" time");
-    if !has_time_intent && city.is_none() {
+    if !explicit_timezone_mode && !has_time_intent && city.is_none() {
         return Vec::new();
     }
     if city.is_some() && lower.contains("weather") && !has_time_intent {
@@ -644,6 +822,53 @@ fn encode_component(raw: &str) -> String {
     out
 }
 
+fn decode_component(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(raw.len());
+    let bytes = raw.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'+' {
+            out.push(' ');
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
+            }
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+            let value = u8::from_str_radix(hex, 16).ok()?;
+            out.push(value as char);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    Some(out)
+}
+
+fn evaluate_calculator_expression(expression: &str) -> Option<f64> {
+    let value = meval::eval_str(expression).ok()?;
+    if value.is_finite() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn format_calculated_value(value: f64) -> String {
+    let rounded = (value * 1_000_000.0).round() / 1_000_000.0;
+    let mut text = format!("{rounded:.6}");
+    while text.contains('.') && text.ends_with('0') {
+        text.pop();
+    }
+    if text.ends_with('.') {
+        text.pop();
+    }
+    text
+}
+
 fn emoji_provider(query: &str) -> Vec<SearchItem> {
     if query.is_empty() {
         return Vec::new();
@@ -666,4 +891,67 @@ fn emoji_provider(query: &str) -> Vec<SearchItem> {
         icon: "face-smile-symbolic".to_string(),
         keywords: "emoji picker symbols smile grin".to_string(),
     }]
+}
+
+fn web_search_provider(query: &str, config: &HashMap<String, Value>) -> Vec<SearchItem> {
+    if !config_bool(config, "web_search.enabled", true) {
+        return Vec::new();
+    }
+    let max_actions = config_int(config, "web_search.max_actions", 3, 0, 10) as usize;
+    if max_actions == 0 {
+        return Vec::new();
+    }
+
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let lowered = trimmed.to_lowercase();
+    let mut services = Vec::new();
+    let q = if lowered.starts_with("web ") {
+        services.push(("google", "Google", "https://www.google.com/search?q=%s"));
+        services.push(("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q=%s"));
+        trimmed[4..].trim()
+    } else if lowered.starts_with("g ") {
+        services.push(("google", "Google", "https://www.google.com/search?q=%s"));
+        trimmed[2..].trim()
+    } else if lowered.starts_with("ddg ") {
+        services.push(("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q=%s"));
+        trimmed[4..].trim()
+    } else {
+        return Vec::new();
+    };
+
+    if q.is_empty() {
+        return Vec::new();
+    }
+
+    services
+        .into_iter()
+        .take(max_actions)
+        .map(|(id, name, template)| {
+            let url = template.replace("%s", &encode_component(q));
+            SearchItem::new(
+                &format!("web-search:{id}:{}", encode_component(&url)),
+                "action",
+                &format!("Search {name} for \"{q}\""),
+                &host_from_url(&url),
+                "edit-find-symbolic",
+                "web search action browser",
+            )
+        })
+        .collect()
+}
+
+fn host_from_url(url: &str) -> String {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    without_scheme
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
