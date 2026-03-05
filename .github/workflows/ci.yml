@@ -65,6 +65,11 @@ jobs:
           cargo run --bin hopd-bench -- 150 | tee artifacts/bench/hopd-bench.txt
         working-directory: crates/hopd
 
+      - name: Validate hopd benchmark guardrails
+        shell: bash
+        run: bash scripts/check-bench-thresholds.sh artifacts/bench/hopd-bench.txt
+        working-directory: crates/hopd
+
       - name: Upload hopd benchmark artifact
         uses: actions/upload-artifact@v4
         with:
