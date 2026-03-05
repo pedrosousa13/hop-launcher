@@ -702,3 +702,63 @@ async fn returns_error_for_unknown_method() {
     assert!(parsed.error.is_some());
     assert!(parsed.result.is_null());
 }
+
+#[tokio::test]
+async fn search_query_web_search_respects_max_actions_for_unprefixed_query() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"wm-cfg","method":"config.set","params":{"key":"web_search.services_json","value":"[{\"id\":\"a\",\"name\":\"Alpha\",\"urlTemplate\":\"https://alpha.example.com/?q=%s\",\"enabled\":true,\"keyword\":\"\"},{\"id\":\"b\",\"name\":\"Bravo\",\"urlTemplate\":\"https://bravo.example.com/?q=%s\",\"enabled\":true,\"keyword\":\"\"},{\"id\":\"c\",\"name\":\"Charlie\",\"urlTemplate\":\"https://charlie.example.com/?q=%s\",\"enabled\":true,\"keyword\":\"\"},{\"id\":\"d\",\"name\":\"Delta\",\"urlTemplate\":\"https://delta.example.com/?q=%s\",\"enabled\":true,\"keyword\":\"\"}]"}}"#,
+        )
+        .await
+        .expect("set services");
+    server
+        .handle_json_line(
+            r#"{"id":"wm-max","method":"config.set","params":{"key":"web_search.max_actions","value":2}}"#,
+        )
+        .await
+        .expect("set max");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"wm-q","method":"search.query","params":{"query":"test query","limit":20}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    let action_count = results.iter().filter(|r| r["kind"] == "action").count();
+    assert_eq!(
+        action_count, 2,
+        "expected exactly 2 action rows with max_actions=2 and 4 services, got {action_count}"
+    );
+}
+
+#[tokio::test]
+async fn search_query_keyword_prefix_returns_single_provider_result() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"kw-cfg","method":"config.set","params":{"key":"web_search.services_json","value":"[{\"id\":\"google\",\"name\":\"Google\",\"urlTemplate\":\"https://www.google.com/search?q=%s\",\"enabled\":true,\"keyword\":\"g\"},{\"id\":\"ddg\",\"name\":\"DuckDuckGo\",\"urlTemplate\":\"https://duckduckgo.com/?q=%s\",\"enabled\":true,\"keyword\":\"ddg\"}]"}}"#,
+        )
+        .await
+        .expect("set services");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"kw-q","method":"search.query","params":{"query":"g rust","limit":10}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    let action_rows: Vec<_> = results
+        .iter()
+        .filter(|r| r["kind"] == "action")
+        .collect();
+    assert_eq!(action_rows.len(), 1, "keyword prefix should return single provider");
+    assert!(
+        action_rows[0]["id"].as_str().unwrap_or("").starts_with("web-search:google:"),
+        "keyword 'g' should match Google provider"
+    );
+}
