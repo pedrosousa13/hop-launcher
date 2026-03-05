@@ -9,10 +9,23 @@ async fn search_query_supports_all_primary_modes_without_scaffolds() {
         ("files", vec!["file"]),
         ("recents", vec!["recent"]),
         ("settings", vec!["setting"]),
+        ("weather", vec!["weather"]),
+        ("timezone", vec!["timezone"]),
+        ("emoji", vec!["emoji"]),
+        ("calculator", vec!["calculator"]),
+        ("currency", vec!["currency"]),
     ] {
+        let query = match mode {
+            "weather" => "weather zurich",
+            "timezone" => "time tokyo",
+            "emoji" => "emoji smile",
+            "calculator" => "2+2",
+            "currency" => "12 usd to chf",
+            _ => "a",
+        };
         let response = server
             .handle_json_line(&format!(
-                r#"{{"id":"mode-{mode}","method":"search.query","params":{{"query":"a","mode":"{mode}","limit":20}}}}"#
+                r#"{{"id":"mode-{mode}","method":"search.query","params":{{"query":"{query}","mode":"{mode}","limit":20}}}}"#
             ))
             .await
             .expect("response expected");
@@ -38,7 +51,20 @@ async fn search_query_supports_all_primary_modes_without_scaffolds() {
     for row in results {
         let kind = row["kind"].as_str().expect("kind string");
         assert!(
-            ["app", "window", "file", "recent", "setting", "utility"].contains(&kind),
+            [
+                "app",
+                "window",
+                "file",
+                "recent",
+                "setting",
+                "utility",
+                "weather",
+                "timezone",
+                "emoji",
+                "calculator",
+                "currency",
+            ]
+            .contains(&kind),
             "unexpected kind {kind} in all mode"
         );
     }

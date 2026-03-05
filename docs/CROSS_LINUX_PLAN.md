@@ -58,6 +58,10 @@ Completed in this branch:
 3. Integrate KDE transport helper into a packaged KDE launcher/runner adapter surface (Plasma-facing artifact + install docs).
 4. Add packaged KDE runner/launcher adapter artifact and install path (beyond CLI helper) for Plasma integration.
 
+## Parity Matrix
+
+- Locked cross-frontend parity matrix: `docs/plans/2026-03-05-parity-matrix.md`
+
 ## Local Install (Required for Adapter Integration)
 
 - Install locally with `cd apps/gnome-extension && npm run install:hopd:local`.
