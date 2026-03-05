@@ -36,6 +36,17 @@ What this does:
 - Execute a selected row:  
   `cargo run --bin kde-hopd-query -- --execute app:firefox.desktop`
 
+### Runner Contract
+
+- Output format (`--format runner`) is one row per line with 5 tab-separated fields:  
+  `id<TAB>title<TAB>subtitle<TAB>icon<TAB>kind`
+- Field sanitization: embedded tabs/newlines are replaced with spaces before output.
+- Exit codes:
+  - `0`: successful request/response
+  - `1`: transport or execution failure
+  - `2`: usage/argument error (including invalid `--format`)
+  - `3`: query skipped because utility-intent guard rejected it (when `--mode` not set)
+
 ## Useful options
 
 ```bash

@@ -51,7 +51,13 @@ async fn main() {
             }
             "--format" => {
                 if let Some(value) = args.next() {
-                    format = parse_output_format(&value).unwrap_or(OutputFormat::Json);
+                    match parse_output_format(&value) {
+                        Some(next) => format = next,
+                        None => {
+                            eprintln!("invalid --format value: {value} (expected json or runner)");
+                            std::process::exit(2);
+                        }
+                    }
                 }
             }
             "--action" => {
@@ -180,6 +186,28 @@ mod tests {
         assert_eq!(
             output,
             "app:firefox.desktop\tFirefox\tInstalled application\tfirefox\tapp\n"
+        );
+    }
+
+    #[test]
+    fn format_runner_rows_sanitizes_tabs_and_newlines() {
+        let response = serde_json::json!({
+            "result": {
+                "results": [
+                    {
+                        "id": "utility:calculator:2%2B2",
+                        "title": "Calc\t2+2",
+                        "subtitle": "Line1\nLine2",
+                        "icon": "accessories-calculator-symbolic",
+                        "kind": "utility"
+                    }
+                ]
+            }
+        });
+        let output = format_runner_rows(&response);
+        assert_eq!(
+            output,
+            "utility:calculator:2%2B2\tCalc 2+2\tLine1 Line2\taccessories-calculator-symbolic\tutility\n"
         );
     }
 }
