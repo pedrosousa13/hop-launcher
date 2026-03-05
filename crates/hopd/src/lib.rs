@@ -424,6 +424,7 @@ struct RankSettings {
     weight_files: i32,
     weight_emoji: i32,
     weight_utility: i32,
+    weight_web_search: i32,
     min_fuzzy_score: i32,
 }
 
@@ -436,6 +437,7 @@ impl Default for RankSettings {
             weight_files: 12,
             weight_emoji: 8,
             weight_utility: 6,
+            weight_web_search: 5,
             min_fuzzy_score: 30,
         }
     }
@@ -451,6 +453,7 @@ impl RankSettings {
             weight_files: config_int(config, "ranking.weight_files", default.weight_files, -200, 200),
             weight_emoji: config_int(config, "ranking.weight_emoji", default.weight_emoji, -200, 200),
             weight_utility: config_int(config, "ranking.weight_utility", default.weight_utility, -200, 200),
+            weight_web_search: config_int(config, "ranking.weight_web_search", default.weight_web_search, -200, 200),
             min_fuzzy_score: config_int(
                 config,
                 "ranking.min_fuzzy_score",
@@ -617,7 +620,7 @@ fn kind_priority(kind: &str, rank: &RankSettings) -> i32 {
         "file" => rank.weight_files,
         "emoji" => rank.weight_emoji,
         "calculator" | "currency" | "weather" | "timezone" | "utility" => rank.weight_utility,
-        "action" => rank.weight_utility,
+        "action" => rank.weight_web_search,
         _ => 0,
     }
 }

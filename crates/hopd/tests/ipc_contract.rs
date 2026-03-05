@@ -645,6 +645,33 @@ async fn search_query_respects_feature_toggle_for_web_search() {
 }
 
 #[tokio::test]
+async fn ranking_weight_web_search_is_independent_from_utility() {
+    let server = HopdServer::new();
+    let _ = server
+        .handle_json_line(
+            r#"{"id":"rwws1","method":"config.set","params":{"key":"ranking.weight_web_search","value":200}}"#,
+        )
+        .await
+        .expect("set weight");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"rwws2","method":"search.query","params":{"query":"web rust","limit":10}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    let action_rows: Vec<_> = results.iter().filter(|r| r["kind"] == "action").collect();
+    assert!(!action_rows.is_empty(), "expected web search action rows");
+    let action_score = action_rows[0]["score"].as_i64().unwrap_or(0);
+    assert!(
+        action_score > 100,
+        "expected high score from weight_web_search=200, got {action_score}"
+    );
+}
+
+#[tokio::test]
 async fn returns_error_for_unknown_method() {
     let server = HopdServer::new();
     let response = server
