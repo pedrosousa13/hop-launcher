@@ -153,9 +153,11 @@ fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value
         .unwrap_or("all");
 
     let rank = RankSettings::from_config(config);
+    let features = FeatureSettings::from_config(config);
     let indexed_folders = indexed_folders_from_config(config);
     let mut matches: Vec<(i32, SearchItem)> = aggregate_provider_items(&query, mode, &indexed_folders)
         .into_iter()
+        .filter(|item| features.is_enabled(&item.kind))
         .filter_map(|item| {
             let score = score_item(&query, &item, &rank);
             let is_match = if query.is_empty() {
@@ -194,6 +196,57 @@ fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value
             "elapsed_ms": 0,
         }
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FeatureSettings {
+    apps: bool,
+    windows: bool,
+    files: bool,
+    recents: bool,
+    settings: bool,
+    utility: bool,
+}
+
+impl Default for FeatureSettings {
+    fn default() -> Self {
+        Self {
+            apps: true,
+            windows: true,
+            files: true,
+            recents: true,
+            settings: true,
+            utility: true,
+        }
+    }
+}
+
+impl FeatureSettings {
+    fn from_config(config: &HashMap<String, Value>) -> Self {
+        let default = Self::default();
+        Self {
+            apps: config_bool(config, "features.apps", default.apps),
+            windows: config_bool(config, "features.windows", default.windows),
+            files: config_bool(config, "features.files", default.files),
+            recents: config_bool(config, "features.recents", default.recents),
+            settings: config_bool(config, "features.settings", default.settings),
+            utility: config_bool(config, "features.utility", default.utility),
+        }
+    }
+
+    fn is_enabled(self, kind: &str) -> bool {
+        match kind {
+            "app" => self.apps,
+            "window" => self.windows,
+            "file" => self.files,
+            "recent" => self.recents,
+            "setting" => self.settings,
+            "utility" | "emoji" | "calculator" | "currency" | "weather" | "timezone" => {
+                self.utility
+            }
+            _ => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -253,6 +306,13 @@ fn config_int(
         .get(key)
         .and_then(Value::as_i64)
         .map(|value| value.clamp(min as i64, max as i64) as i32)
+        .unwrap_or(fallback)
+}
+
+fn config_bool(config: &HashMap<String, Value>, key: &str, fallback: bool) -> bool {
+    config
+        .get(key)
+        .and_then(Value::as_bool)
         .unwrap_or(fallback)
 }
 

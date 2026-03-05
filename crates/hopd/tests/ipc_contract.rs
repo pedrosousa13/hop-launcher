@@ -186,6 +186,43 @@ async fn search_query_returns_default_suggestions_for_empty_query() {
 }
 
 #[tokio::test]
+async fn search_query_respects_feature_toggles_for_settings() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"fs1","method":"config.set","params":{"key":"features.settings","value":false}}"#,
+        )
+        .await
+        .expect("set response");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"fs2","method":"search.query","params":{"query":"settings","mode":"settings","limit":8}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(
+        results.is_empty(),
+        "expected no settings rows when settings feature is disabled"
+    );
+
+    let all_mode = server
+        .handle_json_line(
+            r#"{"id":"fs3","method":"search.query","params":{"query":"settings","mode":"all","limit":20}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&all_mode).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(
+        results.iter().all(|row| row["kind"] != "setting"),
+        "settings kind should be filtered in all mode when disabled"
+    );
+}
+
+#[tokio::test]
 async fn handles_actions_execute_acknowledgement() {
     let server = HopdServer::new();
     let response = server
