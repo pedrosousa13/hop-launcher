@@ -1353,6 +1353,10 @@ fn launcher_css() -> &'static str {
   font-weight: 580;
 }
 
+.dim-label {
+  color: rgba(255, 255, 255, 0.58);
+}
+
 .hop-launcher-window.hop-density-compact .hop-launcher-list row {
   margin: 0 3px;
 }
@@ -1388,13 +1392,13 @@ fn launcher_css() -> &'static str {
 .hop-launcher-icon-app {
   padding: 2px;
   border-radius: 9px;
-  background: alpha(@view_bg_color, 0.20);
+  background: rgba(255, 255, 255, 0.20);
 }
 
 .hop-launcher-icon-window {
   padding: 1px;
   border-radius: 7px;
-  background: alpha(@view_bg_color, 0.12);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .hop-settings-status {
