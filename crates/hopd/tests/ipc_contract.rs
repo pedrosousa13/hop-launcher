@@ -48,6 +48,36 @@ async fn handles_search_query_with_empty_result_set() {
 }
 
 #[tokio::test]
+async fn telemetry_reports_elapsed_ms_for_non_utility_query() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2h","method":"search.query","params":{"query":"terminal","mode":"apps","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    assert!(parsed.result["telemetry"]["elapsed_ms"].is_number());
+    assert!(parsed.error.is_none());
+}
+
+#[tokio::test]
+async fn telemetry_reports_elapsed_ms_for_utility_intent_query() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2i","method":"search.query","params":{"query":"weather zurich","mode":"all","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    assert!(parsed.result["telemetry"]["elapsed_ms"].is_number());
+    assert!(parsed.error.is_none());
+}
+
+#[tokio::test]
 async fn search_query_returns_ranked_results_when_matches_exist() {
     let server = HopdServer::new();
     let response = server
