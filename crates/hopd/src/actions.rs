@@ -16,10 +16,14 @@ pub fn execute(params: &Value) -> Value {
     let mut launch_spawned = false;
     let mut execution_status = "unresolved".to_string();
     let mut error_message: Option<String> = Some("unsupported result id".to_string());
+    let mut resolved_command: Option<String> = None;
+    let mut resolved_args: Option<Vec<String>> = None;
     if let Some((cmd, args)) = command_for_result_id_with_desktop(result_id, &desktop) {
         action_resolved = true;
         execution_status = "resolved".to_string();
         error_message = None;
+        resolved_command = Some(cmd.clone());
+        resolved_args = Some(args.clone());
         launch_spawned = spawn_with_fallback(&cmd, &args);
         if !launch_spawned {
             execution_status = "spawn_failed".to_string();
@@ -37,6 +41,8 @@ pub fn execute(params: &Value) -> Value {
         "launch_spawned": launch_spawned,
         "execution_status": execution_status,
         "error_message": error_message,
+        "resolved_command": resolved_command,
+        "resolved_args": resolved_args,
         "result_id": result_id,
         "action": action,
     })

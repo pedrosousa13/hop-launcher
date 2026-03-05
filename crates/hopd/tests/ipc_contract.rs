@@ -306,6 +306,8 @@ async fn handles_actions_execute_acknowledgement() {
     assert_eq!(parsed.result["executed"], false);
     assert_eq!(parsed.result["action_resolved"], false);
     assert_eq!(parsed.result["execution_status"], "unresolved");
+    assert_eq!(parsed.result["resolved_command"], serde_json::Value::Null);
+    assert_eq!(parsed.result["resolved_args"], serde_json::Value::Null);
     assert!(parsed.error.is_none());
 }
 
