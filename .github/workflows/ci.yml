@@ -58,6 +58,20 @@ jobs:
         run: cargo test
         working-directory: crates/hopd
 
+      - name: Run hopd benchmark snapshot
+        shell: bash
+        run: |
+          mkdir -p artifacts/bench
+          cargo run --bin hopd-bench -- 150 | tee artifacts/bench/hopd-bench.txt
+        working-directory: crates/hopd
+
+      - name: Upload hopd benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hopd-bench
+          path: crates/hopd/artifacts/bench/hopd-bench.txt
+          if-no-files-found: error
+
   hop-hotkeyd:
     runs-on: ubuntu-latest
     steps:
