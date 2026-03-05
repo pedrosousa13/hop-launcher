@@ -123,6 +123,7 @@ echo "- Optional strict readiness probe (non-zero on failure): ~/.local/bin/hop-
 echo "- Validate apps/windows/files/settings routes: try terminal / w terminal / f readme / settings bluetooth"
 echo "- Type: weather zurich / time in tokyo / emoji smile"
 echo "- Press Enter on a result to trigger actions.execute"
+echo "- Minimal status policy: no persistent 'results count' or 'no results' labels; only searching/errors should appear."
 echo
 
 echo "Launching GTK app..."

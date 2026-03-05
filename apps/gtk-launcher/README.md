@@ -20,6 +20,7 @@ Use `--features gtk_ui` to launch the native GTK/libadwaita app.
 - Phase 1 starts with the window visible (app-local shortcut; not compositor-global yet).
 - Query typing calls `hopd` `search.query`.
 - Enter (or row activation) calls `hopd` `actions.execute`.
+- Minimal status chrome: only transient `Searching...` and explicit errors are shown.
 - Control socket accepts `ui.toggle` requests at `${XDG_RUNTIME_DIR}/hop-launcher-control.sock`.
 
 This phase focuses on standalone usability and IPC integration.

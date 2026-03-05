@@ -197,12 +197,12 @@ pub fn parse_execute_response(response: &Value) -> Result<(), String> {
 
 pub fn render_status_text(state: QueryState) -> String {
     match state {
-        QueryState::Ready => "Ready".to_string(),
+        QueryState::Ready => String::new(),
         QueryState::Searching => "Searching...".to_string(),
-        QueryState::Results { count } => format!("{count} results"),
-        QueryState::Empty => "No results".to_string(),
+        QueryState::Results { .. } => String::new(),
+        QueryState::Empty => String::new(),
         QueryState::Error(message) => format!("Error: {message}"),
-        QueryState::Executed => "Executed".to_string(),
+        QueryState::Executed => String::new(),
     }
 }
 
@@ -531,9 +531,21 @@ mod tests {
     }
 
     #[test]
-    fn status_for_non_empty_results_reports_count() {
+    fn status_for_non_empty_results_is_silent() {
         let text = render_status_text(QueryState::Results { count: 8 });
-        assert_eq!(text, "8 results");
+        assert_eq!(text, "");
+    }
+
+    #[test]
+    fn status_for_empty_results_is_silent() {
+        let text = render_status_text(QueryState::Empty);
+        assert_eq!(text, "");
+    }
+
+    #[test]
+    fn status_for_error_remains_visible() {
+        let text = render_status_text(QueryState::Error("boom".to_string()));
+        assert_eq!(text, "Error: boom");
     }
 
     #[test]
