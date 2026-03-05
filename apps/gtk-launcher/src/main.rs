@@ -1,6 +1,8 @@
 #[cfg(feature = "gtk_ui")]
 use std::cell::RefCell;
 #[cfg(feature = "gtk_ui")]
+use std::collections::HashMap;
+#[cfg(feature = "gtk_ui")]
 use std::fs;
 #[cfg(feature = "gtk_ui")]
 use std::io::{BufRead, BufReader, Write};
@@ -10,6 +12,8 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::rc::Rc;
 #[cfg(feature = "gtk_ui")]
 use std::sync::mpsc;
+#[cfg(feature = "gtk_ui")]
+use std::sync::OnceLock;
 #[cfg(feature = "gtk_ui")]
 use std::thread;
 #[cfg(feature = "gtk_ui")]
@@ -2538,6 +2542,15 @@ fn build_result_icon(row: &LauncherResult) -> gtk::Image {
             }
         }
     }
+    if row.kind == "window" {
+        if let Some(desktop_id) = resolve_desktop_id_for_window_hint(&row.icon) {
+            if let Some(app_info) = gio::DesktopAppInfo::new(&desktop_id) {
+                if let Some(icon) = app_info.icon() {
+                    return gtk::Image::from_gicon(&icon);
+                }
+            }
+        }
+    }
 
     let raw = row.icon.trim();
     if !raw.is_empty() {
@@ -2561,6 +2574,100 @@ fn build_result_icon(row: &LauncherResult) -> gtk::Image {
         _ => "system-search-symbolic",
     };
     gtk::Image::from_icon_name(fallback)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn resolve_desktop_id_for_window_hint(raw: &str) -> Option<String> {
+    let hint = raw.trim();
+    if hint.is_empty() {
+        return None;
+    }
+    if hint.ends_with(".desktop") {
+        return Some(hint.to_string());
+    }
+
+    let index = desktop_icon_index();
+    let lower = hint.to_lowercase();
+    if let Some(found) = index.get(&lower) {
+        return Some(found.clone());
+    }
+
+    let normalized = lower.replace('_', "-");
+    if let Some(found) = index.get(&normalized) {
+        return Some(found.clone());
+    }
+    for token in normalized.split(['.', ' ', ':', '/']) {
+        if token.is_empty() {
+            continue;
+        }
+        if let Some(found) = index.get(token) {
+            return Some(found.clone());
+        }
+    }
+    None
+}
+
+#[cfg(feature = "gtk_ui")]
+fn desktop_icon_index() -> &'static HashMap<String, String> {
+    static INDEX: OnceLock<HashMap<String, String>> = OnceLock::new();
+    INDEX.get_or_init(build_desktop_icon_index)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn build_desktop_icon_index() -> HashMap<String, String> {
+    let mut index = HashMap::new();
+    let mut roots = Vec::new();
+    if let Ok(home) = std::env::var("HOME") {
+        roots.push(Path::new(&home).join(".local/share/applications"));
+        roots.push(Path::new(&home).join(".local/share/flatpak/exports/share/applications"));
+    }
+    roots.push(PathBuf::from("/usr/share/applications"));
+    roots.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+
+    for root in roots {
+        let Ok(entries) = fs::read_dir(root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("desktop") {
+                continue;
+            }
+            let Some(desktop_id) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(ToString::to_string)
+            else {
+                continue;
+            };
+            let stem = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_lowercase();
+            if !stem.is_empty() {
+                index.entry(stem).or_insert_with(|| desktop_id.clone());
+            }
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
+            for line in content.lines() {
+                if let Some(value) = line.strip_prefix("Icon=") {
+                    let icon = value.trim().to_lowercase().replace('_', "-");
+                    if !icon.is_empty() {
+                        index.entry(icon).or_insert_with(|| desktop_id.clone());
+                    }
+                } else if let Some(value) = line.strip_prefix("StartupWMClass=") {
+                    let wm_class = value.trim().to_lowercase().replace('_', "-");
+                    if !wm_class.is_empty() {
+                        index.entry(wm_class).or_insert_with(|| desktop_id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    index
 }
 
 #[cfg(feature = "gtk_ui")]
