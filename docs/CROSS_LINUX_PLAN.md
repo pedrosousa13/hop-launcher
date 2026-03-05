@@ -36,6 +36,7 @@ Completed in this branch:
 4. Added local daemon benchmark entrypoint (`cargo run --bin hopd-bench -- <iterations>`) reporting mean/p95/max search latency for utility and app queries.
 5. Expanded benchmark coverage with cold + warm latency reporting and file-search scale scenarios (`files-200`, `files-1200`) using indexed-folder test corpora.
 6. Added CI benchmark artifact upload (`hopd-bench`) from `ci.yml` so each run stores a searchable latency snapshot.
+7. Reworked settings provider from static catalog to desktop- and command-aware rows (`gnome-control-center`, `systemsettings5/systemsettings`) with fallback behavior.
 
 ## Next Milestones
 
