@@ -24,6 +24,11 @@ pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchIt
         .filter_map(|path| {
             let display = path.file_name()?.to_str()?.to_string();
             let full = path.to_string_lossy().to_string();
+            let subtitle = path
+                .parent()
+                .map(|parent| parent.to_string_lossy().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "Filesystem".to_string());
             let haystack = format!("{display} {full}").to_lowercase();
             if !haystack.contains(&normalized) {
                 return None;
@@ -33,7 +38,7 @@ pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchIt
                 &format!("file:{full}"),
                 "file",
                 &display,
-                "Filesystem",
+                &subtitle,
                 &icon,
                 &haystack,
             ))

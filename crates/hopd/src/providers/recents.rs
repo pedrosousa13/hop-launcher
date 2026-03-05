@@ -18,12 +18,17 @@ pub fn results(query: &str) -> Vec<SearchItem> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("Recent file")
                 .to_string();
+            let subtitle = path_obj
+                .parent()
+                .map(|parent| parent.to_string_lossy().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "Recent file".to_string());
             let icon = icon_for_path(path_obj);
             SearchItem::new(
                 &format!("recent:{path}"),
                 "recent",
                 &title,
-                "Recent file",
+                &subtitle,
                 &icon,
                 &format!("recent {title} {path}"),
             )
