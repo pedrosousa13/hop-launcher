@@ -117,12 +117,16 @@ pub fn search_query_mode(query: &str) -> String {
 }
 
 pub fn build_execute_payload(result_id: &str, request_id: &str) -> Value {
+    build_execute_payload_with_action(result_id, request_id, "enter")
+}
+
+pub fn build_execute_payload_with_action(result_id: &str, request_id: &str, action: &str) -> Value {
     json!({
         "id": request_id,
         "method": "actions.execute",
         "params": {
             "result_id": result_id,
-            "action": "enter",
+            "action": action,
         }
     })
 }
@@ -235,7 +239,11 @@ pub fn search(socket_path: &str, query: &str, limit: u32) -> Result<Vec<Launcher
 }
 
 pub fn execute(socket_path: &str, result_id: &str) -> Result<(), String> {
-    let payload = build_execute_payload(result_id, "gtk-execute");
+    execute_with_action(socket_path, result_id, "enter")
+}
+
+pub fn execute_with_action(socket_path: &str, result_id: &str, action: &str) -> Result<(), String> {
+    let payload = build_execute_payload_with_action(result_id, "gtk-execute", action);
     let response = send_ipc(socket_path, &payload)?;
     parse_execute_response(&response)
 }
@@ -452,6 +460,15 @@ mod tests {
         assert_eq!(payload["method"], "actions.execute");
         assert_eq!(payload["params"]["result_id"], "utility:weather");
         assert_eq!(payload["params"]["action"], "enter");
+    }
+
+    #[test]
+    fn builds_execute_payload_with_copy_action() {
+        let payload = build_execute_payload_with_action("utility:calculator:2%2B2", "gtk-3", "copy");
+        assert_eq!(payload["id"], "gtk-3");
+        assert_eq!(payload["method"], "actions.execute");
+        assert_eq!(payload["params"]["result_id"], "utility:calculator:2%2B2");
+        assert_eq!(payload["params"]["action"], "copy");
     }
 
     #[test]

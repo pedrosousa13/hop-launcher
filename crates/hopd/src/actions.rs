@@ -18,7 +18,16 @@ pub fn execute(params: &Value) -> Value {
     let mut error_message: Option<String> = Some("unsupported result id".to_string());
     let mut resolved_command: Option<String> = None;
     let mut resolved_args: Option<Vec<String>> = None;
-    if let Some((cmd, args)) = command_for_result_id_with_desktop(result_id, &desktop) {
+    let mut copied_text: Option<String> = None;
+
+    if action == "copy" {
+        if let Some(text) = copy_text_for_result_id(result_id) {
+            action_resolved = true;
+            execution_status = "copied".to_string();
+            error_message = None;
+            copied_text = Some(text);
+        }
+    } else if let Some((cmd, args)) = command_for_result_id_with_desktop(result_id, &desktop) {
         action_resolved = true;
         execution_status = "resolved".to_string();
         error_message = None;
@@ -31,7 +40,11 @@ pub fn execute(params: &Value) -> Value {
         }
     }
 
-    let success = action_resolved && launch_spawned;
+    let success = if action == "copy" {
+        action_resolved
+    } else {
+        action_resolved && launch_spawned
+    };
 
     json!({
         "ok": action_resolved,
@@ -43,6 +56,7 @@ pub fn execute(params: &Value) -> Value {
         "error_message": error_message,
         "resolved_command": resolved_command,
         "resolved_args": resolved_args,
+        "copied_text": copied_text,
         "result_id": result_id,
         "action": action,
     })
@@ -193,6 +207,39 @@ fn parse_setting_command_payload(payload: &str) -> Option<(String, Vec<String>)>
         return None;
     }
     Some((command, parts))
+}
+
+fn copy_text_for_result_id(result_id: &str) -> Option<String> {
+    if let Some(expression) = result_id.strip_prefix("utility:calculator:") {
+        if expression.trim().is_empty() {
+            return None;
+        }
+        return Some(decode_component(expression)?);
+    }
+    if let Some(payload) = result_id.strip_prefix("utility:currency:") {
+        let parts: Vec<&str> = payload.split(':').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        return Some(format!("{} {} to {}", parts[0], parts[1], parts[2]));
+    }
+    if let Some(location) = result_id.strip_prefix("utility:weather:") {
+        let decoded = decode_component(location)?;
+        if decoded.trim().is_empty() {
+            return None;
+        }
+        return Some(decoded);
+    }
+    if result_id == "utility:weather" {
+        return Some("weather".to_string());
+    }
+    if result_id == "utility:timezone" {
+        return Some("timezone".to_string());
+    }
+    if result_id == "utility:emoji" {
+        return Some("emoji".to_string());
+    }
+    None
 }
 
 fn encode_component(raw: &str) -> String {
@@ -394,5 +441,20 @@ mod tests {
                     .to_string()
             ]
         );
+    }
+
+    #[test]
+    fn copy_action_returns_copied_text_for_calculator_utility() {
+        let payload = serde_json::json!({
+            "result_id": "utility:calculator:2%2B2",
+            "action": "copy",
+        });
+        let response = execute(&payload);
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["success"], true);
+        assert_eq!(response["execution_status"], "copied");
+        assert_eq!(response["copied_text"], "2+2");
+        assert_eq!(response["launch_spawned"], false);
+        assert_eq!(response["resolved_command"], serde_json::Value::Null);
     }
 }
