@@ -3279,6 +3279,7 @@ fn refresh_results(
             for row in &rows {
                 let icon = build_result_icon(row);
                 icon.set_pixel_size(icon_size_for_row(row));
+                icon.set_valign(gtk::Align::Center);
                 icon.add_css_class("hop-launcher-icon");
                 if row.kind == "app" {
                     icon.add_css_class("hop-launcher-icon-app");
@@ -3294,6 +3295,7 @@ fn refresh_results(
                     .orientation(gtk::Orientation::Vertical)
                     .spacing(2)
                     .hexpand(true)
+                    .valign(gtk::Align::Center)
                     .build();
                 text.append(&title);
                 if !row.subtitle.trim().is_empty() {
@@ -3309,6 +3311,7 @@ fn refresh_results(
                 let action_hint = gtk::Label::builder()
                     .label(action_hint_for_row(row))
                     .xalign(1.0)
+                    .valign(gtk::Align::Center)
                     .build();
                 action_hint.add_css_class("dim-label");
                 action_hint.add_css_class("hop-launcher-action-hint");
