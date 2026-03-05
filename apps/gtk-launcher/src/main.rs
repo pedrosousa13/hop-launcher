@@ -1,7 +1,7 @@
 #[cfg(feature = "gtk_ui")]
 use std::cell::RefCell;
 #[cfg(feature = "gtk_ui")]
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 #[cfg(feature = "gtk_ui")]
 use std::fs;
 #[cfg(feature = "gtk_ui")]
@@ -2621,20 +2621,8 @@ fn resolve_desktop_id_for_window_hint(raw: &str) -> Option<String> {
     }
 
     let index = desktop_icon_index();
-    let lower = hint.to_lowercase();
-    if let Some(found) = index.get(&lower) {
-        return Some(found.clone());
-    }
-
-    let normalized = lower.replace('_', "-");
-    if let Some(found) = index.get(&normalized) {
-        return Some(found.clone());
-    }
-    for token in normalized.split(['.', ' ', ':', '/']) {
-        if token.is_empty() {
-            continue;
-        }
-        if let Some(found) = index.get(token) {
+    for alias in alias_candidates(hint) {
+        if let Some(found) = index.get(&alias) {
             return Some(found.clone());
         }
     }
@@ -2677,31 +2665,82 @@ fn build_desktop_icon_index() -> HashMap<String, String> {
             let stem = path
                 .file_stem()
                 .and_then(|name| name.to_str())
-                .unwrap_or_default()
-                .to_lowercase();
-            if !stem.is_empty() {
-                index.entry(stem).or_insert_with(|| desktop_id.clone());
-            }
+                .unwrap_or_default();
+            add_desktop_aliases(&mut index, stem, &desktop_id);
             let Ok(content) = fs::read_to_string(&path) else {
                 continue;
             };
             for line in content.lines() {
                 if let Some(value) = line.strip_prefix("Icon=") {
-                    let icon = value.trim().to_lowercase().replace('_', "-");
-                    if !icon.is_empty() {
-                        index.entry(icon).or_insert_with(|| desktop_id.clone());
-                    }
+                    add_desktop_aliases(&mut index, value.trim(), &desktop_id);
                 } else if let Some(value) = line.strip_prefix("StartupWMClass=") {
-                    let wm_class = value.trim().to_lowercase().replace('_', "-");
-                    if !wm_class.is_empty() {
-                        index.entry(wm_class).or_insert_with(|| desktop_id.clone());
-                    }
+                    add_desktop_aliases(&mut index, value.trim(), &desktop_id);
                 }
             }
         }
     }
 
     index
+}
+
+#[cfg(feature = "gtk_ui")]
+fn add_desktop_aliases(index: &mut HashMap<String, String>, raw: &str, desktop_id: &str) {
+    for alias in alias_candidates(raw) {
+        index
+            .entry(alias)
+            .or_insert_with(|| desktop_id.to_string());
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn alias_candidates(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_alias = |value: String| {
+        let trimmed = value.trim().trim_matches('.').trim_matches('-').to_string();
+        if trimmed.is_empty() {
+            return;
+        }
+        if seen.insert(trimmed.clone()) {
+            out.push(trimmed);
+        }
+    };
+
+    let lowered = raw.trim().to_lowercase();
+    if lowered.is_empty() {
+        return out;
+    }
+    let base = lowered
+        .strip_suffix(".desktop")
+        .unwrap_or(lowered.as_str())
+        .to_string();
+    push_alias(base.clone());
+    push_alias(base.replace('_', "-"));
+    push_alias(base.replace('.', "-").replace('_', "-"));
+
+    let tokens = base
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return out;
+    }
+
+    for token in &tokens {
+        push_alias((*token).to_string());
+    }
+    push_alias(tokens.join("-"));
+    if tokens.len() >= 2 {
+        push_alias(tokens[tokens.len() - 2..].join("-"));
+    }
+    if tokens.len() >= 3 {
+        push_alias(tokens[tokens.len() - 3..].join("-"));
+    }
+    if ["org", "io", "com", "net", "app", "dev"].contains(&tokens[0]) && tokens.len() > 1 {
+        push_alias(tokens[1..].join("-"));
+    }
+
+    out
 }
 
 #[cfg(feature = "gtk_ui")]
