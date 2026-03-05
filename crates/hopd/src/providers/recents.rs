@@ -59,9 +59,43 @@ fn parse_recent_file_uris(xbel: &str) -> Vec<String> {
     let mut out = Vec::new();
     for chunk in xbel.split("href=\"").skip(1) {
         let href = chunk.split('"').next().unwrap_or_default();
-        if let Some(stripped) = href.strip_prefix("file://") {
-            out.push(stripped.to_string());
+        if let Some(path) = parse_file_uri(href) {
+            out.push(path);
         }
+    }
+    out
+}
+
+fn parse_file_uri(uri: &str) -> Option<String> {
+    let stripped = uri.strip_prefix("file://")?;
+    let encoded_path = if stripped.starts_with('/') {
+        stripped
+    } else {
+        let (host, rest) = stripped.split_once('/')?;
+        if !host.is_empty() && host != "localhost" {
+            return None;
+        }
+        &uri[(uri.len() - rest.len() - 1)..]
+    };
+    Some(percent_decode(encoded_path))
+}
+
+fn percent_decode(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut idx = 0;
+    while idx < bytes.len() {
+        if bytes[idx] == b'%' && idx + 2 < bytes.len() {
+            let hi = bytes[idx + 1] as char;
+            let lo = bytes[idx + 2] as char;
+            if let (Some(hi), Some(lo)) = (hi.to_digit(16), lo.to_digit(16)) {
+                out.push((hi * 16 + lo) as u8 as char);
+                idx += 3;
+                continue;
+            }
+        }
+        out.push(bytes[idx] as char);
+        idx += 1;
     }
     out
 }
@@ -99,6 +133,15 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert!(entries[0].contains("Notes.txt"));
         assert!(entries[1].contains("demo.md"));
+    }
+
+    #[test]
+    fn parses_localhost_and_percent_encoded_file_uris() {
+        let xbel = r#"<?xml version="1.0"?><xbel><bookmark href="file://localhost/home/pedro/My%20Notes.txt"/><bookmark href="file:///tmp/sprint%231.md"/></xbel>"#;
+        let entries = parse_recent_file_uris(xbel);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0], "/home/pedro/My Notes.txt");
+        assert_eq!(entries[1], "/tmp/sprint#1.md");
     }
 
     #[test]
