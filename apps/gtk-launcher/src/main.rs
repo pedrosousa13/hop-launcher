@@ -2450,24 +2450,21 @@ fn refresh_results(
                     .label(&row.title)
                     .build();
                 title.add_css_class("hop-launcher-title-text");
-                let subtitle_text = if row.subtitle.is_empty() {
-                    row.kind.clone()
-                } else {
-                    format!("{}  ·  {}", row.subtitle, row.kind)
-                };
-                let subtitle = gtk::Label::builder()
-                    .xalign(0.0)
-                    .label(&subtitle_text)
-                    .build();
-                subtitle.add_css_class("dim-label");
-                subtitle.add_css_class("hop-launcher-subtitle");
                 let text = gtk::Box::builder()
                     .orientation(gtk::Orientation::Vertical)
                     .spacing(2)
                     .hexpand(true)
                     .build();
                 text.append(&title);
-                text.append(&subtitle);
+                if !row.subtitle.trim().is_empty() {
+                    let subtitle = gtk::Label::builder()
+                        .xalign(0.0)
+                        .label(&row.subtitle)
+                        .build();
+                    subtitle.add_css_class("dim-label");
+                    subtitle.add_css_class("hop-launcher-subtitle");
+                    text.append(&subtitle);
+                }
 
                 let action_hint = gtk::Label::builder()
                     .label(action_hint_for_row(row))
