@@ -22,6 +22,8 @@ use std::time::Duration;
 use std::time::Instant;
 #[cfg(feature = "gtk_ui")]
 use std::path::{Path, PathBuf};
+#[cfg(feature = "gtk_ui")]
+use std::process::Command as ProcessCommand;
 
 #[cfg(feature = "gtk_ui")]
 use gtk::gio;
@@ -77,6 +79,7 @@ struct LauncherUiSettings {
     currency_rate_ttl_hours: i32,
     web_search_enabled: bool,
     web_search_max_actions: i32,
+    global_shortcut: String,
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -111,6 +114,7 @@ impl Default for LauncherUiSettings {
             currency_rate_ttl_hours: 12,
             web_search_enabled: true,
             web_search_max_actions: 3,
+            global_shortcut: "<Super>space".to_string(),
         }
     }
 }
@@ -136,6 +140,42 @@ fn legacy_blur_mode_to_percent(raw: &str) -> i32 {
         "soft" => 35,
         _ => 0,
     }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn sanitize_shortcut(raw: &str) -> String {
+    let value = raw.trim();
+    if value.is_empty() {
+        "<Super>space".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn shortcut_setup_hint() -> String {
+    let desktop = format!(
+        "{}:{}",
+        std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+        std::env::var("XDG_SESSION_DESKTOP").unwrap_or_default()
+    )
+    .to_lowercase();
+    if desktop.contains("gnome") {
+        return "GNOME: Apply writes a custom keybinding via gsettings.".to_string();
+    }
+    if desktop.contains("kde") || desktop.contains("plasma") {
+        return "KDE: Apply prints KGlobalAccel setup instructions if direct DBus wiring is unavailable.".to_string();
+    }
+    if std::env::var("SWAYSOCK").is_ok() {
+        return "Sway: use `hop-hotkeyd print-bindings` and add the bindsym snippet to your sway config."
+            .to_string();
+    }
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+        return "Hyprland: use `hop-hotkeyd print-bindings` and add the bind snippet to hyprland.conf."
+            .to_string();
+    }
+    "If Apply fails, run `~/.local/bin/hop-hotkeyd setup-shortcut --dry-run` for diagnostics."
+        .to_string()
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -318,6 +358,11 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(1, 10) as i32)
         .unwrap_or(default.web_search_max_actions);
+    let global_shortcut = json
+        .get("global_shortcut")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_shortcut)
+        .unwrap_or(default.global_shortcut);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -348,6 +393,7 @@ fn load_ui_settings() -> LauncherUiSettings {
         currency_rate_ttl_hours,
         web_search_enabled,
         web_search_max_actions,
+        global_shortcut,
     }
 }
 
@@ -388,6 +434,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "currency_rate_ttl_hours": settings.currency_rate_ttl_hours,
         "web_search_enabled": settings.web_search_enabled,
         "web_search_max_actions": settings.web_search_max_actions,
+        "global_shortcut": settings.global_shortcut,
     });
     let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("encode settings failed: {error}"))?;
@@ -632,6 +679,7 @@ fn run() {
         {
             let list = list.clone();
             let list_scroller = list_scroller.clone();
+            let window = window.clone();
             let status = status.clone();
             let results = results.clone();
             let socket_path = socket_path.clone();
@@ -646,6 +694,7 @@ fn run() {
                 let debounce_ms = ui_settings.borrow().debounce_ms.max(0) as u64;
                 let list = list.clone();
                 let list_scroller = list_scroller.clone();
+                let window = window.clone();
                 let status = status.clone();
                 let results = results.clone();
                 let socket_path = socket_path.clone();
@@ -656,6 +705,7 @@ fn run() {
                     move || {
                         let current_settings = ui_settings.borrow().clone();
                         refresh_results(
+                            &window,
                             &list,
                             &list_scroller,
                             &status,
@@ -829,6 +879,7 @@ fn run() {
         }
 
         refresh_results(
+            &window,
             &list,
             &list_scroller,
             &status,
@@ -1441,6 +1492,152 @@ fn open_settings_window(
     }
     behavior.add(&results_row);
 
+    let shortcut_row = adw::ActionRow::builder()
+        .title("Global shortcut")
+        .subtitle("Apply compositor/global shortcut via hop-hotkeyd.")
+        .build();
+    let shortcut_entry = gtk::Entry::builder()
+        .text(&settings.borrow().global_shortcut)
+        .placeholder_text("<Super>space")
+        .width_chars(18)
+        .build();
+    shortcut_entry.set_tooltip_text(Some(
+        "Focus and press your desired shortcut combination to capture it.",
+    ));
+    {
+        let shortcut_entry_for_cb = shortcut_entry.clone();
+        let controller = gtk::EventControllerKey::new();
+        controller.connect_key_pressed(move |_, key, _, state| {
+            let mods = state
+                & (gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::SHIFT_MASK
+                    | gtk::gdk::ModifierType::ALT_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK
+                    | gtk::gdk::ModifierType::META_MASK);
+            let has_primary_mod = mods.intersects(
+                gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::ALT_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK
+                    | gtk::gdk::ModifierType::META_MASK,
+            );
+            if !has_primary_mod {
+                return true.into();
+            }
+            let accel = gtk::accelerator_name(key, mods);
+            let value = sanitize_shortcut(accel.as_str());
+            shortcut_entry_for_cb.set_text(&value);
+            true.into()
+        });
+        shortcut_entry.add_controller(controller);
+    }
+    let apply_shortcut_button = gtk::Button::with_label("Apply");
+    let shortcut_controls = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    shortcut_controls.append(&shortcut_entry);
+    shortcut_controls.append(&apply_shortcut_button);
+    shortcut_row.add_suffix(&shortcut_controls);
+    let shortcut_hint_row = adw::ActionRow::builder()
+        .title("Shortcut backend hint")
+        .subtitle(&shortcut_setup_hint())
+        .build();
+    shortcut_hint_row.set_activatable(false);
+    {
+        let settings = settings.clone();
+        let settings_status = settings_status.clone();
+        let shortcut_entry = shortcut_entry.clone();
+        let apply_shortcut_button_for_cb = apply_shortcut_button.clone();
+        apply_shortcut_button.connect_clicked(move |_| {
+            let value = sanitize_shortcut(shortcut_entry.text().as_str());
+            shortcut_entry.set_text(&value);
+            apply_shortcut_button_for_cb.set_sensitive(false);
+            set_settings_feedback(&settings_status, "Applying global shortcut...", false);
+
+            let mut next = settings.borrow().clone();
+            next.global_shortcut = value.clone();
+            if let Err(error) = save_ui_settings(&next) {
+                apply_shortcut_button_for_cb.set_sensitive(true);
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
+            }
+            *settings.borrow_mut() = next;
+
+            let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+            let control_socket = default_control_socket_path();
+            std::thread::spawn(move || {
+                let output = {
+                    let mut cmd = if let Ok(home) = std::env::var("HOME") {
+                        let candidate = format!("{home}/.local/bin/hop-hotkeyd");
+                        if Path::new(&candidate).exists() {
+                            ProcessCommand::new(candidate)
+                        } else {
+                            ProcessCommand::new("hop-hotkeyd")
+                        }
+                    } else {
+                        ProcessCommand::new("hop-hotkeyd")
+                    };
+                    cmd.args([
+                        "setup-shortcut",
+                        "--shortcut",
+                        &value,
+                        "--socket",
+                        &control_socket,
+                    ])
+                    .output()
+                };
+                let outcome = match output {
+                    Ok(result) if result.status.success() => Ok(()),
+                    Ok(result) => {
+                        let stderr = String::from_utf8_lossy(&result.stderr);
+                        let message = stderr.trim();
+                        Err(format!(
+                            "Shortcut apply failed: {}",
+                            if message.is_empty() {
+                                "setup-shortcut returned non-zero"
+                            } else {
+                                message
+                            }
+                        ))
+                    }
+                    Err(error) => Err(format!("Shortcut apply failed: {error}")),
+                };
+                let _ = tx.send(outcome);
+            });
+
+            let settings_status = settings_status.clone();
+            let apply_shortcut_button = apply_shortcut_button_for_cb.clone();
+            gtk::glib::timeout_add_local(Duration::from_millis(25), move || match rx.try_recv() {
+                Ok(Ok(())) => {
+                    apply_shortcut_button.set_sensitive(true);
+                    set_settings_feedback(&settings_status, "Applied global shortcut", false);
+                    gtk::glib::ControlFlow::Break
+                }
+                Ok(Err(message)) => {
+                    apply_shortcut_button.set_sensitive(true);
+                    set_settings_feedback(&settings_status, &message, true);
+                    gtk::glib::ControlFlow::Break
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    apply_shortcut_button.set_sensitive(true);
+                    set_settings_feedback(
+                        &settings_status,
+                        "Shortcut apply failed: worker disconnected",
+                        true,
+                    );
+                    gtk::glib::ControlFlow::Break
+                }
+            });
+        });
+    }
+    behavior.add(&shortcut_row);
+    behavior.add(&shortcut_hint_row);
+
     let animations_row = adw::ActionRow::builder()
         .title("Animations enabled")
         .subtitle("Animate launcher open and close transitions.")
@@ -1894,7 +2091,8 @@ fn open_settings_window(
                         "currency_refresh_enabled": settings.borrow().currency_refresh_enabled,
                         "currency_rate_ttl_hours": settings.borrow().currency_rate_ttl_hours,
                         "web_search_enabled": settings.borrow().web_search_enabled,
-                        "web_search_max_actions": settings.borrow().web_search_max_actions
+                        "web_search_max_actions": settings.borrow().web_search_max_actions,
+                        "global_shortcut": settings.borrow().global_shortcut
                     });
                     let encoded = match serde_json::to_string_pretty(&payload) {
                         Ok(value) => value,
@@ -2236,7 +2434,8 @@ fn load_settings_from_path(path: &std::path::Path) -> Result<LauncherUiSettings,
         "currency_refresh_enabled": json.get("currency_refresh_enabled").cloned().unwrap_or(serde_json::json!(default.currency_refresh_enabled)),
         "currency_rate_ttl_hours": json.get("currency_rate_ttl_hours").cloned().unwrap_or(serde_json::json!(default.currency_rate_ttl_hours)),
         "web_search_enabled": json.get("web_search_enabled").cloned().unwrap_or(serde_json::json!(default.web_search_enabled)),
-        "web_search_max_actions": json.get("web_search_max_actions").cloned().unwrap_or(serde_json::json!(default.web_search_max_actions))
+        "web_search_max_actions": json.get("web_search_max_actions").cloned().unwrap_or(serde_json::json!(default.web_search_max_actions)),
+        "global_shortcut": json.get("global_shortcut").cloned().unwrap_or(serde_json::json!(default.global_shortcut))
     });
     let encoded = serde_json::to_string(&merged).map_err(|error| format!("encode failed: {error}"))?;
     let temp_path = settings_file_path().ok_or_else(|| "missing config dir".to_string())?;
@@ -2404,6 +2603,11 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(1, 10) as i32)
         .unwrap_or(default.web_search_max_actions);
+    let global_shortcut = json
+        .get("global_shortcut")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_shortcut)
+        .unwrap_or(default.global_shortcut);
 
     LauncherUiSettings {
         overlay_opacity_percent: overlay,
@@ -2434,6 +2638,7 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
         currency_rate_ttl_hours,
         web_search_enabled,
         web_search_max_actions,
+        global_shortcut,
     }
 }
 
@@ -2460,6 +2665,7 @@ fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
 
 #[cfg(feature = "gtk_ui")]
 fn refresh_results(
+    window: &adw::ApplicationWindow,
     list: &gtk::ListBox,
     list_scroller: &gtk::ScrolledWindow,
     status: &gtk::Label,
@@ -2546,6 +2752,9 @@ fn refresh_results(
             };
             let target_height = (rows_visible as i32 * estimated_row_height).clamp(0, 420);
             list_scroller.set_max_content_height(target_height.max(1));
+            list_scroller.set_min_content_height(target_height.max(1));
+            let window_height = (140 + target_height).clamp(190, 620);
+            window.set_default_size(900, window_height);
             status.set_text(&render_status_text(if rows.is_empty() {
                 QueryState::Empty
             } else {
@@ -2555,6 +2764,8 @@ fn refresh_results(
         Err(error) => {
             results.borrow_mut().clear();
             list_scroller.set_max_content_height(1);
+            list_scroller.set_min_content_height(1);
+            window.set_default_size(900, 190);
             status.set_text(&render_status_text(QueryState::Error(format!(
                 "hopd unavailable: {error}"
             ))));

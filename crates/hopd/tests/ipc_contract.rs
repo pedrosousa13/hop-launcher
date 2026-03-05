@@ -114,6 +114,32 @@ async fn search_query_returns_web_search_action_rows_for_web_prefix() {
 }
 
 #[tokio::test]
+async fn search_query_web_prefix_honors_service_keywords_and_order() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"ws-cfg","method":"config.set","params":{"key":"web_search.services_json","value":"[{\"id\":\"kagi\",\"name\":\"Kagi\",\"urlTemplate\":\"https://kagi.com/search?q=%s\",\"enabled\":true,\"keyword\":\"kg\"},{\"id\":\"ddg\",\"name\":\"DuckDuckGo\",\"urlTemplate\":\"https://duckduckgo.com/?q=%s\",\"enabled\":true,\"keyword\":\"ddg\"}]"}}"#,
+        )
+        .await
+        .expect("set response");
+
+    let keyword_response = server
+        .handle_json_line(
+            r#"{"id":"ws-kg","method":"search.query","params":{"query":"kg rust","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+    let keyword_parsed: IpcResponse =
+        serde_json::from_str(&keyword_response).expect("valid json");
+    let keyword_results = keyword_parsed.result["results"]
+        .as_array()
+        .expect("results array");
+    assert_eq!(keyword_results.len(), 1);
+    assert_eq!(keyword_results[0]["kind"], "action");
+    assert_eq!(keyword_results[0]["id"], "web-search:kagi:https%3A%2F%2Fkagi.com%2Fsearch%3Fq%3Drust");
+}
+
+#[tokio::test]
 async fn search_query_respects_limit() {
     let server = HopdServer::new();
     let response = server

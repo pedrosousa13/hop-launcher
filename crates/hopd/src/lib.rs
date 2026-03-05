@@ -894,9 +894,8 @@ fn emoji_provider(query: &str) -> Vec<SearchItem> {
 }
 
 fn web_search_provider(query: &str, config: &HashMap<String, Value>) -> Vec<SearchItem> {
-    if !config_bool(config, "web_search.enabled", true) {
-        return Vec::new();
-    }
+    // Keep compatibility with GNOME provider semantics: the deprecated global gate
+    // does not block results; service enable flags and max-actions drive visibility.
     let max_actions = config_int(config, "web_search.max_actions", 3, 0, 10) as usize;
     if max_actions == 0 {
         return Vec::new();
@@ -907,35 +906,50 @@ fn web_search_provider(query: &str, config: &HashMap<String, Value>) -> Vec<Sear
         return Vec::new();
     }
 
-    let lowered = trimmed.to_lowercase();
-    let mut services = Vec::new();
-    let q = if lowered.starts_with("web ") {
-        services.push(("google", "Google", "https://www.google.com/search?q=%s"));
-        services.push(("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q=%s"));
-        trimmed[4..].trim()
-    } else if lowered.starts_with("g ") {
-        services.push(("google", "Google", "https://www.google.com/search?q=%s"));
-        trimmed[2..].trim()
-    } else if lowered.starts_with("ddg ") {
-        services.push(("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q=%s"));
-        trimmed[4..].trim()
-    } else {
+    let services = parse_web_search_services(config);
+    let enabled_services = services
+        .iter()
+        .filter(|row| row.enabled)
+        .cloned()
+        .collect::<Vec<_>>();
+    if enabled_services.is_empty() {
         return Vec::new();
+    }
+
+    let lowered = trimmed.to_lowercase();
+    let (q, selected_services) = if lowered.starts_with("web ") {
+        (trimmed[4..].trim().to_string(), enabled_services)
+    } else {
+        let matched = enabled_services
+            .iter()
+            .find(|service| {
+                let keyword = service.keyword.trim().to_lowercase();
+                !keyword.is_empty() && lowered.starts_with(&(keyword + " "))
+            })
+            .cloned();
+        let Some(service) = matched else {
+            return Vec::new();
+        };
+        let keyword_len = service.keyword.trim().len();
+        (
+            trimmed[keyword_len..].trim().to_string(),
+            vec![service],
+        )
     };
 
     if q.is_empty() {
         return Vec::new();
     }
 
-    services
+    selected_services
         .into_iter()
         .take(max_actions)
-        .map(|(id, name, template)| {
-            let url = template.replace("%s", &encode_component(q));
+        .map(|service| {
+            let url = service.url_template.replace("%s", &encode_component(&q));
             SearchItem::new(
-                &format!("web-search:{id}:{}", encode_component(&url)),
+                &format!("web-search:{}:{}", service.id, encode_component(&url)),
                 "action",
-                &format!("Search {name} for \"{q}\""),
+                &format!("Search {} for \"{}\"", service.name, q),
                 &host_from_url(&url),
                 "edit-find-symbolic",
                 "web search action browser",
@@ -954,4 +968,118 @@ fn host_from_url(url: &str) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+#[derive(Debug, Clone)]
+struct WebSearchService {
+    id: String,
+    name: String,
+    url_template: String,
+    enabled: bool,
+    keyword: String,
+}
+
+fn parse_web_search_services(config: &HashMap<String, Value>) -> Vec<WebSearchService> {
+    let fallback = vec![
+        WebSearchService {
+            id: "google".to_string(),
+            name: "Google".to_string(),
+            url_template: "https://www.google.com/search?q=%s".to_string(),
+            enabled: true,
+            keyword: "g".to_string(),
+        },
+        WebSearchService {
+            id: "duckduckgo".to_string(),
+            name: "DuckDuckGo".to_string(),
+            url_template: "https://duckduckgo.com/?q=%s".to_string(),
+            enabled: true,
+            keyword: "ddg".to_string(),
+        },
+    ];
+    let raw = config
+        .get("web_search.services_json")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if raw.is_empty() {
+        return fallback;
+    }
+    let parsed = serde_json::from_str::<Value>(&raw).ok();
+    let Some(Value::Array(rows)) = parsed else {
+        return fallback;
+    };
+    let mut out = Vec::new();
+    for row in rows {
+        if let Some(service) = validate_web_search_service(&row) {
+            out.push(service);
+        }
+    }
+    if out.is_empty() { fallback } else { out }
+}
+
+fn validate_web_search_service(row: &Value) -> Option<WebSearchService> {
+    let name = row.get("name")?.as_str()?.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let template = row
+        .get("urlTemplate")
+        .and_then(Value::as_str)
+        .or_else(|| row.get("url").and_then(Value::as_str))
+        .or_else(|| row.get("template").and_then(Value::as_str))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if template.is_empty() || !template.contains("%s") {
+        return None;
+    }
+    let candidate = template.replace("%s", "query");
+    if !candidate.starts_with("https://") {
+        return None;
+    }
+    if host_from_url(&candidate).trim().is_empty() {
+        return None;
+    }
+    let id = row
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| normalize_web_search_id(&name));
+    let enabled = row.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+    let keyword = row
+        .get("keyword")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Some(WebSearchService {
+        id,
+        name,
+        url_template: template,
+        enabled,
+        keyword,
+    })
+}
+
+fn normalize_web_search_id(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in name.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let normalized = out.trim_matches('-').to_string();
+    if normalized.is_empty() {
+        "service-custom".to_string()
+    } else {
+        normalized
+    }
 }
