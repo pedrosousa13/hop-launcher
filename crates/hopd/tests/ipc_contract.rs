@@ -302,6 +302,7 @@ async fn handles_actions_execute_acknowledgement() {
     let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
     assert_eq!(parsed.id, "3");
     assert_eq!(parsed.result["ok"], false);
+    assert_eq!(parsed.result["success"], false);
     assert_eq!(parsed.result["executed"], false);
     assert_eq!(parsed.result["action_resolved"], false);
     assert_eq!(parsed.result["execution_status"], "unresolved");

@@ -174,8 +174,9 @@ pub fn parse_execute_response(response: &Value) -> Result<(), String> {
         .get("launch_spawned")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    let success = result.get("success").and_then(Value::as_bool);
 
-    if resolved && spawned {
+    if success.unwrap_or(resolved && spawned) {
         return Ok(());
     }
 
@@ -537,6 +538,7 @@ mod tests {
             "id": "gtk-execute",
             "result": {
                 "ok": false,
+                "success": false,
                 "executed": false,
                 "action_resolved": false,
                 "launch_spawned": false,
