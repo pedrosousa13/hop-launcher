@@ -582,6 +582,13 @@ fn indexed_folders_from_config(config: &HashMap<String, Value>) -> Vec<String> {
 }
 
 fn score_item(query: &str, item: &SearchItem, rank: &RankSettings) -> i32 {
+    // Web search actions embed the query in their title by construction, so
+    // text-match bonuses are meaningless.  Give them a fixed score just above
+    // min_fuzzy_score so they always appear but rank below real text matches.
+    if item.kind == "action" {
+        return rank.min_fuzzy_score + kind_priority("action", rank);
+    }
+
     let title = item.title.to_lowercase();
     let keywords = item.keywords.to_lowercase();
     let mut score = 0;
@@ -901,8 +908,6 @@ fn emoji_provider(query: &str) -> Vec<SearchItem> {
 }
 
 fn web_search_provider(query: &str, config: &HashMap<String, Value>) -> Vec<SearchItem> {
-    // Keep compatibility with GNOME provider semantics: the deprecated global gate
-    // does not block results; service enable flags and max-actions drive visibility.
     let max_actions = config_int(config, "web_search.max_actions", 3, 0, 10) as usize;
     if max_actions == 0 {
         return Vec::new();
@@ -914,39 +919,29 @@ fn web_search_provider(query: &str, config: &HashMap<String, Value>) -> Vec<Sear
     }
 
     let services = parse_web_search_services(config);
-    let enabled_services = services
-        .iter()
-        .filter(|row| row.enabled)
-        .cloned()
-        .collect::<Vec<_>>();
+    let enabled_services: Vec<_> = services.into_iter().filter(|row| row.enabled).collect();
     if enabled_services.is_empty() {
         return Vec::new();
     }
 
     let lowered = trimmed.to_lowercase();
-    let (q, selected_services) = if lowered.starts_with("web ") {
-        (trimmed[4..].trim().to_string(), enabled_services)
-    } else {
-        let matched = enabled_services
-            .iter()
-            .find(|service| {
-                let keyword = service.keyword.trim().to_lowercase();
-                !keyword.is_empty() && lowered.starts_with(&(keyword + " "))
-            })
-            .cloned();
-        let Some(service) = matched else {
-            return Vec::new();
-        };
-        let keyword_len = service.keyword.trim().len();
-        (
-            trimmed[keyword_len..].trim().to_string(),
-            vec![service],
-        )
-    };
 
-    if q.is_empty() {
-        return Vec::new();
-    }
+    // Check for keyword prefix match (e.g., "g rust" → Google only)
+    let keyword_match = enabled_services.iter().find(|service| {
+        let keyword = service.keyword.trim().to_lowercase();
+        !keyword.is_empty() && lowered.starts_with(&(keyword.clone() + " "))
+    });
+
+    let (q, selected_services) = if let Some(service) = keyword_match {
+        let keyword_len = service.keyword.trim().len();
+        let remainder = trimmed[keyword_len..].trim().to_string();
+        if remainder.is_empty() {
+            return Vec::new();
+        }
+        (remainder, vec![service.clone()])
+    } else {
+        (trimmed.to_string(), enabled_services)
+    };
 
     selected_services
         .into_iter()

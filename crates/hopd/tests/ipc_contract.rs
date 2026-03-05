@@ -672,6 +672,24 @@ async fn ranking_weight_web_search_is_independent_from_utility() {
 }
 
 #[tokio::test]
+async fn search_query_returns_web_search_actions_without_prefix() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"ws-noprefix","method":"search.query","params":{"query":"rust programming","limit":10}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(
+        results.iter().any(|row| row["kind"] == "action"),
+        "expected web search action rows for unprefixed query"
+    );
+}
+
+#[tokio::test]
 async fn returns_error_for_unknown_method() {
     let server = HopdServer::new();
     let response = server

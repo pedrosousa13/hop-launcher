@@ -69,6 +69,7 @@ async fn search_query_supports_all_primary_modes_without_scaffolds() {
                 "emoji",
                 "calculator",
                 "currency",
+                "action",
             ]
             .contains(&kind),
             "unexpected kind {kind} in all mode"
