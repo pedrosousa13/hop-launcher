@@ -621,6 +621,30 @@ async fn exposes_metrics_snapshot_with_request_count() {
 }
 
 #[tokio::test]
+async fn search_query_respects_feature_toggle_for_web_search() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"fws1","method":"config.set","params":{"key":"features.web_search","value":false}}"#,
+        )
+        .await
+        .expect("set response");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"fws2","method":"search.query","params":{"query":"web rust","limit":10}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(
+        results.iter().all(|row| row["kind"] != "action"),
+        "action kind should be filtered when web_search feature is disabled"
+    );
+}
+
+#[tokio::test]
 async fn returns_error_for_unknown_method() {
     let server = HopdServer::new();
     let response = server

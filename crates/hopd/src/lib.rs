@@ -369,6 +369,7 @@ struct FeatureSettings {
     recents: bool,
     settings: bool,
     utility: bool,
+    web_search: bool,
 }
 
 impl Default for FeatureSettings {
@@ -380,6 +381,7 @@ impl Default for FeatureSettings {
             recents: true,
             settings: true,
             utility: true,
+            web_search: true,
         }
     }
 }
@@ -394,6 +396,7 @@ impl FeatureSettings {
             recents: config_bool(config, "features.recents", default.recents),
             settings: config_bool(config, "features.settings", default.settings),
             utility: config_bool(config, "features.utility", default.utility),
+            web_search: config_bool(config, "features.web_search", default.web_search),
         }
     }
 
@@ -407,6 +410,7 @@ impl FeatureSettings {
             "utility" | "emoji" | "calculator" | "currency" | "weather" | "timezone" => {
                 self.utility
             }
+            "action" => self.web_search,
             _ => true,
         }
     }
