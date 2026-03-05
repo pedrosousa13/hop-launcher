@@ -1079,6 +1079,13 @@ fn install_css() {
 .hop-launcher-action-hint {
   font-size: 0.8em;
   min-width: 44px;
+  opacity: 0.0;
+  transition: 120ms ease;
+}
+
+.hop-launcher-list row:hover .hop-launcher-action-hint,
+.hop-launcher-list row:selected .hop-launcher-action-hint {
+  opacity: 0.82;
 }
 
 .hop-launcher-row-body {
