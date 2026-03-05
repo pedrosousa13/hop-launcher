@@ -43,7 +43,7 @@ jobs:
         working-directory: crates/hop-hotkeyd
 
       - name: Run GTK launcher tests
-        run: cargo test
+        run: cargo test --features gtk_ui
         working-directory: apps/gtk-launcher
 
       - name: Build daemon binaries
@@ -66,8 +66,10 @@ jobs:
         run: |
           mkdir -p dist
           cp crates/hopd/target/release/hopd dist/hopd
+          cp crates/hopd/target/release/kde-hopd-query dist/kde-hopd-query
           cp crates/hop-hotkeyd/target/release/hop-hotkeyd dist/hop-hotkeyd
           tar -C dist -czf dist/hopd-linux-x86_64.tar.gz hopd
+          tar -C dist -czf dist/kde-hopd-query-linux-x86_64.tar.gz kde-hopd-query
           tar -C dist -czf dist/hop-hotkeyd-linux-x86_64.tar.gz hop-hotkeyd
           mkdir -p dist/deb
           find crates -maxdepth 2 -type f -name '*.deb' -exec cp {} dist/deb/ \;
@@ -87,6 +89,16 @@ jobs:
           fi
           echo "asset_path=${asset_path}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify release artifact manifest
+        shell: bash
+        run: |
+          bash scripts/release/verify-artifacts.sh dist/ARTIFACT_MANIFEST.txt \
+            dist/hopd-linux-x86_64.tar.gz \
+            dist/kde-hopd-query-linux-x86_64.tar.gz \
+            dist/hop-hotkeyd-linux-x86_64.tar.gz \
+            dist/deb \
+            "${{ steps.asset.outputs.asset_path }}"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -94,8 +106,10 @@ jobs:
           path: |
             ${{ steps.asset.outputs.asset_path }}
             dist/hopd-linux-x86_64.tar.gz
+            dist/kde-hopd-query-linux-x86_64.tar.gz
             dist/hop-hotkeyd-linux-x86_64.tar.gz
             dist/deb/*.deb
+            dist/ARTIFACT_MANIFEST.txt
           if-no-files-found: error
 
       - name: Create GitHub release and upload zip
@@ -109,6 +123,8 @@ jobs:
           files: |
             ${{ steps.asset.outputs.asset_path }}
             dist/hopd-linux-x86_64.tar.gz
+            dist/kde-hopd-query-linux-x86_64.tar.gz
             dist/hop-hotkeyd-linux-x86_64.tar.gz
             dist/deb/*.deb
+            dist/ARTIFACT_MANIFEST.txt
           generate_release_notes: true

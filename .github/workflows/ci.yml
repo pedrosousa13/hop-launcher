@@ -41,6 +41,11 @@ jobs:
         run: npm run package
         working-directory: apps/gnome-extension
 
+      - name: Verify zip artifact manifest
+        shell: bash
+        run: |
+          bash scripts/release/verify-artifacts.sh dist/manifest/gnome-zip.txt apps/gnome-extension/dist
+
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
@@ -118,7 +123,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run GTK launcher tests
-        run: cargo test
+        run: cargo test --features gtk_ui
         working-directory: apps/gtk-launcher
 
   deb-packages:
@@ -146,6 +151,11 @@ jobs:
           mkdir -p dist/deb
           find crates -maxdepth 2 -type f -name '*.deb' -exec cp {} dist/deb/ \;
           ls -la dist/deb
+
+      - name: Verify .deb artifact manifest
+        shell: bash
+        run: |
+          bash scripts/release/verify-artifacts.sh dist/manifest/deb.txt dist/deb
 
       - name: Upload .deb artifacts
         uses: actions/upload-artifact@v4

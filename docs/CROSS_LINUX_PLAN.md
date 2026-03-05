@@ -50,6 +50,8 @@ Completed in this branch:
 18. Extended KDE helper CLI with runner output format (`--format runner`) for adapter-friendly tabular result consumption.
 19. Upgraded explicit `utility ...` provider behavior from static filtering to intent-aware rows (calculator/currency/weather/timezone/emoji with location parsing).
 20. Included `kde-hopd-query` in Debian package install targets so KDE adapter helper ships as an installable artifact.
+21. Applied GTK minimal-noise status policy (silent steady-state status text; transient searching/errors only) and updated manual polish checklist.
+22. Hardened CI/release artifact validation with reusable manifest verification script and enabled `gtk_ui` test coverage in workflow gates.
 
 ## Next Milestones
 
