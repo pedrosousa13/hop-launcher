@@ -45,7 +45,7 @@ async fn search_query_supports_all_primary_modes_without_scaffolds() {
 
     let utility_mode = server
         .handle_json_line(
-            r#"{"id":"mode-utility","method":"search.query","params":{"query":"e","limit":20}}"#,
+            r#"{"id":"mode-utility","method":"search.query","params":{"query":"utilities","limit":20}}"#,
         )
         .await
         .expect("response expected");

@@ -385,9 +385,6 @@ fn aggregate_provider_items(query: &str, mode: &str, indexed_folders: &[String])
             items.extend(weather_provider(query));
             items.extend(timezone_provider(query));
             items.extend(emoji_provider(query));
-            if items.is_empty() && query.chars().count() <= 2 {
-                items.extend(default_catalog_items());
-            }
         }
     }
     items
@@ -601,57 +598,4 @@ fn emoji_provider(query: &str) -> Vec<SearchItem> {
         icon: "face-smile-symbolic".to_string(),
         keywords: "emoji picker symbols smile grin".to_string(),
     }]
-}
-
-fn default_catalog_items() -> Vec<SearchItem> {
-    vec![
-        SearchItem {
-            id: "utility:weather".to_string(),
-            kind: "weather".to_string(),
-            title: "Weather".to_string(),
-            subtitle: "Utility".to_string(),
-            icon: "weather-clear-symbolic".to_string(),
-            keywords: "weather forecast temperature".to_string(),
-        },
-        SearchItem {
-            id: "utility:timezone".to_string(),
-            kind: "timezone".to_string(),
-            title: "Timezone".to_string(),
-            subtitle: "Utility".to_string(),
-            icon: "preferences-system-time-symbolic".to_string(),
-            keywords: "timezone world clock time".to_string(),
-        },
-        SearchItem {
-            id: "utility:emoji".to_string(),
-            kind: "emoji".to_string(),
-            title: "Emoji".to_string(),
-            subtitle: "Utility".to_string(),
-            icon: "face-smile-symbolic".to_string(),
-            keywords: "emoji picker symbols".to_string(),
-        },
-        SearchItem {
-            id: "utility:calculator".to_string(),
-            kind: "calculator".to_string(),
-            title: "Calculator".to_string(),
-            subtitle: "Utility".to_string(),
-            icon: "accessories-calculator-symbolic".to_string(),
-            keywords: "calculator math arithmetic expression".to_string(),
-        },
-        SearchItem {
-            id: "utility:currency".to_string(),
-            kind: "currency".to_string(),
-            title: "Currency".to_string(),
-            subtitle: "Utility".to_string(),
-            icon: "accessories-calculator-symbolic".to_string(),
-            keywords: "currency exchange convert forex".to_string(),
-        },
-        SearchItem {
-            id: "utility:catalog".to_string(),
-            kind: "utility".to_string(),
-            title: "Utilities".to_string(),
-            subtitle: "Launcher utility results".to_string(),
-            icon: "system-search-symbolic".to_string(),
-            keywords: "utility calculator conversion".to_string(),
-        },
-    ]
 }
