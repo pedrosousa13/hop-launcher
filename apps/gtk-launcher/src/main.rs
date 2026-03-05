@@ -1315,29 +1315,22 @@ fn launcher_css() -> &'static str {
 }
 
 .hop-launcher-list row {
-  margin: 0 2px;
-  border-radius: 0;
-  border-bottom: 1px solid alpha(@headerbar_border_color, 0.12);
-  background: alpha(@view_bg_color, 0.08);
-  transition: 130ms ease;
+  margin: 2px 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: 80ms ease;
+  outline: none;
 }
 
 .hop-launcher-list row:hover {
-  background: alpha(@view_bg_color, 0.18);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .hop-launcher-list row:selected {
-  border-bottom-color: transparent;
-  background: alpha(@view_fg_color, 0.12);
-}
-
-.hop-launcher-list row:first-child {
-  margin-top: 0;
-}
-
-.hop-launcher-list row:last-child {
-  margin-bottom: 0;
-  border-bottom-color: transparent;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  outline: none;
 }
 
 .hop-launcher-action-hint {
