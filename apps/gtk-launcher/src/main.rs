@@ -79,6 +79,7 @@ struct LauncherUiSettings {
     currency_rate_ttl_hours: i32,
     web_search_enabled: bool,
     web_search_max_actions: i32,
+    web_search_services_json: String,
     global_shortcut: String,
 }
 
@@ -114,6 +115,7 @@ impl Default for LauncherUiSettings {
             currency_rate_ttl_hours: 12,
             web_search_enabled: true,
             web_search_max_actions: 3,
+            web_search_services_json: default_web_search_services_json(),
             global_shortcut: "<Super>space".to_string(),
         }
     }
@@ -358,6 +360,14 @@ fn load_ui_settings() -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(1, 10) as i32)
         .unwrap_or(default.web_search_max_actions);
+    let web_search_services_json = json
+        .get("web_search_services_json")
+        .and_then(serde_json::Value::as_str)
+        .map(|raw| {
+            let rows = parse_web_search_services_json(raw, true);
+            serialize_web_search_services_json(&rows, true)
+        })
+        .unwrap_or(default.web_search_services_json);
     let global_shortcut = json
         .get("global_shortcut")
         .and_then(serde_json::Value::as_str)
@@ -393,6 +403,7 @@ fn load_ui_settings() -> LauncherUiSettings {
         currency_rate_ttl_hours,
         web_search_enabled,
         web_search_max_actions,
+        web_search_services_json,
         global_shortcut,
     }
 }
@@ -434,6 +445,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "currency_rate_ttl_hours": settings.currency_rate_ttl_hours,
         "web_search_enabled": settings.web_search_enabled,
         "web_search_max_actions": settings.web_search_max_actions,
+        "web_search_services_json": settings.web_search_services_json,
         "global_shortcut": settings.global_shortcut,
     });
     let encoded = serde_json::to_string_pretty(&payload)
@@ -483,6 +495,10 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         (
             "web_search.max_actions",
             serde_json::json!(settings.web_search_max_actions),
+        ),
+        (
+            "web_search.services_json",
+            serde_json::json!(settings.web_search_services_json),
         ),
     ];
     for (key, value) in values {
@@ -563,6 +579,184 @@ fn validate_indexed_folders(folders: &[String]) -> Result<(), String> {
     } else {
         Err(format!("Invalid indexed folders: {}", invalid.join(", ")))
     }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn default_web_search_services() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({
+            "id": "google",
+            "name": "Google",
+            "urlTemplate": "https://www.google.com/search?q=%s",
+            "enabled": true,
+            "keyword": "g"
+        }),
+        serde_json::json!({
+            "id": "duckduckgo",
+            "name": "DuckDuckGo",
+            "urlTemplate": "https://duckduckgo.com/?q=%s",
+            "enabled": true,
+            "keyword": "ddg"
+        }),
+    ]
+}
+
+#[cfg(feature = "gtk_ui")]
+fn default_web_search_services_json() -> String {
+    serde_json::to_string(&default_web_search_services()).unwrap_or_else(|_| "[]".to_string())
+}
+
+#[cfg(feature = "gtk_ui")]
+fn normalize_web_search_id(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in name.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let normalized = out.trim_matches('-').to_string();
+    if normalized.is_empty() {
+        "service-custom".to_string()
+    } else {
+        normalized
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn validate_web_search_service_row(row: &serde_json::Value) -> Option<serde_json::Value> {
+    let name = row.get("name")?.as_str()?.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let template = row
+        .get("urlTemplate")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| row.get("url").and_then(serde_json::Value::as_str))
+        .or_else(|| row.get("template").and_then(serde_json::Value::as_str))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if template.is_empty() || !template.contains("%s") {
+        return None;
+    }
+    let candidate = template.replace("%s", "query");
+    if !candidate.starts_with("https://") {
+        return None;
+    }
+    let id = row
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| normalize_web_search_id(&name));
+    let enabled = row
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    let keyword = row
+        .get("keyword")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Some(serde_json::json!({
+        "id": id,
+        "name": name,
+        "urlTemplate": template,
+        "enabled": enabled,
+        "keyword": keyword
+    }))
+}
+
+#[cfg(feature = "gtk_ui")]
+fn parse_web_search_services_json(raw: &str, fallback_to_defaults: bool) -> Vec<serde_json::Value> {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return if fallback_to_defaults {
+            default_web_search_services()
+        } else {
+            Vec::new()
+        };
+    };
+    let Some(rows) = parsed.as_array() else {
+        return if fallback_to_defaults {
+            default_web_search_services()
+        } else {
+            Vec::new()
+        };
+    };
+    let mut out = Vec::new();
+    for row in rows {
+        if let Some(valid) = validate_web_search_service_row(row) {
+            out.push(valid);
+        }
+    }
+    if out.is_empty() {
+        if fallback_to_defaults {
+            default_web_search_services()
+        } else {
+            Vec::new()
+        }
+    } else {
+        out
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn serialize_web_search_services_json(
+    rows: &[serde_json::Value],
+    fallback_to_defaults: bool,
+) -> String {
+    let mut valid = Vec::new();
+    for row in rows {
+        if let Some(next) = validate_web_search_service_row(row) {
+            valid.push(next);
+        }
+    }
+    if valid.is_empty() {
+        if fallback_to_defaults {
+            return default_web_search_services_json();
+        }
+        return "[]".to_string();
+    }
+    serde_json::to_string(&valid).unwrap_or_else(|_| "[]".to_string())
+}
+
+#[cfg(feature = "gtk_ui")]
+fn canonical_web_search_services_json(raw: &str, fallback_to_defaults: bool) -> Result<String, String> {
+    let parsed = serde_json::from_str::<serde_json::Value>(raw)
+        .map_err(|error| format!("Invalid web-search providers JSON: {error}"))?;
+    let rows = parsed
+        .as_array()
+        .ok_or_else(|| "Web-search providers must be a JSON array".to_string())?;
+    Ok(serialize_web_search_services_json(rows, fallback_to_defaults))
+}
+
+#[cfg(feature = "gtk_ui")]
+fn persist_web_search_services_json(
+    settings: &Rc<RefCell<LauncherUiSettings>>,
+    socket_path: &str,
+    status_label: &gtk::Label,
+    rows: &[serde_json::Value],
+    success_message: &str,
+) -> Result<(), String> {
+    let canonical = serialize_web_search_services_json(rows, false);
+    let mut next = settings.borrow().clone();
+    next.web_search_services_json = canonical;
+    save_ui_settings(&next)?;
+    config_set(
+        socket_path,
+        "web_search.services_json",
+        serde_json::json!(next.web_search_services_json),
+    )?;
+    *settings.borrow_mut() = next;
+    set_settings_feedback(status_label, success_message, false);
+    Ok(())
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -777,6 +971,7 @@ fn run() {
 
         {
             let list = list.clone();
+            let list_scroller = list_scroller.clone();
             let window = window.clone();
             let app = app.clone();
             let ui_settings = ui_settings.clone();
@@ -789,31 +984,31 @@ fn run() {
                 let is_shift = state.contains(gtk::gdk::ModifierType::SHIFT_MASK);
                 match key {
                     gtk::gdk::Key::Down => {
-                        move_selection(&list, 1);
+                        move_selection(&list, &list_scroller, 1);
                         true.into()
                     }
                     gtk::gdk::Key::Up => {
-                        move_selection(&list, -1);
+                        move_selection(&list, &list_scroller, -1);
                         true.into()
                     }
                     gtk::gdk::Key::j if is_ctrl => {
-                        move_selection(&list, 1);
+                        move_selection(&list, &list_scroller, 1);
                         true.into()
                     }
                     gtk::gdk::Key::k if is_ctrl => {
-                        move_selection(&list, -1);
+                        move_selection(&list, &list_scroller, -1);
                         true.into()
                     }
                     gtk::gdk::Key::Tab if is_shift => {
-                        move_selection(&list, -1);
+                        move_selection(&list, &list_scroller, -1);
                         true.into()
                     }
                     gtk::gdk::Key::ISO_Left_Tab => {
-                        move_selection(&list, -1);
+                        move_selection(&list, &list_scroller, -1);
                         true.into()
                     }
                     gtk::gdk::Key::Tab => {
-                        move_selection(&list, 1);
+                        move_selection(&list, &list_scroller, 1);
                         true.into()
                     }
                     gtk::gdk::Key::Escape => {
@@ -1057,8 +1252,8 @@ fn handle_control_stream(mut stream: UnixStream, toggle_tx: &mpsc::Sender<()>) -
 }
 
 #[cfg(feature = "gtk_ui")]
-fn install_css() {
-    let css = r#"
+fn launcher_css() -> &'static str {
+    r#"
 .hop-launcher-window {
   background: transparent;
   border: none;
@@ -1067,27 +1262,27 @@ fn install_css() {
 }
 
 .hop-launcher-content {
-  border-radius: 16px;
-  border: none;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   outline: none;
   box-shadow: none;
-  background: alpha(@window_bg_color, 0.93);
+  background: rgba(20, 21, 24, 0.90);
 }
 
 .hop-launcher-window.hop-blur-none .hop-launcher-content {
-  background: alpha(@window_bg_color, 0.96);
+  background: rgba(20, 21, 24, 0.96);
 }
 
 .hop-launcher-window.hop-blur-low .hop-launcher-content {
-  background: alpha(@window_bg_color, 0.90);
+  background: rgba(20, 21, 24, 0.90);
 }
 
 .hop-launcher-window.hop-blur-medium .hop-launcher-content {
-  background: alpha(@window_bg_color, 0.84);
+  background: rgba(20, 21, 24, 0.84);
 }
 
 .hop-launcher-window.hop-blur-high .hop-launcher-content {
-  background: alpha(@window_bg_color, 0.76);
+  background: rgba(20, 21, 24, 0.76);
 }
 
 .hop-launcher-settings-button {
@@ -1140,6 +1335,11 @@ fn install_css() {
   margin-top: 0;
 }
 
+.hop-launcher-list row:last-child {
+  margin-bottom: 0;
+  border-bottom-color: transparent;
+}
+
 .hop-launcher-action-hint {
   font-size: 0.76em;
   min-width: 44px;
@@ -1189,7 +1389,7 @@ fn install_css() {
 }
 
 .hop-launcher-icon {
-  margin-end: 2px;
+  margin-right: 2px;
 }
 
 .hop-launcher-icon-app {
@@ -1211,10 +1411,13 @@ fn install_css() {
 .hop-settings-status-error {
   color: @error_color;
 }
-"#;
+"#
+}
 
+#[cfg(feature = "gtk_ui")]
+fn install_css() {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(css);
+    provider.load_from_data(launcher_css());
     if let Some(display) = gtk::gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,
@@ -1225,7 +1428,92 @@ fn install_css() {
 }
 
 #[cfg(feature = "gtk_ui")]
-fn move_selection(list: &gtk::ListBox, delta: i32) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeightConstraintOp {
+    SetMin(i32),
+    SetMax(i32),
+}
+
+#[cfg(feature = "gtk_ui")]
+fn scroller_height_ops(target_height: i32) -> [HeightConstraintOp; 4] {
+    let target = target_height.max(1);
+    [
+        HeightConstraintOp::SetMin(-1),
+        HeightConstraintOp::SetMax(-1),
+        HeightConstraintOp::SetMin(target),
+        HeightConstraintOp::SetMax(target),
+    ]
+}
+
+#[cfg(feature = "gtk_ui")]
+fn apply_scroller_height(list_scroller: &gtk::ScrolledWindow, target_height: i32) {
+    for op in scroller_height_ops(target_height) {
+        match op {
+            HeightConstraintOp::SetMin(height) => list_scroller.set_min_content_height(height),
+            HeightConstraintOp::SetMax(height) => list_scroller.set_max_content_height(height),
+        }
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn window_height_for_target_height(target_height: i32) -> i32 {
+    // Non-list chrome: content margins + entry + spacing.
+    (84 + target_height).clamp(120, 620)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn apply_window_height(window: &adw::ApplicationWindow, height: i32) {
+    window.set_default_size(900, height);
+    // Force immediate shrink/grow so the dropdown hugs current result content.
+    window.set_size_request(900, height);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn scroll_value_for_row_visibility(
+    current_value: f64,
+    page_size: f64,
+    row_top: f64,
+    row_height: f64,
+    lower: f64,
+    upper: f64,
+) -> f64 {
+    if page_size <= 0.0 {
+        return current_value;
+    }
+    let row_bottom = row_top + row_height.max(0.0);
+    let visible_bottom = current_value + page_size;
+    let next_value = if row_top < current_value {
+        row_top
+    } else if row_bottom > visible_bottom {
+        row_bottom - page_size
+    } else {
+        current_value
+    };
+    let max_value = (upper - page_size).max(lower);
+    next_value.clamp(lower, max_value)
+}
+
+#[cfg(feature = "gtk_ui")]
+fn ensure_row_visible(list_scroller: &gtk::ScrolledWindow, row: &gtk::ListBoxRow) {
+    let adjustment = list_scroller.vadjustment();
+    let Some(bounds) = row.compute_bounds(list_scroller) else {
+        return;
+    };
+    let next = scroll_value_for_row_visibility(
+        adjustment.value(),
+        adjustment.page_size(),
+        bounds.y() as f64,
+        bounds.height() as f64,
+        adjustment.lower(),
+        adjustment.upper(),
+    );
+    if (next - adjustment.value()).abs() > f64::EPSILON {
+        adjustment.set_value(next);
+    }
+}
+
+#[cfg(feature = "gtk_ui")]
+fn move_selection(list: &gtk::ListBox, list_scroller: &gtk::ScrolledWindow, delta: i32) {
     let current = list.selected_row().map(|row| row.index()).unwrap_or(-1);
     let next = if current < 0 {
         0
@@ -1234,6 +1522,7 @@ fn move_selection(list: &gtk::ListBox, delta: i32) {
     };
     if let Some(target) = list.row_at_index(next) {
         list.select_row(Some(&target));
+        ensure_row_visible(list_scroller, &target);
     }
 }
 
@@ -2036,6 +2325,298 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.web_search_max_actions = value,
     );
+    let web_search_header = adw::ActionRow::builder()
+        .title("Web search providers")
+        .subtitle("Manage provider templates used for `web` and keyword-prefixed queries.")
+        .build();
+    advanced.add(&web_search_header);
+    let current_services =
+        parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
+    if current_services.is_empty() {
+        let empty_row = adw::ActionRow::builder()
+            .title("No providers configured")
+            .subtitle("Add a provider to enable web actions.")
+            .build();
+        advanced.add(&empty_row);
+    }
+    for (index, row) in current_services.iter().enumerate() {
+        let name = row
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Provider")
+            .to_string();
+        let id = row
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let url_template = row
+            .get("urlTemplate")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let keyword = row
+            .get("keyword")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let enabled = row
+            .get("enabled")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true);
+
+        let provider_row = adw::ActionRow::builder()
+            .title(format!("Provider {}: {}", index + 1, name))
+            .subtitle(if id.is_empty() {
+                "Configure and save this provider.".to_string()
+            } else {
+                format!("id: {id}")
+            })
+            .build();
+        let up_button = gtk::Button::builder()
+            .label("Up")
+            .valign(gtk::Align::Center)
+            .sensitive(index > 0)
+            .build();
+        let down_button = gtk::Button::builder()
+            .label("Down")
+            .valign(gtk::Align::Center)
+            .sensitive(index + 1 < current_services.len())
+            .build();
+        let remove_button = gtk::Button::builder()
+            .label("Remove")
+            .valign(gtk::Align::Center)
+            .build();
+        remove_button.add_css_class("destructive-action");
+        provider_row.add_suffix(&up_button);
+        provider_row.add_suffix(&down_button);
+        provider_row.add_suffix(&remove_button);
+        advanced.add(&provider_row);
+
+        let name_row = adw::ActionRow::builder()
+            .title("Name")
+            .subtitle("Provider label shown in results.")
+            .build();
+        let name_entry = gtk::Entry::builder().hexpand(true).text(&name).build();
+        name_entry.set_valign(gtk::Align::Center);
+        name_row.add_suffix(&name_entry);
+        name_row.set_activatable_widget(Some(&name_entry));
+        advanced.add(&name_row);
+
+        let template_row = adw::ActionRow::builder()
+            .title("URL template")
+            .subtitle("Must be https and contain %s placeholder.")
+            .build();
+        let template_entry = gtk::Entry::builder()
+            .hexpand(true)
+            .text(&url_template)
+            .build();
+        template_entry.set_valign(gtk::Align::Center);
+        template_row.add_suffix(&template_entry);
+        template_row.set_activatable_widget(Some(&template_entry));
+        advanced.add(&template_row);
+
+        let keyword_row = adw::ActionRow::builder()
+            .title("Keyword and enabled")
+            .subtitle("Keyword enables `<keyword> query` mode.")
+            .build();
+        let keyword_entry = gtk::Entry::builder().width_chars(8).text(&keyword).build();
+        keyword_entry.set_valign(gtk::Align::Center);
+        let enabled_switch = gtk::Switch::builder()
+            .active(enabled)
+            .valign(gtk::Align::Center)
+            .build();
+        let save_button = gtk::Button::builder()
+            .label("Save")
+            .valign(gtk::Align::Center)
+            .build();
+        keyword_row.add_suffix(&keyword_entry);
+        keyword_row.add_suffix(&enabled_switch);
+        keyword_row.add_suffix(&save_button);
+        advanced.add(&keyword_row);
+
+        {
+            let settings = settings.clone();
+            let socket_path = socket_path.to_string();
+            let settings_status = settings_status.clone();
+            let parent = parent.clone();
+            let prefs = prefs.clone();
+            let app = app.clone();
+            let name_entry = name_entry.clone();
+            let template_entry = template_entry.clone();
+            let keyword_entry = keyword_entry.clone();
+            let enabled_switch = enabled_switch.clone();
+            save_button.connect_clicked(move |_| {
+                let mut services =
+                    parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
+                if index >= services.len() {
+                    set_settings_feedback(&settings_status, "Provider index out of range", true);
+                    return;
+                }
+                let existing_id = services[index]
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let draft_name = name_entry.text().trim().to_string();
+                let draft = serde_json::json!({
+                    "id": if existing_id.is_empty() { normalize_web_search_id(&draft_name) } else { existing_id },
+                    "name": draft_name,
+                    "urlTemplate": template_entry.text().trim().to_string(),
+                    "keyword": keyword_entry.text().trim().to_string(),
+                    "enabled": enabled_switch.is_active()
+                });
+                let Some(validated) = validate_web_search_service_row(&draft) else {
+                    set_settings_feedback(&settings_status, "Invalid provider: require name + https template with %s", true);
+                    return;
+                };
+                services[index] = validated;
+                if let Err(error) = persist_web_search_services_json(
+                    &settings,
+                    &socket_path,
+                    &settings_status,
+                    &services,
+                    "Saved web-search provider",
+                ) {
+                    set_settings_feedback(&settings_status, &format!("Save failed: {error}"), true);
+                    return;
+                }
+                prefs.close();
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
+            });
+        }
+
+        {
+            let settings = settings.clone();
+            let socket_path = socket_path.to_string();
+            let settings_status = settings_status.clone();
+            let parent = parent.clone();
+            let prefs = prefs.clone();
+            let app = app.clone();
+            up_button.connect_clicked(move |_| {
+                if index == 0 {
+                    return;
+                }
+                let mut services =
+                    parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
+                services.swap(index, index - 1);
+                if let Err(error) = persist_web_search_services_json(
+                    &settings,
+                    &socket_path,
+                    &settings_status,
+                    &services,
+                    "Moved provider up",
+                ) {
+                    set_settings_feedback(&settings_status, &format!("Save failed: {error}"), true);
+                    return;
+                }
+                prefs.close();
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
+            });
+        }
+
+        {
+            let settings = settings.clone();
+            let socket_path = socket_path.to_string();
+            let settings_status = settings_status.clone();
+            let parent = parent.clone();
+            let prefs = prefs.clone();
+            let app = app.clone();
+            down_button.connect_clicked(move |_| {
+                let mut services =
+                    parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
+                if index + 1 >= services.len() {
+                    return;
+                }
+                services.swap(index, index + 1);
+                if let Err(error) = persist_web_search_services_json(
+                    &settings,
+                    &socket_path,
+                    &settings_status,
+                    &services,
+                    "Moved provider down",
+                ) {
+                    set_settings_feedback(&settings_status, &format!("Save failed: {error}"), true);
+                    return;
+                }
+                prefs.close();
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
+            });
+        }
+
+        {
+            let settings = settings.clone();
+            let socket_path = socket_path.to_string();
+            let settings_status = settings_status.clone();
+            let parent = parent.clone();
+            let prefs = prefs.clone();
+            let app = app.clone();
+            remove_button.connect_clicked(move |_| {
+                let mut services =
+                    parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
+                if index >= services.len() {
+                    return;
+                }
+                services.remove(index);
+                if let Err(error) = persist_web_search_services_json(
+                    &settings,
+                    &socket_path,
+                    &settings_status,
+                    &services,
+                    "Removed provider",
+                ) {
+                    set_settings_feedback(&settings_status, &format!("Save failed: {error}"), true);
+                    return;
+                }
+                prefs.close();
+                open_settings_window(&app, &parent, settings.clone(), &socket_path);
+            });
+        }
+    }
+
+    let add_provider_row = adw::ActionRow::builder()
+        .title("Add web-search provider")
+        .subtitle("Appends a new enabled provider row.")
+        .build();
+    let add_provider_button = gtk::Button::builder()
+        .label("Add")
+        .valign(gtk::Align::Center)
+        .build();
+    add_provider_row.add_suffix(&add_provider_button);
+    add_provider_row.set_activatable_widget(Some(&add_provider_button));
+    {
+        let settings = settings.clone();
+        let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
+        let parent = parent.clone();
+        let prefs = prefs.clone();
+        let app = app.clone();
+        add_provider_button.connect_clicked(move |_| {
+            let mut services =
+                parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
+            let next_index = services.len() + 1;
+            services.push(serde_json::json!({
+                "id": format!("provider-{next_index}"),
+                "name": format!("Provider {next_index}"),
+                "urlTemplate": "https://example.com/search?q=%s",
+                "enabled": true,
+                "keyword": ""
+            }));
+            if let Err(error) = persist_web_search_services_json(
+                &settings,
+                &socket_path,
+                &settings_status,
+                &services,
+                "Added provider",
+            ) {
+                set_settings_feedback(&settings_status, &format!("Save failed: {error}"), true);
+                return;
+            }
+            prefs.close();
+            open_settings_window(&app, &parent, settings.clone(), &socket_path);
+        });
+    }
+    advanced.add(&add_provider_row);
     let reset_row = adw::ActionRow::builder()
         .title("Reset to defaults")
         .subtitle("Restore all launcher settings to default values.")
@@ -2092,6 +2673,7 @@ fn open_settings_window(
                         "currency_rate_ttl_hours": settings.borrow().currency_rate_ttl_hours,
                         "web_search_enabled": settings.borrow().web_search_enabled,
                         "web_search_max_actions": settings.borrow().web_search_max_actions,
+                        "web_search_services_json": settings.borrow().web_search_services_json,
                         "global_shortcut": settings.borrow().global_shortcut
                     });
                     let encoded = match serde_json::to_string_pretty(&payload) {
@@ -2435,6 +3017,7 @@ fn load_settings_from_path(path: &std::path::Path) -> Result<LauncherUiSettings,
         "currency_rate_ttl_hours": json.get("currency_rate_ttl_hours").cloned().unwrap_or(serde_json::json!(default.currency_rate_ttl_hours)),
         "web_search_enabled": json.get("web_search_enabled").cloned().unwrap_or(serde_json::json!(default.web_search_enabled)),
         "web_search_max_actions": json.get("web_search_max_actions").cloned().unwrap_or(serde_json::json!(default.web_search_max_actions)),
+        "web_search_services_json": json.get("web_search_services_json").cloned().unwrap_or(serde_json::json!(default.web_search_services_json)),
         "global_shortcut": json.get("global_shortcut").cloned().unwrap_or(serde_json::json!(default.global_shortcut))
     });
     let encoded = serde_json::to_string(&merged).map_err(|error| format!("encode failed: {error}"))?;
@@ -2603,6 +3186,14 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
         .and_then(serde_json::Value::as_i64)
         .map(|v| v.clamp(1, 10) as i32)
         .unwrap_or(default.web_search_max_actions);
+    let web_search_services_json = json
+        .get("web_search_services_json")
+        .and_then(serde_json::Value::as_str)
+        .map(|raw| {
+            let rows = parse_web_search_services_json(raw, true);
+            serialize_web_search_services_json(&rows, true)
+        })
+        .unwrap_or(default.web_search_services_json);
     let global_shortcut = json
         .get("global_shortcut")
         .and_then(serde_json::Value::as_str)
@@ -2638,6 +3229,7 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
         currency_rate_ttl_hours,
         web_search_enabled,
         web_search_max_actions,
+        web_search_services_json,
         global_shortcut,
     }
 }
@@ -2742,6 +3334,7 @@ fn refresh_results(
             if list.first_child().is_some() {
                 if let Some(first) = list.row_at_index(0) {
                     list.select_row(Some(&first));
+                    ensure_row_visible(list_scroller, &first);
                 }
             }
             let rows_visible = rows.len().min(max_results as usize);
@@ -2751,10 +3344,8 @@ fn refresh_results(
                 _ => 48,
             };
             let target_height = (rows_visible as i32 * estimated_row_height).clamp(0, 420);
-            list_scroller.set_max_content_height(target_height.max(1));
-            list_scroller.set_min_content_height(target_height.max(1));
-            let window_height = (140 + target_height).clamp(190, 620);
-            window.set_default_size(900, window_height);
+            apply_scroller_height(list_scroller, target_height);
+            apply_window_height(window, window_height_for_target_height(target_height));
             status.set_text(&render_status_text(if rows.is_empty() {
                 QueryState::Empty
             } else {
@@ -2763,9 +3354,8 @@ fn refresh_results(
         }
         Err(error) => {
             results.borrow_mut().clear();
-            list_scroller.set_max_content_height(1);
-            list_scroller.set_min_content_height(1);
-            window.set_default_size(900, 190);
+            apply_scroller_height(list_scroller, 1);
+            apply_window_height(window, window_height_for_target_height(1));
             status.set_text(&render_status_text(QueryState::Error(format!(
                 "hopd unavailable: {error}"
             ))));
@@ -3061,6 +3651,103 @@ mod tests {
         let settings = load_ui_settings_from_path(&path);
         let _ = std::fs::remove_file(path);
         assert_eq!(settings.blur_strength_percent, 22);
+    }
+
+    #[test]
+    fn launcher_css_does_not_use_margin_end_property() {
+        assert!(!launcher_css().contains("margin-end:"));
+    }
+
+    #[test]
+    fn launcher_css_trims_bottom_tail_after_last_row() {
+        let css = launcher_css();
+        assert!(css.contains(".hop-launcher-list row:last-child"));
+        assert!(css.contains("margin-bottom: 0;"));
+        assert!(css.contains("border-bottom-color: transparent;"));
+    }
+
+    #[test]
+    fn launcher_css_adds_subtle_content_border_matching_background_tone() {
+        let css = launcher_css();
+        assert!(css.contains("border: 1px solid alpha(@window_bg_color, 0.93);"));
+        assert!(css.contains(
+            ".hop-launcher-window.hop-blur-none .hop-launcher-content {\n  background: alpha(@window_bg_color, 0.96);\n  border-color: alpha(@window_bg_color, 0.96);"
+        ));
+    }
+
+    #[test]
+    fn scroller_height_ops_reset_constraints_before_target() {
+        assert_eq!(
+            scroller_height_ops(0),
+            [
+                HeightConstraintOp::SetMin(-1),
+                HeightConstraintOp::SetMax(-1),
+                HeightConstraintOp::SetMin(1),
+                HeightConstraintOp::SetMax(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn window_height_formula_uses_compact_chrome_offset() {
+        assert_eq!(window_height_for_target_height(384), 468);
+    }
+
+    #[test]
+    fn window_height_formula_does_not_force_chin_for_single_row() {
+        assert_eq!(window_height_for_target_height(48), 132);
+    }
+
+    #[test]
+    fn scroll_target_moves_down_when_row_below_viewport() {
+        let next = scroll_value_for_row_visibility(0.0, 120.0, 140.0, 40.0, 0.0, 500.0);
+        assert_eq!(next, 60.0);
+    }
+
+    #[test]
+    fn scroll_target_moves_up_when_row_above_viewport() {
+        let next = scroll_value_for_row_visibility(100.0, 120.0, 40.0, 40.0, 0.0, 500.0);
+        assert_eq!(next, 40.0);
+    }
+
+    #[test]
+    fn web_search_service_validation_accepts_legacy_url_field() {
+        let row = serde_json::json!({
+            "name": "Kagi",
+            "url": "https://kagi.com/search?q=%s",
+            "enabled": true,
+            "keyword": "kg"
+        });
+        let out = validate_web_search_service_row(&row).expect("valid web search service");
+        assert_eq!(out["urlTemplate"], "https://kagi.com/search?q=%s");
+        assert_eq!(out["keyword"], "kg");
+    }
+
+    #[test]
+    fn web_search_service_validation_rejects_non_https_template() {
+        let row = serde_json::json!({
+            "name": "Bad",
+            "urlTemplate": "http://example.com?q=%s"
+        });
+        assert!(validate_web_search_service_row(&row).is_none());
+    }
+
+    #[test]
+    fn parse_web_search_services_json_falls_back_to_defaults_for_malformed_input() {
+        let out = parse_web_search_services_json("not-json", true);
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn serialize_web_search_services_json_returns_empty_when_all_rows_invalid_and_no_fallback() {
+        let rows = vec![serde_json::json!({"name":"Bad","urlTemplate":"http://x.com?q=%s"})];
+        assert_eq!(serialize_web_search_services_json(&rows, false), "[]");
+    }
+
+    #[test]
+    fn canonical_web_search_services_json_rejects_non_array_payload() {
+        let out = canonical_web_search_services_json("{}", false);
+        assert!(out.is_err());
     }
 }
 
