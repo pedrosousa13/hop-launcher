@@ -18,7 +18,7 @@ pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchIt
             .map(PathBuf::from),
     );
 
-    let mut rows = collect_candidate_files(&roots, 3)
+    collect_candidate_files(&roots, 3)
         .into_iter()
         .filter(|path| path.is_file())
         .filter_map(|path| {
@@ -44,20 +44,7 @@ pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchIt
             ))
         })
         .take(24)
-        .collect::<Vec<_>>();
-
-    if rows.is_empty() {
-        rows.push(SearchItem::new(
-            "file:README.md",
-            "file",
-            "README.md",
-            "Project file",
-            "text-x-generic-symbolic",
-            "readme markdown docs file",
-        ));
-    }
-
-    rows
+        .collect::<Vec<_>>()
 }
 
 fn candidate_roots() -> Vec<PathBuf> {

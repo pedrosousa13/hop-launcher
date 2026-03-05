@@ -7,7 +7,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
     let is_empty_query = normalized.is_empty();
 
-    let mut rows = load_recent_file_paths()
+    load_recent_file_paths()
         .into_iter()
         .filter(|path| is_empty_query || path.to_lowercase().contains(&normalized))
         .take(12)
@@ -33,20 +33,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
                 &format!("recent {title} {path}"),
             )
         })
-        .collect::<Vec<_>>();
-
-    if rows.is_empty() {
-        rows.push(SearchItem::new(
-            "recent:/tmp/notes.txt",
-            "recent",
-            "Notes.txt",
-            "Recent file",
-            "document-open-recent-symbolic",
-            "recent activity notes file",
-        ));
-    }
-
-    rows
+        .collect::<Vec<_>>()
 }
 
 fn load_recent_file_paths() -> Vec<String> {

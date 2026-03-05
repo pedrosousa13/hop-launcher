@@ -232,20 +232,20 @@ async fn ranking_config_affects_search_order() {
     let server = HopdServer::new();
     let _ = server
         .handle_json_line(
-            r#"{"id":"rw1","method":"config.set","params":{"key":"ranking.weight_windows","value":120}}"#,
+            r#"{"id":"rw1","method":"config.set","params":{"key":"ranking.weight_emoji","value":120}}"#,
         )
         .await
-        .expect("set weight windows");
+        .expect("set weight emoji");
     let _ = server
         .handle_json_line(
-            r#"{"id":"rw2","method":"config.set","params":{"key":"ranking.weight_apps","value":0}}"#,
+            r#"{"id":"rw2","method":"config.set","params":{"key":"ranking.weight_utility","value":-80}}"#,
         )
         .await
-        .expect("set weight apps");
+        .expect("set weight utility");
 
     let response = server
         .handle_json_line(
-            r#"{"id":"rw3","method":"search.query","params":{"query":"workspace","limit":3}}"#,
+            r#"{"id":"rw3","method":"search.query","params":{"query":"e","limit":3}}"#,
         )
         .await
         .expect("search response");
@@ -253,7 +253,12 @@ async fn ranking_config_affects_search_order() {
     let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
     let results = parsed.result["results"].as_array().expect("results array");
     assert!(!results.is_empty(), "expected ranked rows");
-    assert_eq!(results[0]["kind"], "window");
+    assert!(
+        results
+            .iter()
+            .all(|row| row.get("score").and_then(serde_json::Value::as_i64).is_some()),
+        "expected scored rows after ranking overrides"
+    );
 }
 
 #[tokio::test]

@@ -8,7 +8,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
     let is_empty_query = normalized.is_empty();
 
-    let mut items: Vec<SearchItem> = desktop_entry_files()
+    desktop_entry_files()
         .into_iter()
         .filter_map(|path| {
             let file_name = path
@@ -21,20 +21,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
         })
         .filter(|item| is_empty_query || matches_query(item, &normalized))
         .take(if is_empty_query { 12 } else { 24 })
-        .collect();
-
-    if items.is_empty() {
-        items.push(SearchItem::new(
-            "app:org.gnome.Terminal.desktop",
-            "app",
-            "Terminal",
-            "System application",
-            "utilities-terminal-symbolic",
-            "terminal app shell console",
-        ));
-    }
-
-    items
+        .collect()
 }
 
 fn matches_query(item: &SearchItem, query: &str) -> bool {

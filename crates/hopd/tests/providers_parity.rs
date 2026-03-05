@@ -1,26 +1,73 @@
-use std::collections::HashSet;
-
 use hopd::{HopdServer, IpcResponse};
 
 #[tokio::test]
-async fn search_query_can_return_all_primary_kinds() {
+async fn search_query_supports_all_primary_modes_without_scaffolds() {
+    let server = HopdServer::new();
+    for (mode, allowed_kinds) in [
+        ("apps", vec!["app"]),
+        ("windows", vec!["window"]),
+        ("files", vec!["file"]),
+        ("recents", vec!["recent"]),
+        ("settings", vec!["setting"]),
+    ] {
+        let response = server
+            .handle_json_line(&format!(
+                r#"{{"id":"mode-{mode}","method":"search.query","params":{{"query":"a","mode":"{mode}","limit":20}}}}"#
+            ))
+            .await
+            .expect("response expected");
+        let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+        let results = parsed.result["results"].as_array().expect("results array");
+        for row in results {
+            let kind = row["kind"].as_str().expect("kind string");
+            assert!(
+                allowed_kinds.contains(&kind),
+                "unexpected kind {kind} in mode {mode}"
+            );
+        }
+    }
+
+    let all_mode = server
+        .handle_json_line(
+            r#"{"id":"mode-all","method":"search.query","params":{"query":"a","mode":"all","limit":20}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&all_mode).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    for row in results {
+        let kind = row["kind"].as_str().expect("kind string");
+        assert!(
+            ["app", "window", "file", "recent", "setting", "utility"].contains(&kind),
+            "unexpected kind {kind} in all mode"
+        );
+    }
+
+    let utility_mode = server
+        .handle_json_line(
+            r#"{"id":"mode-utility","method":"search.query","params":{"query":"e","limit":20}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&utility_mode).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(
+        results.iter().any(|row| row["kind"] == "utility"),
+        "expected utility row for short generic query"
+    );
+}
+
+#[tokio::test]
+async fn settings_mode_returns_settings_rows() {
     let server = HopdServer::new();
     let response = server
-        .handle_json_line(r#"{"id":"k1","method":"search.query","params":{"query":"a","limit":20}}"#)
+        .handle_json_line(
+            r#"{"id":"settings-only","method":"search.query","params":{"query":"settings","mode":"settings","limit":5}}"#,
+        )
         .await
         .expect("response expected");
     let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
     let results = parsed.result["results"].as_array().expect("results array");
-
-    let kinds: HashSet<&str> = results
-        .iter()
-        .filter_map(|row| row["kind"].as_str())
-        .collect();
-
-    assert!(kinds.contains("app"), "missing app kind");
-    assert!(kinds.contains("window"), "missing window kind");
-    assert!(kinds.contains("file"), "missing file kind");
-    assert!(kinds.contains("recent"), "missing recent kind");
-    assert!(kinds.contains("setting"), "missing setting kind");
-    assert!(kinds.contains("utility"), "missing utility kind");
+    assert!(!results.is_empty(), "expected settings rows");
+    assert!(results.iter().all(|row| row["kind"] == "setting"));
 }

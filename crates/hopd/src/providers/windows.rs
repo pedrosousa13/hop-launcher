@@ -7,7 +7,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
     let normalized = query.trim().to_lowercase();
     let is_empty_query = normalized.is_empty();
 
-    let mut rows = collect_windows()
+    collect_windows()
         .into_iter()
         .filter(|window| is_empty_query || matches_window_query(window, &normalized))
         .map(|window| {
@@ -27,20 +27,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             )
         })
         .take(if is_empty_query { 8 } else { 20 })
-        .collect::<Vec<_>>();
-
-    if rows.is_empty() {
-        rows.push(SearchItem::new(
-            "window:0x00000000",
-            "window",
-            "Terminal - Workspace",
-            "Open window",
-            "window-symbolic",
-            "terminal window workspace",
-        ));
-    }
-
-    rows
+        .collect::<Vec<_>>()
 }
 
 #[derive(Debug, Clone)]
