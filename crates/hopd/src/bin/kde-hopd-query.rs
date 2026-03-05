@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use hopd::kde_adapter::{request_hopd_execute_over_socket, request_hopd_search_over_socket};
+use hopd::kde_adapter::{
+    request_hopd_execute_over_socket, request_hopd_search_over_socket_with_mode,
+};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -9,6 +11,7 @@ async fn main() {
     let mut action = "enter".to_string();
     let mut socket_path = default_socket_path();
     let mut limit: u32 = 8;
+    let mut mode: Option<String> = None;
 
     let mut args = std::env::args().skip(1).peekable();
     while let Some(arg) = args.next() {
@@ -28,6 +31,14 @@ async fn main() {
             "--execute" => {
                 if let Some(value) = args.next() {
                     execute_result_id = Some(value);
+                }
+            }
+            "--mode" => {
+                if let Some(value) = args.next() {
+                    let trimmed = value.trim();
+                    if !trimmed.is_empty() {
+                        mode = Some(trimmed.to_string());
+                    }
                 }
             }
             "--action" => {
@@ -54,16 +65,18 @@ async fn main() {
 
     if query_parts.is_empty() {
         eprintln!(
-            "usage: kde-hopd-query [--socket <path>] [--limit <n>] <query text>\n       kde-hopd-query [--socket <path>] --execute <result_id> [--action <action>]"
+            "usage: kde-hopd-query [--socket <path>] [--limit <n>] [--mode <all|apps|windows|files|recents|settings|weather|timezone|emoji|calculator|currency>] <query text>\n       kde-hopd-query [--socket <path>] --execute <result_id> [--action <action>]"
         );
         std::process::exit(2);
     }
 
     let query = query_parts.join(" ");
-    match request_hopd_search_over_socket(&socket_path, &query, limit).await {
+    match request_hopd_search_over_socket_with_mode(&socket_path, &query, limit, mode.as_deref())
+        .await
+    {
         Ok(Some(response)) => println!("{response}"),
         Ok(None) => {
-            eprintln!("query has no utility intent; skipped hopd request");
+            eprintln!("query has no utility intent; skipped hopd request (tip: pass --mode all)");
             std::process::exit(3);
         }
         Err(error) => {

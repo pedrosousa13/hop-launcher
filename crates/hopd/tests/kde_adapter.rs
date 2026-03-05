@@ -3,8 +3,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hopd::kde_adapter::{
-    build_hopd_execute_request, build_hopd_search_request, request_hopd_execute_over_socket,
-    request_hopd_search_over_socket,
+    build_hopd_execute_request, build_hopd_search_request, build_hopd_search_request_with_mode,
+    request_hopd_execute_over_socket, request_hopd_search_over_socket,
+    request_hopd_search_over_socket_with_mode,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
@@ -21,6 +22,16 @@ fn builds_search_query_request_for_utility_intent() {
 fn ignores_non_utility_query() {
     let req = build_hopd_search_request("firefox", 5);
     assert!(req.is_none());
+}
+
+#[test]
+fn builds_search_query_request_for_explicit_mode() {
+    let req =
+        build_hopd_search_request_with_mode("firefox", 7, Some("apps")).expect("request");
+    assert_eq!(req["method"], "search.query");
+    assert_eq!(req["params"]["query"], "firefox");
+    assert_eq!(req["params"]["mode"], "apps");
+    assert_eq!(req["params"]["limit"], 7);
 }
 
 fn test_socket_path() -> PathBuf {
@@ -73,6 +84,42 @@ async fn request_hopd_search_over_socket_skips_non_utility_query() {
         .await
         .expect("call succeeds");
     assert!(response.is_none());
+}
+
+#[tokio::test]
+async fn request_hopd_search_over_socket_with_mode_queries_non_utility() {
+    let socket_path = test_socket_path();
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut reader = BufReader::new(stream);
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .await
+            .expect("read request line");
+        assert!(request_line.contains("\"method\":\"search.query\""));
+        assert!(request_line.contains("\"query\":\"firefox\""));
+        assert!(request_line.contains("\"mode\":\"apps\""));
+        let mut stream = reader.into_inner();
+        stream
+            .write_all(br#"{"id":"kde-proto-1","result":{"ok":true,"results":[{"id":"app:firefox.desktop","kind":"app"}]}}"#)
+            .await
+            .expect("write response");
+        stream.write_all(b"\n").await.expect("write newline");
+    });
+
+    let response =
+        request_hopd_search_over_socket_with_mode(&socket_path, "firefox", 8, Some("apps"))
+            .await
+            .expect("request succeeds")
+            .expect("response");
+    assert_eq!(response["result"]["ok"], true);
+    assert_eq!(response["result"]["results"][0]["kind"], "app");
+
+    server.await.expect("server join");
+    let _ = std::fs::remove_file(&socket_path);
 }
 
 #[test]

@@ -22,8 +22,20 @@ fn has_utility_intent(query: &str) -> bool {
 }
 
 pub fn build_hopd_search_request(query: &str, limit: u32) -> Option<Value> {
+    build_hopd_search_request_with_mode(query, limit, None)
+}
+
+pub fn build_hopd_search_request_with_mode(
+    query: &str,
+    limit: u32,
+    mode: Option<&str>,
+) -> Option<Value> {
     let trimmed = query.trim();
-    if !has_utility_intent(trimmed) {
+    let mode = mode.map(str::trim).unwrap_or_default();
+    let route_mode = if mode.is_empty() { "all" } else { mode };
+    let explicit_mode = !mode.is_empty();
+
+    if !explicit_mode && !has_utility_intent(trimmed) {
         return None;
     }
 
@@ -32,6 +44,7 @@ pub fn build_hopd_search_request(query: &str, limit: u32) -> Option<Value> {
         "method": "search.query",
         "params": {
             "query": trimmed,
+            "mode": route_mode,
             "limit": limit.max(1),
         }
     }))
@@ -53,7 +66,16 @@ pub async fn request_hopd_search_over_socket<P: AsRef<Path>>(
     query: &str,
     limit: u32,
 ) -> io::Result<Option<Value>> {
-    let request = match build_hopd_search_request(query, limit) {
+    request_hopd_search_over_socket_with_mode(socket_path, query, limit, None).await
+}
+
+pub async fn request_hopd_search_over_socket_with_mode<P: AsRef<Path>>(
+    socket_path: P,
+    query: &str,
+    limit: u32,
+    mode: Option<&str>,
+) -> io::Result<Option<Value>> {
+    let request = match build_hopd_search_request_with_mode(query, limit, mode) {
         Some(request) => request,
         None => return Ok(None),
     };
