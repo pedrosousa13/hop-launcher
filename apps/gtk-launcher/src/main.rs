@@ -1293,8 +1293,8 @@ fn launcher_css() -> &'static str {
 .hop-launcher-entry {
   min-height: 40px;
   border-radius: 10px;
-  border: 1px solid alpha(@headerbar_border_color, 0.28);
-  background: alpha(@view_bg_color, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
   padding: 0 10px;
 }
 
