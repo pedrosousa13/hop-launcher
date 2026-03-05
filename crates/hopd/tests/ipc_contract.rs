@@ -140,6 +140,39 @@ async fn search_query_web_prefix_honors_service_keywords_and_order() {
 }
 
 #[tokio::test]
+async fn search_query_web_prefix_excludes_disabled_services() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"ws-cfg-disabled","method":"config.set","params":{"key":"web_search.services_json","value":"[{\"id\":\"kagi\",\"name\":\"Kagi\",\"urlTemplate\":\"https://kagi.com/search?q=%s\",\"enabled\":true,\"keyword\":\"kg\"},{\"id\":\"google\",\"name\":\"Google\",\"urlTemplate\":\"https://www.google.com/search?q=%s\",\"enabled\":false,\"keyword\":\"g\"}]"}}"#,
+        )
+        .await
+        .expect("set response");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"ws-web-disabled","method":"search.query","params":{"query":"web rust","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    let action_ids = results
+        .iter()
+        .filter(|row| row["kind"] == "action")
+        .filter_map(|row| row["id"].as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        action_ids.iter().any(|id| id.starts_with("web-search:kagi:")),
+        "expected enabled provider result"
+    );
+    assert!(
+        !action_ids.iter().any(|id| id.starts_with("web-search:google:")),
+        "disabled provider should not appear"
+    );
+}
+
+#[tokio::test]
 async fn search_query_respects_limit() {
     let server = HopdServer::new();
     let response = server
