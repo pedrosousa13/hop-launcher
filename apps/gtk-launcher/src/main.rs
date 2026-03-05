@@ -1358,7 +1358,7 @@ fn launcher_css() -> &'static str {
 }
 
 .hop-launcher-window.hop-density-compact .hop-launcher-list row {
-  margin: 0 3px;
+  margin: 1px 0;
 }
 
 .hop-launcher-window.hop-density-compact .hop-launcher-row-body {
@@ -1372,7 +1372,7 @@ fn launcher_css() -> &'static str {
 }
 
 .hop-launcher-window.hop-density-comfortable .hop-launcher-list row {
-  margin: 3px 5px;
+  margin: 3px 0;
 }
 
 .hop-launcher-window.hop-density-comfortable .hop-launcher-row-body {
