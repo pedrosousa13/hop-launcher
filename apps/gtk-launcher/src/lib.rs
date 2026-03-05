@@ -536,7 +536,7 @@ mod tests {
         let raw = serde_json::json!({
             "id": "gtk-execute",
             "result": {
-                "ok": true,
+                "ok": false,
                 "executed": false,
                 "action_resolved": false,
                 "launch_spawned": false,

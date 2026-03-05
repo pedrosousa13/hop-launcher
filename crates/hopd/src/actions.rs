@@ -28,7 +28,7 @@ pub fn execute(params: &Value) -> Value {
     }
 
     json!({
-        "ok": true,
+        "ok": action_resolved,
         "executed": action_resolved,
         "action_resolved": action_resolved,
         "launch_spawned": launch_spawned,
