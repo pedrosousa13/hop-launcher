@@ -153,6 +153,21 @@ fn command_for_result_id_with_desktop(
             "emoji" => "https://emojipedia.org",
             "calculator" => "https://www.google.com/search?q=calculator",
             "currency" => "https://www.xe.com/currencyconverter/",
+            _ if utility_key.starts_with("weather:") => {
+                let encoded_location = utility_key.strip_prefix("weather:").unwrap_or_default();
+                if encoded_location.is_empty() {
+                    return None;
+                }
+                let location = decode_component(encoded_location)?;
+                let path = location.trim();
+                if path.is_empty() {
+                    return None;
+                }
+                return Some((
+                    "xdg-open".to_string(),
+                    vec![format!("https://wttr.in/{}", encode_component(path))],
+                ));
+            }
             _ => return None,
         };
         return Some(("xdg-open".to_string(), vec![url.to_string()]));
@@ -201,6 +216,11 @@ fn decode_component(raw: &str) -> Option<String> {
     let bytes = raw.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
+        if bytes[i] == b'+' {
+            out.push(' ');
+            i += 1;
+            continue;
+        }
         if bytes[i] == b'%' {
             if i + 2 >= bytes.len() {
                 return None;
@@ -339,6 +359,15 @@ mod tests {
             .expect("utility command");
         assert_eq!(resolved.0, "xdg-open");
         assert_eq!(resolved.1, vec!["https://wttr.in".to_string()]);
+    }
+
+    #[test]
+    fn resolves_utility_weather_with_location_to_browser_command() {
+        let resolved =
+            command_for_result_id_with_desktop("utility:weather:San+Francisco", "GNOME")
+                .expect("utility command");
+        assert_eq!(resolved.0, "xdg-open");
+        assert_eq!(resolved.1, vec!["https://wttr.in/San+Francisco".to_string()]);
     }
 
     #[test]

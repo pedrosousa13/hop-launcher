@@ -518,26 +518,32 @@ fn weather_provider(query: &str) -> Vec<SearchItem> {
         return Vec::new();
     }
 
-    let tokens: Vec<&str> = query.split_whitespace().collect();
-    let has_weather_intent = tokens.iter().any(|token| *token == "weather" || *token == "wx");
-    if !has_weather_intent {
+    let lower = query.to_lowercase();
+    let location = extract_weather_location(&lower);
+    let has_weather_intent = lower.contains("weather") || lower.starts_with("wx ");
+    if !has_weather_intent && location.is_none() {
         return Vec::new();
     }
-
-    let blocking = tokens
-        .iter()
-        .any(|token| !["weather", "wx", "emoji", "time", "tz"].contains(token));
-    if blocking {
-        return Vec::new();
-    }
+    let weather_id = location
+        .as_ref()
+        .map(|value| format!("utility:weather:{}", encode_component(value)))
+        .unwrap_or_else(|| "utility:weather".to_string());
+    let weather_title = location
+        .as_ref()
+        .map(|value| format!("Weather in {value}"))
+        .unwrap_or_else(|| "Weather".to_string());
+    let weather_keywords = location
+        .as_ref()
+        .map(|value| format!("weather forecast temperature {}", value.to_lowercase()))
+        .unwrap_or_else(|| "weather forecast temperature".to_string());
 
     vec![SearchItem {
-        id: "utility:weather".to_string(),
+        id: weather_id,
         kind: "weather".to_string(),
-        title: "Weather".to_string(),
+        title: weather_title,
         subtitle: "Utility".to_string(),
         icon: "weather-clear-symbolic".to_string(),
-        keywords: "weather forecast temperature".to_string(),
+        keywords: weather_keywords,
     }]
 }
 
@@ -547,18 +553,13 @@ fn timezone_provider(query: &str) -> Vec<SearchItem> {
     }
 
     let lower = query.to_lowercase();
-    let city = if lower.contains("tokyo") {
-        Some("Tokyo")
-    } else if lower.contains("zurich") {
-        Some("Zurich")
-    } else if lower.contains("berlin") {
-        Some("Berlin")
-    } else {
-        None
-    };
+    let city = extract_time_location(&lower);
 
     let has_time_intent = lower.contains("time ") || lower.starts_with("time")
-        || lower.contains("tz ") || lower.starts_with("tz");
+        || lower.contains("tz ")
+        || lower.starts_with("tz")
+        || lower.contains("timezone")
+        || lower.ends_with(" time");
     if !has_time_intent && city.is_none() {
         return Vec::new();
     }
@@ -577,6 +578,70 @@ fn timezone_provider(query: &str) -> Vec<SearchItem> {
         icon: "preferences-system-time-symbolic".to_string(),
         keywords: "timezone world clock time".to_string(),
     }]
+}
+
+fn extract_weather_location(query: &str) -> Option<String> {
+    if let Some(rest) = query.strip_prefix("weather ") {
+        return to_title_case(rest);
+    }
+    if let Some(rest) = query.strip_prefix("wx ") {
+        return to_title_case(rest);
+    }
+    if let Some(rest) = query.strip_suffix(" weather") {
+        return to_title_case(rest);
+    }
+    None
+}
+
+fn extract_time_location(query: &str) -> Option<String> {
+    for prefix in ["time in ", "time ", "tz ", "timezone "] {
+        if let Some(rest) = query.strip_prefix(prefix) {
+            return to_title_case(rest);
+        }
+    }
+    if let Some(rest) = query.strip_suffix(" time") {
+        return to_title_case(rest);
+    }
+    None
+}
+
+fn to_title_case(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for (index, token) in trimmed.split_whitespace().enumerate() {
+        if index > 0 {
+            out.push(' ');
+        }
+        let mut chars = token.chars();
+        if let Some(first) = chars.next() {
+            out.push(first.to_ascii_uppercase());
+            out.push_str(chars.as_str());
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn encode_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        let ch = byte as char;
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~') {
+            out.push(ch);
+        } else if ch == ' ' {
+            out.push('+');
+        } else {
+            out.push('%');
+            out.push_str(&format!("{byte:02X}"));
+        }
+    }
+    out
 }
 
 fn emoji_provider(query: &str) -> Vec<SearchItem> {

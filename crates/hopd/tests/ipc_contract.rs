@@ -31,7 +31,7 @@ fn parses_search_query_request() {
 }
 
 #[tokio::test]
-async fn handles_search_query_with_empty_result_set() {
+async fn handles_search_query_with_weather_suffix_intent() {
     let server = HopdServer::new();
     let response = server
         .handle_json_line(
@@ -42,7 +42,10 @@ async fn handles_search_query_with_empty_result_set() {
 
     let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
     assert_eq!(parsed.id, "2");
-    assert_eq!(parsed.result["results"], serde_json::json!([]));
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected weather result");
+    assert_eq!(results[0]["kind"], "weather");
+    assert_eq!(results[0]["title"], "Weather in Zurich");
     assert!(parsed.result["telemetry"]["elapsed_ms"].is_number());
     assert!(parsed.error.is_none());
 }
@@ -160,6 +163,24 @@ async fn search_query_returns_calculator_row_for_math_expression() {
 }
 
 #[tokio::test]
+async fn search_query_returns_weather_row_for_city_phrase() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2f-weather","method":"search.query","params":{"query":"weather zurich","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected weather result");
+    assert_eq!(results[0]["kind"], "weather");
+    assert_eq!(results[0]["id"], "utility:weather:Zurich");
+    assert_eq!(results[0]["title"], "Weather in Zurich");
+}
+
+#[tokio::test]
 async fn search_query_returns_currency_row_for_conversion_phrase() {
     let server = HopdServer::new();
     let response = server
@@ -174,6 +195,23 @@ async fn search_query_returns_currency_row_for_conversion_phrase() {
     assert!(!results.is_empty(), "expected currency result");
     assert_eq!(results[0]["kind"], "currency");
     assert_eq!(results[0]["id"], "utility:currency:12:USD:CHF");
+}
+
+#[tokio::test]
+async fn search_query_handles_timezone_intent_for_suffix_phrase() {
+    let server = HopdServer::new();
+    let response = server
+        .handle_json_line(
+            r#"{"id":"2g-time","method":"search.query","params":{"query":"zurich time","limit":3}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let results = parsed.result["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "expected timezone result");
+    assert_eq!(results[0]["kind"], "timezone");
+    assert_eq!(results[0]["title"], "Time in Zurich");
 }
 
 #[tokio::test]
