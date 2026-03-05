@@ -48,14 +48,47 @@ fn load_recent_file_paths() -> Vec<String> {
 }
 
 fn parse_recent_file_uris(xbel: &str) -> Vec<String> {
+    parse_recent_bookmarks(xbel)
+        .into_iter()
+        .map(|bookmark| bookmark.path)
+        .collect()
+}
+
+#[derive(Debug)]
+struct RecentBookmark {
+    path: String,
+    modified: Option<String>,
+    seq: usize,
+}
+
+fn parse_recent_bookmarks(xbel: &str) -> Vec<RecentBookmark> {
     let mut out = Vec::new();
-    for chunk in xbel.split("href=\"").skip(1) {
-        let href = chunk.split('"').next().unwrap_or_default();
-        if let Some(path) = parse_file_uri(href) {
-            out.push(path);
-        }
+    for (seq, chunk) in xbel.split("<bookmark").skip(1).enumerate() {
+        let href = extract_attr(chunk, "href").unwrap_or_default();
+        let Some(path) = parse_file_uri(href) else {
+            continue;
+        };
+        let modified = extract_attr(chunk, "modified").map(|value| value.to_string());
+        out.push(RecentBookmark {
+            path,
+            modified,
+            seq,
+        });
     }
+    out.sort_by(|left, right| match (&left.modified, &right.modified) {
+        (Some(l), Some(r)) => r.cmp(l),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => left.seq.cmp(&right.seq),
+    });
     out
+}
+
+fn extract_attr<'a>(chunk: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("{key}=\"");
+    let start = chunk.find(&needle)? + needle.len();
+    let rest = chunk.get(start..)?;
+    Some(rest.split('"').next().unwrap_or_default())
 }
 
 fn parse_file_uri(uri: &str) -> Option<String> {
@@ -150,5 +183,17 @@ mod tests {
             icon_for_path(Path::new("/tmp/notes.txt")),
             "document-open-recent-symbolic"
         );
+    }
+
+    #[test]
+    fn recent_entries_are_sorted_by_modified_time_descending() {
+        let xbel = r#"<?xml version="1.0"?><xbel>
+            <bookmark href="file:///tmp/older.txt" modified="2025-02-01T10:00:00Z"/>
+            <bookmark href="file:///tmp/newer.txt" modified="2025-02-03T10:00:00Z"/>
+        </xbel>"#;
+        let entries = parse_recent_file_uris(xbel);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0], "/tmp/newer.txt");
+        assert_eq!(entries[1], "/tmp/older.txt");
     }
 }

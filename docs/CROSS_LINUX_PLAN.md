@@ -38,6 +38,7 @@ Completed in this branch:
 6. Added CI benchmark artifact upload (`hopd-bench`) from `ci.yml` so each run stores a searchable latency snapshot.
 7. Reworked settings provider from static catalog to desktop- and command-aware rows (`gnome-control-center`, `systemsettings5/systemsettings`) with fallback behavior.
 8. Improved app provider desktop-entry parsing with XDG data directory discovery, hidden/no-display filtering, localized-name fallback, and cleaned `Exec` keyword extraction.
+9. Improved recents provider parsing to consume bookmark metadata and order rows by `modified` timestamp (most recent first).
 
 ## Next Milestones
 
