@@ -1397,14 +1397,10 @@ fn launcher_css() -> &'static str {
 
 .hop-launcher-icon-app {
   padding: 2px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.20);
 }
 
 .hop-launcher-icon-window {
   padding: 1px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.12);
 }
 
 .hop-settings-status {
