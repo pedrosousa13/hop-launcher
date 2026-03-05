@@ -727,7 +727,7 @@ fn serialize_web_search_services_json(
     serde_json::to_string(&valid).unwrap_or_else(|_| "[]".to_string())
 }
 
-#[cfg(feature = "gtk_ui")]
+#[cfg(all(feature = "gtk_ui", test))]
 fn canonical_web_search_services_json(raw: &str, fallback_to_defaults: bool) -> Result<String, String> {
     let parsed = serde_json::from_str::<serde_json::Value>(raw)
         .map_err(|error| format!("Invalid web-search providers JSON: {error}"))?;
@@ -1267,6 +1267,7 @@ fn launcher_css() -> &'static str {
   outline: none;
   box-shadow: none;
   background: rgba(20, 21, 24, 0.90);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .hop-launcher-window.hop-blur-none .hop-launcher-content {
@@ -1295,6 +1296,7 @@ fn launcher_css() -> &'static str {
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
   padding: 0 10px;
 }
 
@@ -1314,8 +1316,12 @@ fn launcher_css() -> &'static str {
   background: rgba(13, 14, 16, 0.46);
 }
 
+.hop-launcher-list {
+  padding: 2px;
+}
+
 .hop-launcher-list row {
-  margin: 2px 0;
+  margin: 2px 2px;
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
@@ -1358,7 +1364,7 @@ fn launcher_css() -> &'static str {
 }
 
 .hop-launcher-window.hop-density-compact .hop-launcher-list row {
-  margin: 1px 0;
+  margin: 1px 2px;
 }
 
 .hop-launcher-window.hop-density-compact .hop-launcher-row-body {
@@ -1372,7 +1378,7 @@ fn launcher_css() -> &'static str {
 }
 
 .hop-launcher-window.hop-density-comfortable .hop-launcher-list row {
-  margin: 3px 0;
+  margin: 3px 2px;
 }
 
 .hop-launcher-window.hop-density-comfortable .hop-launcher-row-body {
@@ -3660,7 +3666,7 @@ mod tests {
         let css = launcher_css();
         assert!(css.contains(".hop-launcher-list row {") || css.contains(".hop-launcher-list row
 {"));
-        assert!(css.contains("margin: 2px 0;"));
+        assert!(css.contains("margin: 2px 2px;"));
         assert!(!css.contains(".hop-launcher-list row:last-child"));
     }
 
