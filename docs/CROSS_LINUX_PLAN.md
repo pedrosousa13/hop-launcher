@@ -45,13 +45,14 @@ Completed in this branch:
 13. Replaced static settings rows with desktop-entry-backed settings discovery and `settingcmd:` execution wiring for real settings launch commands.
 14. Extended KDE adapter query transport with explicit route-mode support (`kde-hopd-query --mode <mode>`) so KDE surfaces can call full `hopd` providers, not utility-only intent.
 15. Improved utility-intent coverage with dynamic weather/time location parsing (`weather <city>`, `<city> weather`, `<city> time`) and weather-location execution URLs.
+16. Added benchmark summary/trend reporting script (`bench-trend-report.sh`) and CI artifact publication for markdown latency snapshots.
 
 ## Next Milestones
 
 1. Expand `search.query` providers from catalog heuristics to real data-backed provider modules.
 2. Replace remaining deterministic provider scaffolds with real desktop-backed data sources and execution handlers (utility catalog + provider data parity with GNOME).
 3. Integrate KDE transport helper into a packaged KDE launcher/runner adapter surface (Plasma-facing artifact + install docs).
-4. Add trend reporting for benchmark artifacts so CI history highlights latency drift, not only threshold failures.
+4. Add baseline retrieval in CI so benchmark trend reports include cross-run deltas automatically.
 
 ## Local Install (Required for Adapter Integration)
 

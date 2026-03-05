@@ -70,11 +70,19 @@ jobs:
         run: bash scripts/check-bench-thresholds.sh artifacts/bench/hopd-bench.txt
         working-directory: crates/hopd
 
+      - name: Generate hopd benchmark summary report
+        shell: bash
+        run: |
+          bash scripts/bench-trend-report.sh artifacts/bench/hopd-bench.txt > artifacts/bench/hopd-bench-summary.md
+        working-directory: crates/hopd
+
       - name: Upload hopd benchmark artifact
         uses: actions/upload-artifact@v4
         with:
           name: hopd-bench
-          path: crates/hopd/artifacts/bench/hopd-bench.txt
+          path: |
+            crates/hopd/artifacts/bench/hopd-bench.txt
+            crates/hopd/artifacts/bench/hopd-bench-summary.md
           if-no-files-found: error
 
   hop-hotkeyd:
