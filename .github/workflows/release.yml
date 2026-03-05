@@ -2,9 +2,19 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name for manual release (for example v0.1.0-rc1)"
+        required: true
+        default: "v0.0.0-dev"
+      prerelease:
+        description: "Mark manual release as prerelease"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -99,6 +109,17 @@ jobs:
             dist/deb \
             "${{ steps.asset.outputs.asset_path }}"
 
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          bash scripts/release/generate-checksums.sh dist/SHA256SUMS \
+            "${{ steps.asset.outputs.asset_path }}" \
+            dist/hopd-linux-x86_64.tar.gz \
+            dist/kde-hopd-query-linux-x86_64.tar.gz \
+            dist/hop-hotkeyd-linux-x86_64.tar.gz \
+            dist/deb \
+            dist/ARTIFACT_MANIFEST.txt
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -110,15 +131,15 @@ jobs:
             dist/hop-hotkeyd-linux-x86_64.tar.gz
             dist/deb/*.deb
             dist/ARTIFACT_MANIFEST.txt
+            dist/SHA256SUMS
           if-no-files-found: error
 
       - name: Create GitHub release and upload zip
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: main
-          target_commitish: main
-          name: Main build
-          prerelease: true
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           overwrite_files: true
           files: |
             ${{ steps.asset.outputs.asset_path }}
@@ -127,4 +148,5 @@ jobs:
             dist/hop-hotkeyd-linux-x86_64.tar.gz
             dist/deb/*.deb
             dist/ARTIFACT_MANIFEST.txt
+            dist/SHA256SUMS
           generate_release_notes: true
