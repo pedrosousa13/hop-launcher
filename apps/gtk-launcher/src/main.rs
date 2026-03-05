@@ -39,7 +39,7 @@ use libadwaita as adw;
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
     config_set, default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
-    start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
+    settings_accelerators, start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
 };
 
 fn main() {
@@ -594,7 +594,7 @@ fn run() {
         app.add_action(&open_settings);
         app.set_accels_for_action(
             "app.open-settings",
-            &["<Primary>comma", "<Super>comma", "<Meta>comma"],
+            settings_accelerators(),
         );
 
         let toggle = gio::SimpleAction::new("toggle", None);

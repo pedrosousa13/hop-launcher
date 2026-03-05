@@ -56,6 +56,10 @@ pub fn toggle_accelerator() -> &'static str {
     "<Primary><Shift>ampersand"
 }
 
+pub fn settings_accelerators() -> &'static [&'static str] {
+    &["<Primary>comma", "<Super>comma", "<Meta>comma"]
+}
+
 pub fn start_visible_on_launch() -> bool {
     true
 }
@@ -474,6 +478,14 @@ mod tests {
     #[test]
     fn exposes_toggle_accelerator() {
         assert_eq!(toggle_accelerator(), "<Primary><Shift>ampersand");
+    }
+
+    #[test]
+    fn exposes_settings_accelerators() {
+        assert_eq!(
+            settings_accelerators(),
+            &["<Primary>comma", "<Super>comma", "<Meta>comma"]
+        );
     }
 
     #[test]
