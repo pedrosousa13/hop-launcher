@@ -223,6 +223,73 @@ async fn search_query_respects_feature_toggles_for_settings() {
 }
 
 #[tokio::test]
+async fn search_query_respects_feature_toggles_for_utility_family() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"fu1","method":"config.set","params":{"key":"features.utility","value":false}}"#,
+        )
+        .await
+        .expect("set response");
+
+    for (id, query, mode) in [
+        ("fu2", "2+2", "all"),
+        ("fu3", "weather", "all"),
+        ("fu4", "time tokyo", "all"),
+        ("fu5", "emoji smile", "all"),
+        ("fu6", "12 usd to chf", "all"),
+    ] {
+        let response = server
+            .handle_json_line(&format!(
+                r#"{{"id":"{id}","method":"search.query","params":{{"query":"{query}","mode":"{mode}","limit":20}}}}"#
+            ))
+            .await
+            .expect("response expected");
+        let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+        let results = parsed.result["results"].as_array().expect("results array");
+        assert!(
+            results.iter().all(|row| {
+                let kind = row["kind"].as_str().unwrap_or_default();
+                !["utility", "emoji", "calculator", "currency", "weather", "timezone"]
+                    .contains(&kind)
+            }),
+            "utility-family kinds should be filtered when utility feature is disabled"
+        );
+    }
+}
+
+#[tokio::test]
+async fn search_query_respects_feature_toggles_for_primary_provider_kinds() {
+    let server = HopdServer::new();
+    for (set_id, key, mode, query, blocked_kind) in [
+        ("fp1", "features.apps", "apps", "a", "app"),
+        ("fp2", "features.windows", "windows", "a", "window"),
+        ("fp3", "features.files", "files", "a", "file"),
+        ("fp4", "features.recents", "recents", "a", "recent"),
+    ] {
+        server
+            .handle_json_line(&format!(
+                r#"{{"id":"{set_id}","method":"config.set","params":{{"key":"{key}","value":false}}}}"#
+            ))
+            .await
+            .expect("set response");
+
+        let response = server
+            .handle_json_line(&format!(
+                r#"{{"id":"q-{set_id}","method":"search.query","params":{{"query":"{query}","mode":"{mode}","limit":20}}}}"#
+            ))
+            .await
+            .expect("response expected");
+        let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+        let results = parsed.result["results"].as_array().expect("results array");
+        assert!(
+            results.is_empty() || results.iter().all(|row| row["kind"] != blocked_kind),
+            "mode {mode} should not return disabled kind {blocked_kind}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn handles_actions_execute_acknowledgement() {
     let server = HopdServer::new();
     let response = server
