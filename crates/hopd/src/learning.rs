@@ -324,4 +324,82 @@ mod tests {
         assert!(store.recent_launches(10).is_empty());
         assert!(store.frequent_launches(10, &[]).is_empty());
     }
+
+    #[test]
+    fn lru_eviction_respects_max_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let mut store = LearningStore::new(path);
+
+        for i in 0..510 {
+            store.record(&format!("query{i}"), "some.desktop");
+        }
+        assert!(store.selections.len() <= 500, "selections should be capped at MAX_QUERIES");
+    }
+
+    #[test]
+    fn prefix_matching_boosts_across_query_lengths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let mut store = LearningStore::new(path);
+
+        store.record("firefox", "firefox.desktop");
+        store.record("firefox", "firefox.desktop");
+        store.record("firefox", "firefox.desktop");
+
+        // "fi" should match "firefox" via prefix matching
+        let boost = store.query_boost("fi", "firefox.desktop");
+        assert!(boost > 0, "prefix 'fi' should match learning for 'firefox'");
+
+        // "firefox browser" should match "firefox" too (starts_with)
+        let boost2 = store.query_boost("firefox browser", "firefox.desktop");
+        assert!(boost2 > 0, "longer query should match stored shorter key");
+    }
+
+    #[test]
+    fn recent_launches_sorted_by_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let mut store = LearningStore::new(path);
+
+        store.record("a", "first.desktop");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        store.record("b", "second.desktop");
+
+        let recent = store.recent_launches(10);
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].0, "second.desktop", "most recent should be first");
+        assert_eq!(recent[1].0, "first.desktop");
+    }
+
+    #[test]
+    fn frequent_launches_excludes_specified_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let mut store = LearningStore::new(path);
+
+        for _ in 0..5 { store.record("a", "popular.desktop"); }
+        for _ in 0..2 { store.record("b", "other.desktop"); }
+
+        let frequent = store.frequent_launches(10, &["popular.desktop".to_string()]);
+        assert!(frequent.iter().all(|(id, _)| id != "popular.desktop"), "excluded IDs should not appear");
+        assert!(!frequent.is_empty(), "should still have other entries");
+    }
+
+    #[test]
+    fn reset_clears_all_data_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let mut store = LearningStore::new(path.clone());
+
+        store.record("test", "app.desktop");
+        assert!(!store.is_empty());
+
+        store.reset();
+        assert!(store.is_empty());
+
+        // Verify reset persisted
+        let loaded = LearningStore::load_or_new(path);
+        assert!(loaded.is_empty());
+    }
 }
