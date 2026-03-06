@@ -274,6 +274,46 @@ pub fn config_set(socket_path: &str, key: &str, value: Value) -> Result<(), Stri
     }
 }
 
+pub fn learning_record(socket_path: &str, query: &str, result_id: &str) -> Result<(), String> {
+    let payload = json!({
+        "id": "gtk-learning-record",
+        "method": "learning.record",
+        "params": {
+            "query": query,
+            "result_id": result_id,
+        }
+    });
+    let response = send_ipc(socket_path, &payload)?;
+    let ok = response
+        .get("result")
+        .and_then(|result| result.get("ok"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        Err("learning.record returned non-ok response".to_string())
+    }
+}
+
+pub fn learning_reset(socket_path: &str) -> Result<(), String> {
+    let payload = json!({
+        "id": "gtk-learning-reset",
+        "method": "learning.reset",
+    });
+    let response = send_ipc(socket_path, &payload)?;
+    let ok = response
+        .get("result")
+        .and_then(|result| result.get("ok"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        Err("learning.reset returned non-ok response".to_string())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct QueryRoute {
     mode: String,
