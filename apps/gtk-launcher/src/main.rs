@@ -40,7 +40,7 @@ use libadwaita as adw;
 #[cfg(feature = "gtk_ui")]
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
-    config_set, default_hopd_socket_path, execute, learning_record, parse_control_request, render_status_text, search,
+    config_set, default_hopd_socket_path, execute, learning_record, learning_reset, parse_control_request, render_status_text, search,
     settings_accelerators, start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
 };
 
@@ -2794,8 +2794,31 @@ fn open_settings_window(
             open_settings_window(&app, &parent, settings.clone(), &socket_path);
         });
     }
+    let reset_learning_row = adw::ActionRow::builder()
+        .title("Reset learning data")
+        .subtitle("Clear all launch history used for ranking. Cannot be undone.")
+        .build();
+    let reset_learning_button = gtk::Button::builder()
+        .label("Reset")
+        .valign(gtk::Align::Center)
+        .build();
+    reset_learning_button.add_css_class("destructive-action");
+    reset_learning_row.add_suffix(&reset_learning_button);
+    reset_learning_row.set_activatable_widget(Some(&reset_learning_button));
+    {
+        let socket_path = socket_path.to_string();
+        let settings_status = settings_status.clone();
+        reset_learning_button.connect_clicked(move |_| {
+            if let Err(error) = learning_reset(&socket_path) {
+                set_settings_feedback(&settings_status, &format!("Reset learning failed: {error}"), true);
+                return;
+            }
+            set_settings_feedback(&settings_status, "Learning data cleared", false);
+        });
+    }
     profile.add(&import_row);
     profile.add(&export_row);
+    profile.add(&reset_learning_row);
     profile.add(&reset_row);
 
     // -- Advanced mode toggle group --
