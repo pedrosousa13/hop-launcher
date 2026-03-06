@@ -476,9 +476,6 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ranking.weight_emoji", serde_json::json!(settings.weight_emoji)),
         ("ranking.weight_utility", serde_json::json!(settings.weight_utility)),
         ("ranking.min_fuzzy_score", serde_json::json!(settings.min_fuzzy_score)),
-        ("ui.animations_enabled", serde_json::json!(settings.animations_enabled)),
-        ("ui.open_animation_ms", serde_json::json!(settings.open_animation_ms)),
-        ("ui.close_animation_ms", serde_json::json!(settings.close_animation_ms)),
         ("ui.debounce_ms", serde_json::json!(settings.debounce_ms)),
         ("ui.density_mode", serde_json::json!(settings.density_mode)),
         ("search.indexed_folders", serde_json::json!(settings.indexed_folders)),
@@ -490,7 +487,7 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
             "currency.rate_ttl_hours",
             serde_json::json!(settings.currency_rate_ttl_hours),
         ),
-        ("web_search.enabled", serde_json::json!(settings.web_search_enabled)),
+        ("features.web_search", serde_json::json!(settings.web_search_enabled)),
         (
             "web_search.max_actions",
             serde_json::json!(settings.web_search_max_actions),
