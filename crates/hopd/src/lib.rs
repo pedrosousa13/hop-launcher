@@ -217,6 +217,99 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
     let indexed_folders = indexed_folders_from_config(config);
     let items = aggregate_provider_items(&query, mode, &indexed_folders, config);
     let enriched_items = enrich_utility_live_data(items);
+
+    // Empty-query blending: show recently + frequently launched items
+    if query.is_empty() && !learning.is_empty() {
+        let recent_limit = (limit * 6 / 10).max(1);
+        let frequent_limit = limit.saturating_sub(recent_limit).max(1);
+
+        let recent = learning.recent_launches(recent_limit);
+        let recent_ids: Vec<String> = recent.iter().map(|(id, _)| id.clone()).collect();
+        let frequent = learning.frequent_launches(frequent_limit, &recent_ids);
+
+        let mut blended: Vec<(i32, SearchItem)> = Vec::new();
+        let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for (pos, (id, _ts)) in recent.iter().enumerate() {
+            let score = 200 - (pos as i32 * 10);
+            let item = enriched_items
+                .iter()
+                .find(|it| it.id == *id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let title = id
+                        .strip_prefix("app:")
+                        .unwrap_or(id)
+                        .trim_end_matches(".desktop")
+                        .to_string();
+                    SearchItem::new(id, "app", &title, "Recently launched", "application-x-executable-symbolic", "")
+                });
+            seen_ids.insert(id.clone());
+            blended.push((score, item));
+        }
+
+        for (id, count) in &frequent {
+            if seen_ids.contains(id) {
+                continue;
+            }
+            let score = 100 + ((*count as i32) * 3).min(60);
+            let item = enriched_items
+                .iter()
+                .find(|it| it.id == *id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let title = id
+                        .strip_prefix("app:")
+                        .unwrap_or(id)
+                        .trim_end_matches(".desktop")
+                        .to_string();
+                    SearchItem::new(id, "app", &title, "Recently launched", "application-x-executable-symbolic", "")
+                });
+            seen_ids.insert(id.clone());
+            blended.push((score, item));
+        }
+
+        // Append remaining provider items scored normally, filtered by features
+        for item in enriched_items {
+            if seen_ids.contains(&item.id) {
+                continue;
+            }
+            if !features.is_enabled(&item.kind) {
+                continue;
+            }
+            let score = score_item(&query, &item, &rank, learning);
+            if score > 0 {
+                seen_ids.insert(item.id.clone());
+                blended.push((score, item));
+            }
+        }
+
+        blended.truncate(limit);
+
+        let results: Vec<Value> = blended
+            .into_iter()
+            .map(|(score, item)| {
+                json!({
+                    "id": item.id,
+                    "kind": item.kind,
+                    "title": item.title,
+                    "subtitle": item.subtitle,
+                    "icon": item.icon,
+                    "primary_action": "enter",
+                    "score": score,
+                })
+            })
+            .collect();
+        let elapsed_ms = started_at.elapsed().as_millis() as u64;
+
+        return json!({
+            "results": results,
+            "telemetry": {
+                "elapsed_ms": elapsed_ms,
+            }
+        });
+    }
+
     let mut matches: Vec<(i32, SearchItem)> = enriched_items
         .into_iter()
         .filter(|item| features.is_enabled(&item.kind))
@@ -1215,5 +1308,56 @@ mod tests {
         assert!(store.is_empty());
         assert_eq!(store.query_boost("code", "app:vscode"), 0);
         assert_eq!(store.frequency_boost("app:vscode"), 0);
+    }
+
+    #[tokio::test]
+    async fn empty_query_returns_recently_launched_items() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let server = HopdServer::new_with_learning_path(path);
+
+        // Record some launches
+        for id in [
+            "app:firefox.desktop",
+            "app:terminal.desktop",
+            "app:nautilus.desktop",
+        ] {
+            let req = serde_json::json!({
+                "id": "rec",
+                "method": "learning.record",
+                "params": { "query": "x", "result_id": id }
+            });
+            server
+                .handle_json_line(&req.to_string())
+                .await
+                .unwrap();
+        }
+
+        // Empty query should return learning-based results
+        let req = serde_json::json!({
+            "id": "s1",
+            "method": "search.query",
+            "params": { "query": "", "limit": 12 }
+        });
+        let raw = server.handle_json_line(&req.to_string()).await.unwrap();
+        let resp: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let results = resp["result"]["results"].as_array().unwrap();
+        assert!(
+            !results.is_empty(),
+            "empty query with learning data should return results"
+        );
+
+        // The launched items should appear (they may be among other provider results)
+        let ids: Vec<&str> = results.iter().filter_map(|r| r["id"].as_str()).collect();
+        // At least one of our recorded IDs should be present
+        let has_launched = ids.iter().any(|id| {
+            *id == "app:firefox.desktop"
+                || *id == "app:terminal.desktop"
+                || *id == "app:nautilus.desktop"
+        });
+        assert!(
+            has_launched,
+            "empty query should include recently launched items from learning data"
+        );
     }
 }
