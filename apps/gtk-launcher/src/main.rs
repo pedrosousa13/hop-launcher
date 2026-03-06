@@ -40,7 +40,7 @@ use libadwaita as adw;
 #[cfg(feature = "gtk_ui")]
 use hop_launcher_gtk::{
     build_control_error_response, build_control_ok_response, default_control_socket_path,
-    config_set, default_hopd_socket_path, execute, parse_control_request, render_status_text, search,
+    config_set, default_hopd_socket_path, execute, learning_record, parse_control_request, render_status_text, search,
     settings_accelerators, start_visible_on_launch, toggle_accelerator, ControlMethod, LauncherResult, QueryState,
 };
 
@@ -948,6 +948,8 @@ fn run() {
                                 "copy failed: {error}"
                             ))));
                         } else {
+                            let query_text = entry.text().to_string();
+                            let _ = learning_record(&socket_path, &query_text, &result.id);
                             status.set_text("Copied to clipboard");
                             hide_window(&window, &ui_settings.borrow());
                             entry.set_text("");
@@ -959,6 +961,8 @@ fn run() {
                             "execute failed: {error}"
                         ))));
                     } else {
+                        let query_text = entry.text().to_string();
+                        let _ = learning_record(&socket_path, &query_text, &result.id);
                         status.set_text(&render_status_text(QueryState::Executed));
                         hide_window(&window, &ui_settings.borrow());
                         entry.set_text("");
@@ -1054,6 +1058,8 @@ fn run() {
                                 "copy failed: {error}"
                             ))));
                         } else {
+                            let query_text = entry.text().to_string();
+                            let _ = learning_record(&socket_path, &query_text, &result.id);
                             status.set_text("Copied to clipboard");
                             hide_window(&window, &ui_settings.borrow());
                             entry.set_text("");
@@ -1065,6 +1071,8 @@ fn run() {
                             "execute failed: {error}"
                         ))));
                     } else {
+                        let query_text = entry.text().to_string();
+                        let _ = learning_record(&socket_path, &query_text, &result.id);
                         status.set_text(&render_status_text(QueryState::Executed));
                         hide_window(&window, &ui_settings.borrow());
                         entry.set_text("");
