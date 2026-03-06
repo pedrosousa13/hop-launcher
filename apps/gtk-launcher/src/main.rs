@@ -74,7 +74,7 @@ struct LauncherUiSettings {
     debounce_ms: i32,
     density_mode: String,
     indexed_folders: Vec<String>,
-    learning_enabled: bool,
+    advanced_mode_enabled: bool,
     currency_refresh_enabled: bool,
     currency_rate_ttl_hours: i32,
     web_search_enabled: bool,
@@ -110,7 +110,7 @@ impl Default for LauncherUiSettings {
             debounce_ms: 15,
             density_mode: "default".to_string(),
             indexed_folders: Vec::new(),
-            learning_enabled: true,
+            advanced_mode_enabled: false,
             currency_refresh_enabled: true,
             currency_rate_ttl_hours: 12,
             web_search_enabled: true,
@@ -338,10 +338,10 @@ fn load_ui_settings() -> LauncherUiSettings {
                 .collect::<Vec<String>>()
         })
         .unwrap_or(default.indexed_folders);
-    let learning_enabled = json
-        .get("learning_enabled")
+    let advanced_mode_enabled = json
+        .get("advanced_mode_enabled")
         .and_then(serde_json::Value::as_bool)
-        .unwrap_or(default.learning_enabled);
+        .unwrap_or(default.advanced_mode_enabled);
     let currency_refresh_enabled = json
         .get("currency_refresh_enabled")
         .and_then(serde_json::Value::as_bool)
@@ -398,7 +398,7 @@ fn load_ui_settings() -> LauncherUiSettings {
         debounce_ms,
         density_mode,
         indexed_folders,
-        learning_enabled,
+        advanced_mode_enabled,
         currency_refresh_enabled,
         currency_rate_ttl_hours,
         web_search_enabled,
@@ -440,7 +440,7 @@ fn save_ui_settings(settings: &LauncherUiSettings) -> Result<(), String> {
         "debounce_ms": settings.debounce_ms,
         "density_mode": settings.density_mode,
         "indexed_folders": settings.indexed_folders,
-        "learning_enabled": settings.learning_enabled,
+        "advanced_mode_enabled": settings.advanced_mode_enabled,
         "currency_refresh_enabled": settings.currency_refresh_enabled,
         "currency_rate_ttl_hours": settings.currency_rate_ttl_hours,
         "web_search_enabled": settings.web_search_enabled,
@@ -482,7 +482,6 @@ fn sync_settings_to_hopd(socket_path: &str, settings: &LauncherUiSettings) {
         ("ui.debounce_ms", serde_json::json!(settings.debounce_ms)),
         ("ui.density_mode", serde_json::json!(settings.density_mode)),
         ("search.indexed_folders", serde_json::json!(settings.indexed_folders)),
-        ("learning.enabled", serde_json::json!(settings.learning_enabled)),
         (
             "currency.refresh_enabled",
             serde_json::json!(settings.currency_refresh_enabled),
@@ -1555,21 +1554,13 @@ fn open_settings_window(
         .title("Appearance")
         .description("Tune launcher translucency and window chrome.")
         .build();
-    let behavior = adw::PreferencesGroup::builder()
-        .title("Behavior")
-        .description("Result density and interaction defaults.")
+    let search_group = adw::PreferencesGroup::builder()
+        .title("Search")
+        .description("Toggle result categories and search parameters.")
         .build();
-    let providers = adw::PreferencesGroup::builder()
-        .title("Providers")
-        .description("Toggle result categories shown by the launcher.")
-        .build();
-    let ranking = adw::PreferencesGroup::builder()
-        .title("Ranking")
-        .description("Adjust provider weights and fuzzy threshold.")
-        .build();
-    let advanced = adw::PreferencesGroup::builder()
-        .title("Advanced")
-        .description("Parity controls for smart-provider behavior.")
+    let shortcuts_group = adw::PreferencesGroup::builder()
+        .title("Shortcuts")
+        .description("Global shortcut configuration.")
         .build();
     let profile = adw::PreferencesGroup::builder()
         .title("Profile")
@@ -1786,7 +1777,7 @@ fn open_settings_window(
             *settings.borrow_mut() = next;
         });
     }
-    behavior.add(&results_row);
+    search_group.add(&results_row);
 
     let shortcut_row = adw::ActionRow::builder()
         .title("Global shortcut")
@@ -1931,8 +1922,8 @@ fn open_settings_window(
             });
         });
     }
-    behavior.add(&shortcut_row);
-    behavior.add(&shortcut_hint_row);
+    shortcuts_group.add(&shortcut_row);
+    shortcuts_group.add(&shortcut_hint_row);
 
     let animations_row = adw::ActionRow::builder()
         .title("Animations enabled")
@@ -1973,10 +1964,10 @@ fn open_settings_window(
             *settings.borrow_mut() = next;
         });
     }
-    behavior.add(&animations_row);
+    appearance.add(&animations_row);
 
-    add_integer_spin_row(
-        &behavior,
+    let debounce_row = add_integer_spin_row(
+        &search_group,
         "Debounce (ms)",
         "Delay before triggering query refresh while typing.",
         settings.borrow().debounce_ms,
@@ -2028,9 +2019,9 @@ fn open_settings_window(
             *settings.borrow_mut() = next;
         });
     }
-    behavior.add(&density_row);
-    add_integer_spin_row(
-        &behavior,
+    appearance.add(&density_row);
+    let open_anim_row = add_integer_spin_row(
+        &appearance,
         "Open animation (ms)",
         "Duration for launcher open transition.",
         settings.borrow().open_animation_ms,
@@ -2042,8 +2033,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.open_animation_ms = value,
     );
-    add_integer_spin_row(
-        &behavior,
+    let close_anim_row = add_integer_spin_row(
+        &appearance,
         "Close animation (ms)",
         "Duration for launcher close transition.",
         settings.borrow().close_animation_ms,
@@ -2057,7 +2048,7 @@ fn open_settings_window(
     );
 
     add_provider_switch_row(
-        &providers,
+        &search_group,
         "Apps",
         "Installed application results.",
         settings.borrow().feature_apps_enabled,
@@ -2068,7 +2059,7 @@ fn open_settings_window(
         |state, value| state.feature_apps_enabled = value,
     );
     add_provider_switch_row(
-        &providers,
+        &search_group,
         "Windows",
         "Open window results.",
         settings.borrow().feature_windows_enabled,
@@ -2079,7 +2070,7 @@ fn open_settings_window(
         |state, value| state.feature_windows_enabled = value,
     );
     add_provider_switch_row(
-        &providers,
+        &search_group,
         "Files",
         "File search results.",
         settings.borrow().feature_files_enabled,
@@ -2090,7 +2081,7 @@ fn open_settings_window(
         |state, value| state.feature_files_enabled = value,
     );
     add_provider_switch_row(
-        &providers,
+        &search_group,
         "Recents",
         "Recent document results.",
         settings.borrow().feature_recents_enabled,
@@ -2101,7 +2092,7 @@ fn open_settings_window(
         |state, value| state.feature_recents_enabled = value,
     );
     add_provider_switch_row(
-        &providers,
+        &search_group,
         "Settings",
         "System and launcher settings results.",
         settings.borrow().feature_settings_enabled,
@@ -2112,7 +2103,7 @@ fn open_settings_window(
         |state, value| state.feature_settings_enabled = value,
     );
     add_provider_switch_row(
-        &providers,
+        &search_group,
         "Utilities",
         "Weather, timezone, emoji, calculator, and currency results.",
         settings.borrow().feature_utility_enabled,
@@ -2175,10 +2166,10 @@ fn open_settings_window(
             *settings.borrow_mut() = next;
         });
     }
-    providers.add(&indexed_row);
+    search_group.add(&indexed_row);
 
-    add_integer_spin_row(
-        &ranking,
+    let weight_windows_row = add_integer_spin_row(
+        &search_group,
         "Window weight",
         "Additional score applied to window matches.",
         settings.borrow().weight_windows,
@@ -2190,8 +2181,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.weight_windows = value,
     );
-    add_integer_spin_row(
-        &ranking,
+    let weight_apps_row = add_integer_spin_row(
+        &search_group,
         "App weight",
         "Additional score applied to app matches.",
         settings.borrow().weight_apps,
@@ -2203,8 +2194,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.weight_apps = value,
     );
-    add_integer_spin_row(
-        &ranking,
+    let weight_recents_row = add_integer_spin_row(
+        &search_group,
         "Recent weight",
         "Additional score applied to recent file matches.",
         settings.borrow().weight_recents,
@@ -2216,8 +2207,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.weight_recents = value,
     );
-    add_integer_spin_row(
-        &ranking,
+    let weight_files_row = add_integer_spin_row(
+        &search_group,
         "File weight",
         "Additional score applied to file matches.",
         settings.borrow().weight_files,
@@ -2229,8 +2220,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.weight_files = value,
     );
-    add_integer_spin_row(
-        &ranking,
+    let weight_emoji_row = add_integer_spin_row(
+        &search_group,
         "Emoji weight",
         "Additional score applied to emoji matches.",
         settings.borrow().weight_emoji,
@@ -2242,8 +2233,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.weight_emoji = value,
     );
-    add_integer_spin_row(
-        &ranking,
+    let weight_utility_row = add_integer_spin_row(
+        &search_group,
         "Utility weight",
         "Additional score applied to utility matches.",
         settings.borrow().weight_utility,
@@ -2255,8 +2246,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.weight_utility = value,
     );
-    add_integer_spin_row(
-        &ranking,
+    let min_fuzzy_row = add_integer_spin_row(
+        &search_group,
         "Min fuzzy score",
         "Minimum score required for non-empty search results.",
         settings.borrow().min_fuzzy_score,
@@ -2269,23 +2260,22 @@ fn open_settings_window(
         |state, value| state.min_fuzzy_score = value,
     );
 
-    page.add(&appearance);
-    page.add(&behavior);
-    page.add(&providers);
-    page.add(&ranking);
+    // Web search enabled toggle (normal row in Search group)
     add_provider_switch_row(
-        &advanced,
-        "Learning enabled",
-        "Enable usage-based learning signals for ranking.",
-        settings.borrow().learning_enabled,
-        "learning.enabled",
+        &search_group,
+        "Web search enabled",
+        "Expose web-search actions for non-empty queries.",
+        settings.borrow().web_search_enabled,
+        "web_search.enabled",
         settings.clone(),
         socket_path,
         &settings_status,
-        |state, value| state.learning_enabled = value,
+        |state, value| state.web_search_enabled = value,
     );
-    add_provider_switch_row(
-        &advanced,
+
+    // Advanced Search rows
+    let currency_refresh_row = add_provider_switch_row(
+        &search_group,
         "Currency refresh",
         "Allow online refresh of exchange rates when available.",
         settings.borrow().currency_refresh_enabled,
@@ -2295,8 +2285,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.currency_refresh_enabled = value,
     );
-    add_integer_spin_row(
-        &advanced,
+    let currency_ttl_row = add_integer_spin_row(
+        &search_group,
         "Currency TTL (hours)",
         "Hours before cached currency rates are considered stale.",
         settings.borrow().currency_rate_ttl_hours,
@@ -2308,19 +2298,8 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.currency_rate_ttl_hours = value,
     );
-    add_provider_switch_row(
-        &advanced,
-        "Web search enabled",
-        "Expose web-search actions for non-empty queries.",
-        settings.borrow().web_search_enabled,
-        "web_search.enabled",
-        settings.clone(),
-        socket_path,
-        &settings_status,
-        |state, value| state.web_search_enabled = value,
-    );
-    add_integer_spin_row(
-        &advanced,
+    let web_search_max_row = add_integer_spin_row(
+        &search_group,
         "Web search max actions",
         "Maximum number of web-search providers shown per query.",
         settings.borrow().web_search_max_actions,
@@ -2332,11 +2311,13 @@ fn open_settings_window(
         &settings_status,
         |state, value| state.web_search_max_actions = value,
     );
+    let mut advanced_web_search_widgets: Vec<gtk::Widget> = Vec::new();
     let web_search_header = adw::ActionRow::builder()
         .title("Web search providers")
         .subtitle("Manage provider templates used for `web` and keyword-prefixed queries.")
         .build();
-    advanced.add(&web_search_header);
+    search_group.add(&web_search_header);
+    advanced_web_search_widgets.push(web_search_header.upcast::<gtk::Widget>());
     let current_services =
         parse_web_search_services_json(&settings.borrow().web_search_services_json, false);
     if current_services.is_empty() {
@@ -2344,7 +2325,8 @@ fn open_settings_window(
             .title("No providers configured")
             .subtitle("Add a provider to enable web actions.")
             .build();
-        advanced.add(&empty_row);
+        search_group.add(&empty_row);
+        advanced_web_search_widgets.push(empty_row.upcast::<gtk::Widget>());
     }
     for (index, row) in current_services.iter().enumerate() {
         let name = row
@@ -2398,7 +2380,8 @@ fn open_settings_window(
         provider_row.add_suffix(&up_button);
         provider_row.add_suffix(&down_button);
         provider_row.add_suffix(&remove_button);
-        advanced.add(&provider_row);
+        search_group.add(&provider_row);
+        advanced_web_search_widgets.push(provider_row.upcast::<gtk::Widget>());
 
         let name_row = adw::ActionRow::builder()
             .title("Name")
@@ -2408,7 +2391,8 @@ fn open_settings_window(
         name_entry.set_valign(gtk::Align::Center);
         name_row.add_suffix(&name_entry);
         name_row.set_activatable_widget(Some(&name_entry));
-        advanced.add(&name_row);
+        search_group.add(&name_row);
+        advanced_web_search_widgets.push(name_row.upcast::<gtk::Widget>());
 
         let template_row = adw::ActionRow::builder()
             .title("URL template")
@@ -2421,7 +2405,8 @@ fn open_settings_window(
         template_entry.set_valign(gtk::Align::Center);
         template_row.add_suffix(&template_entry);
         template_row.set_activatable_widget(Some(&template_entry));
-        advanced.add(&template_row);
+        search_group.add(&template_row);
+        advanced_web_search_widgets.push(template_row.upcast::<gtk::Widget>());
 
         let keyword_row = adw::ActionRow::builder()
             .title("Keyword and enabled")
@@ -2440,7 +2425,8 @@ fn open_settings_window(
         keyword_row.add_suffix(&keyword_entry);
         keyword_row.add_suffix(&enabled_switch);
         keyword_row.add_suffix(&save_button);
-        advanced.add(&keyword_row);
+        search_group.add(&keyword_row);
+        advanced_web_search_widgets.push(keyword_row.upcast::<gtk::Widget>());
 
         {
             let settings = settings.clone();
@@ -2623,7 +2609,8 @@ fn open_settings_window(
             open_settings_window(&app, &parent, settings.clone(), &socket_path);
         });
     }
-    advanced.add(&add_provider_row);
+    search_group.add(&add_provider_row);
+    advanced_web_search_widgets.push(add_provider_row.upcast::<gtk::Widget>());
     let reset_row = adw::ActionRow::builder()
         .title("Reset to defaults")
         .subtitle("Restore all launcher settings to default values.")
@@ -2675,7 +2662,7 @@ fn open_settings_window(
                         "debounce_ms": settings.borrow().debounce_ms,
                         "density_mode": settings.borrow().density_mode,
                         "indexed_folders": settings.borrow().indexed_folders,
-                        "learning_enabled": settings.borrow().learning_enabled,
+                        "advanced_mode_enabled": settings.borrow().advanced_mode_enabled,
                         "currency_refresh_enabled": settings.borrow().currency_refresh_enabled,
                         "currency_rate_ttl_hours": settings.borrow().currency_rate_ttl_hours,
                         "web_search_enabled": settings.borrow().web_search_enabled,
@@ -2810,7 +2797,85 @@ fn open_settings_window(
     profile.add(&import_row);
     profile.add(&export_row);
     profile.add(&reset_row);
-    page.add(&advanced);
+
+    // -- Advanced mode toggle group --
+    let advanced_toggle_group = adw::PreferencesGroup::builder()
+        .title("Advanced")
+        .description("Show or hide advanced tuning options.")
+        .build();
+    let advanced_toggle_row = adw::ActionRow::builder()
+        .title("Advanced mode")
+        .subtitle("Show ranking weights, animation timing, and web search editor.")
+        .build();
+    let advanced_switch = gtk::Switch::builder()
+        .active(settings.borrow().advanced_mode_enabled)
+        .valign(gtk::Align::Center)
+        .build();
+    advanced_toggle_row.add_suffix(&advanced_switch);
+    advanced_toggle_row.set_activatable_widget(Some(&advanced_switch));
+    advanced_toggle_group.add(&advanced_toggle_row);
+
+    // Collect all advanced rows for visibility toggling
+    let advanced_widgets: Vec<gtk::Widget> = {
+        let mut widgets: Vec<gtk::Widget> = vec![
+            blur_row.upcast::<gtk::Widget>(),
+            animations_row.upcast::<gtk::Widget>(),
+            open_anim_row.upcast::<gtk::Widget>(),
+            close_anim_row.upcast::<gtk::Widget>(),
+            weight_windows_row.upcast::<gtk::Widget>(),
+            weight_apps_row.upcast::<gtk::Widget>(),
+            weight_recents_row.upcast::<gtk::Widget>(),
+            weight_files_row.upcast::<gtk::Widget>(),
+            weight_emoji_row.upcast::<gtk::Widget>(),
+            weight_utility_row.upcast::<gtk::Widget>(),
+            min_fuzzy_row.upcast::<gtk::Widget>(),
+            debounce_row.upcast::<gtk::Widget>(),
+            currency_refresh_row.upcast::<gtk::Widget>(),
+            currency_ttl_row.upcast::<gtk::Widget>(),
+            web_search_max_row.upcast::<gtk::Widget>(),
+        ];
+        widgets.extend(advanced_web_search_widgets);
+        widgets
+    };
+
+    // Set initial visibility
+    let is_advanced = settings.borrow().advanced_mode_enabled;
+    for widget in &advanced_widgets {
+        widget.set_visible(is_advanced);
+    }
+
+    // Wire advanced toggle
+    {
+        let settings = settings.clone();
+        let settings_status = settings_status.clone();
+        advanced_switch.connect_active_notify(move |switch| {
+            let visible = switch.is_active();
+            for widget in &advanced_widgets {
+                widget.set_visible(visible);
+            }
+            let mut next = settings.borrow().clone();
+            next.advanced_mode_enabled = visible;
+            if let Err(error) = save_ui_settings(&next) {
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Save failed: {error}"),
+                    true,
+                );
+                return;
+            }
+            set_settings_feedback(
+                &settings_status,
+                if visible { "Advanced mode enabled" } else { "Advanced mode disabled" },
+                false,
+            );
+            *settings.borrow_mut() = next;
+        });
+    }
+
+    page.add(&appearance);
+    page.add(&search_group);
+    page.add(&shortcuts_group);
+    page.add(&advanced_toggle_group);
     page.add(&profile);
     page.add(&feedback);
     prefs.add(&page);
@@ -2828,7 +2893,7 @@ fn add_provider_switch_row(
     socket_path: &str,
     status_label: &gtk::Label,
     apply_value: fn(&mut LauncherUiSettings, bool),
-) {
+) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(title)
         .subtitle(subtitle)
@@ -2860,6 +2925,7 @@ fn add_provider_switch_row(
         });
     }
     group.add(&row);
+    row
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -2875,7 +2941,7 @@ fn add_integer_spin_row(
     socket_path: &str,
     status_label: &gtk::Label,
     apply_value: fn(&mut LauncherUiSettings, i32),
-) {
+) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(title)
         .subtitle(subtitle)
@@ -2914,6 +2980,7 @@ fn add_integer_spin_row(
         });
     }
     group.add(&row);
+    row
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -3019,7 +3086,7 @@ fn load_settings_from_path(path: &std::path::Path) -> Result<LauncherUiSettings,
         "debounce_ms": json.get("debounce_ms").cloned().unwrap_or(serde_json::json!(default.debounce_ms)),
         "density_mode": json.get("density_mode").cloned().unwrap_or(serde_json::json!(default.density_mode)),
         "indexed_folders": json.get("indexed_folders").cloned().unwrap_or(serde_json::json!(default.indexed_folders)),
-        "learning_enabled": json.get("learning_enabled").cloned().unwrap_or(serde_json::json!(default.learning_enabled)),
+        "advanced_mode_enabled": json.get("advanced_mode_enabled").cloned().unwrap_or(serde_json::json!(default.advanced_mode_enabled)),
         "currency_refresh_enabled": json.get("currency_refresh_enabled").cloned().unwrap_or(serde_json::json!(default.currency_refresh_enabled)),
         "currency_rate_ttl_hours": json.get("currency_rate_ttl_hours").cloned().unwrap_or(serde_json::json!(default.currency_rate_ttl_hours)),
         "web_search_enabled": json.get("web_search_enabled").cloned().unwrap_or(serde_json::json!(default.web_search_enabled)),
@@ -3171,10 +3238,10 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
                 .collect::<Vec<String>>()
         })
         .unwrap_or(default.indexed_folders);
-    let learning_enabled = json
-        .get("learning_enabled")
+    let advanced_mode_enabled = json
+        .get("advanced_mode_enabled")
         .and_then(serde_json::Value::as_bool)
-        .unwrap_or(default.learning_enabled);
+        .unwrap_or(default.advanced_mode_enabled);
     let currency_refresh_enabled = json
         .get("currency_refresh_enabled")
         .and_then(serde_json::Value::as_bool)
@@ -3231,7 +3298,7 @@ fn load_ui_settings_from_path(path: &std::path::Path) -> LauncherUiSettings {
         debounce_ms,
         density_mode,
         indexed_folders,
-        learning_enabled,
+        advanced_mode_enabled,
         currency_refresh_enabled,
         currency_rate_ttl_hours,
         web_search_enabled,
