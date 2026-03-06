@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -34,17 +35,28 @@ pub struct IpcResponse {
     pub error: Option<IpcError>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct HopdServer {
     config: RwLock<HashMap<String, Value>>,
     total_requests: AtomicU64,
+    learning: RwLock<learning::LearningStore>,
 }
 
 impl HopdServer {
     pub fn new() -> Self {
+        let path = default_learning_path();
         Self {
             config: RwLock::new(HashMap::new()),
             total_requests: AtomicU64::new(0),
+            learning: RwLock::new(learning::LearningStore::load_or_new(path)),
+        }
+    }
+
+    pub fn new_with_learning_path(path: PathBuf) -> Self {
+        Self {
+            config: RwLock::new(HashMap::new()),
+            total_requests: AtomicU64::new(0),
+            learning: RwLock::new(learning::LearningStore::load_or_new(path)),
         }
     }
 
@@ -65,9 +77,10 @@ impl HopdServer {
             },
             "search.query" => {
                 let config = self.config.read().await.clone();
+                let learning = self.learning.read().await;
                 IpcResponse {
                     id: request.id,
-                    result: json!(build_search_result(&request.params, &config).await),
+                    result: json!(build_search_result(&request.params, &config, &learning).await),
                     error: None,
                 }
             }
@@ -113,6 +126,37 @@ impl HopdServer {
                     error: None,
                 }
             }
+            "learning.record" => {
+                let query = request
+                    .params
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let result_id = request
+                    .params
+                    .get("result_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let mut store = self.learning.write().await;
+                store.record(&query, &result_id);
+                store.save();
+                IpcResponse {
+                    id: request.id,
+                    result: json!({"ok": true}),
+                    error: None,
+                }
+            }
+            "learning.reset" => {
+                let mut store = self.learning.write().await;
+                store.reset();
+                IpcResponse {
+                    id: request.id,
+                    result: json!({"ok": true}),
+                    error: None,
+                }
+            }
             "metrics.snapshot" => IpcResponse {
                 id: request.id,
                 result: json!({
@@ -138,7 +182,19 @@ fn default_params() -> Value {
     json!({})
 }
 
-async fn build_search_result(params: &Value, config: &HashMap<String, Value>) -> Value {
+fn default_learning_path() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".local/share")
+        });
+    base.join("hop-launcher").join("learning.json")
+}
+
+async fn build_search_result(params: &Value, config: &HashMap<String, Value>, learning: &learning::LearningStore) -> Value {
     let started_at = Instant::now();
     let query = params
         .get("query")
@@ -165,7 +221,7 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>) ->
         .into_iter()
         .filter(|item| features.is_enabled(&item.kind))
         .filter_map(|item| {
-            let score = score_item(&query, &item, &rank);
+            let score = score_item(&query, &item, &rank, learning);
             let is_match = if query.is_empty() {
                 score > 0
             } else {
@@ -582,7 +638,7 @@ fn indexed_folders_from_config(config: &HashMap<String, Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn score_item(query: &str, item: &SearchItem, rank: &RankSettings) -> i32 {
+fn score_item(query: &str, item: &SearchItem, rank: &RankSettings, learning: &learning::LearningStore) -> i32 {
     // Web search actions embed the query in their title by construction, so
     // text-match bonuses are meaningless.  Give them a fixed score just above
     // min_fuzzy_score so they always appear but rank below real text matches.
@@ -617,7 +673,15 @@ fn score_item(query: &str, item: &SearchItem, rank: &RankSettings) -> i32 {
         return 0;
     }
 
-    score + kind_priority(item.kind.as_str(), rank)
+    let mut total = score + kind_priority(item.kind.as_str(), rank);
+
+    // Learning boosts
+    if !query.is_empty() {
+        total += learning.query_boost(query, &item.id);
+    }
+    total += learning.frequency_boost(&item.id);
+
+    total
 }
 
 fn kind_priority(kind: &str, rank: &RankSettings) -> i32 {
@@ -1084,5 +1148,72 @@ fn normalize_web_search_id(name: &str) -> String {
         "service-custom".to_string()
     } else {
         normalized
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn learning_boosts_result_score() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let server = HopdServer::new_with_learning_path(path);
+
+        // Record several selections of "app:firefox" for query "fire"
+        for _ in 0..3 {
+            let resp = server
+                .handle_json_line(
+                    r#"{"id":"lr","method":"learning.record","params":{"query":"fire","result_id":"app:firefox"}}"#,
+                )
+                .await
+                .expect("record response");
+            let parsed: IpcResponse = serde_json::from_str(&resp).expect("valid json");
+            assert_eq!(parsed.result["ok"], true);
+        }
+
+        // Verify the store has data
+        let store = server.learning.read().await;
+        assert!(!store.is_empty());
+        let qb = store.query_boost("fire", "app:firefox");
+        assert!(qb > 0, "expected positive query boost, got {qb}");
+        let fb = store.frequency_boost("app:firefox");
+        assert!(fb > 0, "expected positive frequency boost, got {fb}");
+    }
+
+    #[tokio::test]
+    async fn learning_reset_clears_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let server = HopdServer::new_with_learning_path(path);
+
+        // Record a selection
+        server
+            .handle_json_line(
+                r#"{"id":"lr1","method":"learning.record","params":{"query":"code","result_id":"app:vscode"}}"#,
+            )
+            .await
+            .expect("record response");
+
+        // Verify data exists
+        {
+            let store = server.learning.read().await;
+            assert!(!store.is_empty());
+        }
+
+        // Reset
+        let resp = server
+            .handle_json_line(r#"{"id":"lr2","method":"learning.reset"}"#)
+            .await
+            .expect("reset response");
+        let parsed: IpcResponse = serde_json::from_str(&resp).expect("valid json");
+        assert_eq!(parsed.result["ok"], true);
+
+        // Verify data is cleared
+        let store = server.learning.read().await;
+        assert!(store.is_empty());
+        assert_eq!(store.query_boost("code", "app:vscode"), 0);
+        assert_eq!(store.frequency_boost("app:vscode"), 0);
     }
 }
