@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 mod actions;
 pub mod kde_adapter;
 mod providers;
+pub mod learning;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct IpcRequest {

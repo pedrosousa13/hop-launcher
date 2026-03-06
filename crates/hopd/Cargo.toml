@@ -8,3 +8,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.44", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time", "signal"] }
 fasteval = "0.2"
+
+[dev-dependencies]
+tempfile = ">=3.10, <3.15"
