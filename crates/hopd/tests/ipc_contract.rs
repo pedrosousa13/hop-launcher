@@ -81,6 +81,112 @@ async fn telemetry_reports_elapsed_ms_for_utility_intent_query() {
 }
 
 #[tokio::test]
+async fn search_query_reports_timed_out_providers_metadata() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"timeout-cfg-1","method":"config.set","params":{"key":"search.provider_timeout_ms","value":1}}"#,
+        )
+        .await
+        .expect("set timeout");
+    server
+        .handle_json_line(
+            r#"{"id":"timeout-cfg-2","method":"config.set","params":{"key":"debug.provider_delay_ms.apps","value":5}}"#,
+        )
+        .await
+        .expect("set debug delay");
+
+    let response = server
+        .handle_json_line(
+            r#"{"id":"timeout-q","method":"search.query","params":{"query":"terminal","mode":"apps","limit":5}}"#,
+        )
+        .await
+        .expect("response expected");
+
+    let parsed: IpcResponse = serde_json::from_str(&response).expect("valid json");
+    let timed_out = parsed.result["timed_out_providers"]
+        .as_array()
+        .expect("timed_out_providers array");
+    assert!(
+        timed_out.iter().any(|row| row == "apps"),
+        "expected apps provider timeout metadata"
+    );
+    assert!(
+        parsed.result["provider_errors"].as_array().is_some(),
+        "provider_errors should be present"
+    );
+}
+
+#[tokio::test]
+async fn search_query_cache_hit_reduces_elapsed_ms_and_resets_on_config_change() {
+    let server = HopdServer::new();
+    server
+        .handle_json_line(
+            r#"{"id":"cache-cfg-1","method":"config.set","params":{"key":"search.cache_ttl_ms","value":500}}"#,
+        )
+        .await
+        .expect("set cache ttl");
+    server
+        .handle_json_line(
+            r#"{"id":"cache-cfg-2","method":"config.set","params":{"key":"debug.provider_delay_ms.apps","value":40}}"#,
+        )
+        .await
+        .expect("set debug delay");
+
+    let first = server
+        .handle_json_line(
+            r#"{"id":"cache-q-1","method":"search.query","params":{"query":"terminal","mode":"apps","limit":5}}"#,
+        )
+        .await
+        .expect("first query");
+    let second = server
+        .handle_json_line(
+            r#"{"id":"cache-q-2","method":"search.query","params":{"query":"terminal","mode":"apps","limit":5}}"#,
+        )
+        .await
+        .expect("second query");
+
+    let first_parsed: IpcResponse = serde_json::from_str(&first).expect("valid json");
+    let second_parsed: IpcResponse = serde_json::from_str(&second).expect("valid json");
+    let first_elapsed = first_parsed.result["telemetry"]["elapsed_ms"]
+        .as_u64()
+        .expect("first elapsed");
+    let second_elapsed = second_parsed.result["telemetry"]["elapsed_ms"]
+        .as_u64()
+        .expect("second elapsed");
+    assert!(
+        first_elapsed >= 30,
+        "expected debug delay on first query, got {first_elapsed}ms"
+    );
+    assert!(
+        second_elapsed + 20 < first_elapsed,
+        "expected cache hit elapsed ({second_elapsed}) to be significantly lower than first elapsed ({first_elapsed})"
+    );
+
+    server
+        .handle_json_line(
+            r#"{"id":"cache-cfg-3","method":"config.set","params":{"key":"ranking.weight_apps","value":25}}"#,
+        )
+        .await
+        .expect("config mutation should invalidate cache");
+
+    let third = server
+        .handle_json_line(
+            r#"{"id":"cache-q-3","method":"search.query","params":{"query":"terminal","mode":"apps","limit":5}}"#,
+        )
+        .await
+        .expect("third query");
+    let third_parsed: IpcResponse = serde_json::from_str(&third).expect("valid json");
+    let third_elapsed = third_parsed.result["telemetry"]["elapsed_ms"]
+        .as_u64()
+        .expect("third elapsed");
+    assert!(
+        third_elapsed >= 30,
+        "expected cache invalidation to restore provider delay footprint; first={first_elapsed}, third={third_elapsed}"
+    );
+}
+
+#[tokio::test]
 async fn search_query_returns_ranked_results_when_matches_exist() {
     let server = HopdServer::new();
     let response = server
@@ -351,7 +457,8 @@ async fn search_query_returns_normalized_rows_with_metadata() {
 
 #[tokio::test]
 async fn search_query_returns_default_suggestions_for_empty_query() {
-    let server = HopdServer::new();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let server = HopdServer::new_with_learning_path(dir.path().join("learning.json"));
     let response = server
         .handle_json_line(r#"{"id":"n2","method":"search.query","params":{"query":"","limit":8}}"#)
         .await

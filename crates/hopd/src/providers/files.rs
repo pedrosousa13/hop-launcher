@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{OnceLock, RwLock};
 
 use crate::SearchItem;
 
@@ -7,6 +8,12 @@ pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchIt
     let normalized = query.trim().to_lowercase();
     if normalized.is_empty() {
         return Vec::new();
+    }
+
+    if indexed_roots.is_empty() {
+        if let Some(cached) = cached_candidates() {
+            return filter_candidates_to_rows(cached, &normalized);
+        }
     }
 
     let mut roots = candidate_roots();
@@ -18,33 +25,11 @@ pub fn results_with_roots(query: &str, indexed_roots: &[String]) -> Vec<SearchIt
             .map(PathBuf::from),
     );
 
-    collect_candidate_files(&roots, 3)
-        .into_iter()
-        .filter(|path| path.is_file())
-        .filter_map(|path| {
-            let display = path.file_name()?.to_str()?.to_string();
-            let full = path.to_string_lossy().to_string();
-            let subtitle = path
-                .parent()
-                .map(|parent| parent.to_string_lossy().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| "Filesystem".to_string());
-            let haystack = format!("{display} {full}").to_lowercase();
-            if !haystack.contains(&normalized) {
-                return None;
-            }
-            let icon = icon_for_path(&path);
-            Some(SearchItem::new(
-                &format!("file:{full}"),
-                "file",
-                &display,
-                &subtitle,
-                &icon,
-                &haystack,
-            ))
-        })
-        .take(24)
-        .collect::<Vec<_>>()
+    let candidates = collect_candidate_files(&roots, 3);
+    if indexed_roots.is_empty() {
+        set_cached_candidates(candidates.clone());
+    }
+    filter_candidates_to_rows(candidates, &normalized)
 }
 
 fn candidate_roots() -> Vec<PathBuf> {
@@ -94,6 +79,67 @@ fn collect_candidate_files(roots: &[PathBuf], max_depth: usize) -> Vec<PathBuf> 
     }
 
     out
+}
+
+static FILE_CANDIDATE_CACHE: OnceLock<RwLock<Option<Vec<PathBuf>>>> = OnceLock::new();
+
+fn file_candidate_cache() -> &'static RwLock<Option<Vec<PathBuf>>> {
+    FILE_CANDIDATE_CACHE.get_or_init(|| RwLock::new(None))
+}
+
+fn cached_candidates() -> Option<Vec<PathBuf>> {
+    file_candidate_cache()
+        .read()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
+
+fn set_cached_candidates(candidates: Vec<PathBuf>) {
+    if let Ok(mut guard) = file_candidate_cache().write() {
+        *guard = Some(candidates);
+    }
+}
+
+pub fn warm_bootstrap_default() {
+    let roots = candidate_roots();
+    let candidates = collect_candidate_files(&roots, 3);
+    set_cached_candidates(candidates);
+}
+
+fn filter_candidates_to_rows(candidates: Vec<PathBuf>, normalized: &str) -> Vec<SearchItem> {
+    candidates
+        .into_iter()
+        .filter(|path| path.is_file())
+        .filter_map(|path| {
+            let display = path.file_name()?.to_str()?.to_string();
+            let full = path.to_string_lossy().to_string();
+            let subtitle = path
+                .parent()
+                .map(|parent| parent.to_string_lossy().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "Filesystem".to_string());
+            let haystack = format!("{display} {full}").to_lowercase();
+            if !haystack.contains(normalized) {
+                return None;
+            }
+            let icon = icon_for_path(&path);
+            Some(SearchItem::new(
+                &format!("file:{full}"),
+                "file",
+                &display,
+                &subtitle,
+                &icon,
+                &haystack,
+            ))
+        })
+        .take(24)
+        .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+fn warm_bootstrap_for_tests(roots: &[PathBuf]) {
+    let candidates = collect_candidate_files(roots, 3);
+    set_cached_candidates(candidates);
 }
 
 fn icon_for_path(path: &Path) -> String {
@@ -167,6 +213,31 @@ mod tests {
         assert!(
             rows.iter().any(|row| row.id.contains("roadmap-notes.txt")),
             "expected nested indexed-folder file in results"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn warm_bootstrap_cache_serves_results_without_explicit_roots() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "hopd-files-provider-bootstrap-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let file_path = temp_dir.join("bootstrap-target.txt");
+        let mut file = std::fs::File::create(&file_path).expect("create file");
+        writeln!(file, "notes").expect("write");
+
+        warm_bootstrap_for_tests(std::slice::from_ref(&temp_dir));
+        let rows = results_with_roots("bootstrap-target", &[]);
+        assert!(
+            rows.iter().any(|row| row.id.contains("bootstrap-target.txt")),
+            "expected warm bootstrap cache to provide file result"
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);

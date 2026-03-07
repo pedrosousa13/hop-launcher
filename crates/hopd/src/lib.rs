@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -40,23 +40,28 @@ pub struct HopdServer {
     config: RwLock<HashMap<String, Value>>,
     total_requests: AtomicU64,
     learning: RwLock<learning::LearningStore>,
+    search_cache: RwLock<SearchResultCache>,
 }
 
 impl HopdServer {
     pub fn new() -> Self {
         let path = default_learning_path();
+        providers::files::warm_bootstrap_default();
         Self {
             config: RwLock::new(HashMap::new()),
             total_requests: AtomicU64::new(0),
             learning: RwLock::new(learning::LearningStore::load_or_new(path)),
+            search_cache: RwLock::new(SearchResultCache::new()),
         }
     }
 
     pub fn new_with_learning_path(path: PathBuf) -> Self {
+        providers::files::warm_bootstrap_default();
         Self {
             config: RwLock::new(HashMap::new()),
             total_requests: AtomicU64::new(0),
             learning: RwLock::new(learning::LearningStore::load_or_new(path)),
+            search_cache: RwLock::new(SearchResultCache::new()),
         }
     }
 
@@ -77,10 +82,40 @@ impl HopdServer {
             },
             "search.query" => {
                 let config = self.config.read().await.clone();
+                let cache_key = search_cache_key_from_params(&request.params);
+                let cache_ttl_ms = search_cache_ttl_ms_from_config(&config);
+                if cache_ttl_ms > 0 {
+                    if let Some(mut result) = self.search_cache.read().await.get(&cache_key) {
+                        if let Some(telemetry) = result.get_mut("telemetry").and_then(Value::as_object_mut) {
+                            telemetry.insert("elapsed_ms".to_string(), json!(0));
+                            telemetry.insert("cache_hit".to_string(), json!(true));
+                        }
+                        return serde_json::to_string(&IpcResponse {
+                            id: request.id,
+                            result,
+                            error: None,
+                        });
+                    }
+                }
                 let learning = self.learning.read().await;
+                let result = build_search_result(&request.params, &config, &learning).await;
+                let mut response_result = result.clone();
+                if let Some(telemetry) = response_result
+                    .get_mut("telemetry")
+                    .and_then(Value::as_object_mut)
+                {
+                    telemetry.insert("cache_hit".to_string(), json!(false));
+                }
+                if cache_ttl_ms > 0 {
+                    let max_entries = search_cache_max_entries_from_config(&config);
+                    self.search_cache
+                        .write()
+                        .await
+                        .insert(cache_key, result.clone(), cache_ttl_ms, max_entries);
+                }
                 IpcResponse {
                     id: request.id,
-                    result: json!(build_search_result(&request.params, &config, &learning).await),
+                    result: json!(response_result),
                     error: None,
                 }
             }
@@ -98,6 +133,7 @@ impl HopdServer {
                     .to_string();
                 let value = request.params.get("value").cloned().unwrap_or(Value::Null);
                 self.config.write().await.insert(key, value);
+                self.search_cache.write().await.clear();
 
                 IpcResponse {
                     id: request.id,
@@ -142,6 +178,7 @@ impl HopdServer {
                 let mut store = self.learning.write().await;
                 store.record(&query, &result_id);
                 store.save();
+                self.search_cache.write().await.clear();
                 IpcResponse {
                     id: request.id,
                     result: json!({"ok": true}),
@@ -151,6 +188,7 @@ impl HopdServer {
             "learning.reset" => {
                 let mut store = self.learning.write().await;
                 store.reset();
+                self.search_cache.write().await.clear();
                 IpcResponse {
                     id: request.id,
                     result: json!({"ok": true}),
@@ -178,6 +216,70 @@ impl HopdServer {
     }
 }
 
+#[derive(Debug, Clone)]
+struct SearchCacheEntry {
+    expires_at: Instant,
+    result: Value,
+}
+
+#[derive(Debug, Default)]
+struct SearchResultCache {
+    entries: HashMap<String, SearchCacheEntry>,
+}
+
+impl SearchResultCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<Value> {
+        let now = Instant::now();
+        self.entries.get(key).and_then(|entry| {
+            if entry.expires_at > now {
+                Some(entry.result.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn insert(&mut self, key: String, result: Value, ttl_ms: u64, max_entries: usize) {
+        if ttl_ms == 0 || max_entries == 0 {
+            return;
+        }
+        self.prune_expired();
+        while self.entries.len() >= max_entries {
+            let Some(oldest_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.expires_at)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            self.entries.remove(&oldest_key);
+        }
+        self.entries.insert(
+            key,
+            SearchCacheEntry {
+                expires_at: Instant::now() + Duration::from_millis(ttl_ms),
+                result,
+            },
+        );
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    fn prune_expired(&mut self) {
+        let now = Instant::now();
+        self.entries.retain(|_, entry| entry.expires_at > now);
+    }
+}
+
 fn default_params() -> Value {
     json!({})
 }
@@ -192,6 +294,39 @@ fn default_learning_path() -> PathBuf {
             PathBuf::from(home).join(".local/share")
         });
     base.join("hop-launcher").join("learning.json")
+}
+
+fn search_cache_key_from_params(params: &Value) -> String {
+    let query = params
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let mode = params
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("all");
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(8);
+    format!("{mode}|{limit}|{query}")
+}
+
+fn search_cache_ttl_ms_from_config(config: &HashMap<String, Value>) -> u64 {
+    config
+        .get("search.cache_ttl_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn search_cache_max_entries_from_config(config: &HashMap<String, Value>) -> usize {
+    config
+        .get("search.cache_max_entries")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(128)
 }
 
 async fn build_search_result(params: &Value, config: &HashMap<String, Value>, learning: &learning::LearningStore) -> Value {
@@ -215,8 +350,10 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
     let rank = RankSettings::from_config(config);
     let features = FeatureSettings::from_config(config);
     let indexed_folders = indexed_folders_from_config(config);
-    let items = aggregate_provider_items(&query, mode, &indexed_folders, config);
-    let enriched_items = enrich_utility_live_data(items);
+    let aggregation = aggregate_provider_items(&query, mode, &indexed_folders, config);
+    let timed_out_providers = aggregation.timed_out_providers;
+    let provider_errors = aggregation.provider_errors;
+    let enriched_items = enrich_utility_live_data(aggregation.items);
 
     // Empty-query blending: show recently + frequently launched items
     if query.is_empty() && !learning.is_empty() {
@@ -290,6 +427,8 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
 
         return json!({
             "results": results,
+            "timed_out_providers": timed_out_providers,
+            "provider_errors": provider_errors,
             "telemetry": {
                 "elapsed_ms": elapsed_ms,
             }
@@ -301,10 +440,11 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
         .filter(|item| features.is_enabled(&item.kind))
         .filter_map(|item| {
             let score = score_item(&query, &item, &rank, learning);
+            let min_match_score = effective_min_match_score(&query, &rank);
             let is_match = if query.is_empty() {
                 score > 0
             } else {
-                score >= rank.min_fuzzy_score
+                score >= min_match_score
             };
             if is_match {
                 Some((score, item))
@@ -315,7 +455,22 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
         .collect();
 
     matches.sort_by(|left, right| right.0.cmp(&left.0));
-    let ordered = diversify_matches(matches, limit.max(1));
+    let mut ordered = diversify_matches(matches, limit.max(1));
+    if query.is_empty()
+        && mode == "all"
+        && features.is_enabled("setting")
+        && !ordered.iter().any(|(_, item)| item.kind == "setting")
+    {
+        if let Some(setting_item) = providers::settings::results("")
+            .into_iter()
+            .find(|item| item.kind == "setting")
+        {
+            if ordered.len() >= limit.max(1) {
+                ordered.pop();
+            }
+            ordered.push((120, setting_item));
+        }
+    }
     let results: Vec<Value> = ordered
         .into_iter()
         .map(|(score, item)| {
@@ -334,10 +489,20 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
 
     json!({
         "results": results,
+        "timed_out_providers": timed_out_providers,
+        "provider_errors": provider_errors,
         "telemetry": {
             "elapsed_ms": elapsed_ms,
         }
     })
+}
+
+fn effective_min_match_score(query: &str, rank: &RankSettings) -> i32 {
+    if query.trim().chars().count() < 3 {
+        rank.min_fuzzy_score + 35
+    } else {
+        rank.min_fuzzy_score
+    }
 }
 
 fn fallback_item_for_learning_id(id: &str) -> SearchItem {
@@ -763,25 +928,225 @@ fn aggregate_provider_items(
     mode: &str,
     indexed_folders: &[String],
     config: &HashMap<String, Value>,
-) -> Vec<SearchItem> {
-    let mut items = providers::collect_provider_items(query, mode, indexed_folders);
+) -> ProviderAggregation {
+    let timeout_ms = provider_timeout_ms_from_config(config);
+    let debug_provider_delays_ms = debug_provider_delays_from_config(config);
+    let provider_item_budgets = provider_item_budgets(query, config);
+    let core = providers::collect_provider_items_with_budget(
+        query,
+        mode,
+        indexed_folders,
+        timeout_ms,
+        &debug_provider_delays_ms,
+        &provider_item_budgets,
+    );
+    let mut aggregated = ProviderAggregation {
+        items: core.items,
+        timed_out_providers: core.timed_out_providers,
+        provider_errors: core.provider_errors,
+    };
     match mode {
-        "calculator" => items.extend(calculator_provider(query)),
-        "currency" => items.extend(currency_provider(query)),
-        "weather" => items.extend(weather_provider(query, true)),
-        "timezone" => items.extend(timezone_provider(query, true)),
-        "emoji" => items.extend(emoji_provider(query)),
+        "calculator" => append_extra_provider_with_budget(
+            "calculator",
+            timeout_ms,
+            &debug_provider_delays_ms,
+            &provider_item_budgets,
+            &mut aggregated,
+            || calculator_provider(query),
+        ),
+        "currency" => append_extra_provider_with_budget(
+            "currency",
+            timeout_ms,
+            &debug_provider_delays_ms,
+            &provider_item_budgets,
+            &mut aggregated,
+            || currency_provider(query),
+        ),
+        "weather" => append_extra_provider_with_budget(
+            "weather",
+            timeout_ms,
+            &debug_provider_delays_ms,
+            &provider_item_budgets,
+            &mut aggregated,
+            || weather_provider(query, true),
+        ),
+        "timezone" => append_extra_provider_with_budget(
+            "timezone",
+            timeout_ms,
+            &debug_provider_delays_ms,
+            &provider_item_budgets,
+            &mut aggregated,
+            || timezone_provider(query, true),
+        ),
+        "emoji" => append_extra_provider_with_budget(
+            "emoji",
+            timeout_ms,
+            &debug_provider_delays_ms,
+            &provider_item_budgets,
+            &mut aggregated,
+            || emoji_provider(query),
+        ),
         "apps" | "windows" | "files" | "recents" | "settings" => {}
         _ => {
-            items.extend(calculator_provider(query));
-            items.extend(currency_provider(query));
-            items.extend(weather_provider(query, false));
-            items.extend(timezone_provider(query, false));
-            items.extend(emoji_provider(query));
-            items.extend(web_search_provider(query, config));
+            append_extra_provider_with_budget(
+                "calculator",
+                timeout_ms,
+                &debug_provider_delays_ms,
+                &provider_item_budgets,
+                &mut aggregated,
+                || calculator_provider(query),
+            );
+            append_extra_provider_with_budget(
+                "currency",
+                timeout_ms,
+                &debug_provider_delays_ms,
+                &provider_item_budgets,
+                &mut aggregated,
+                || currency_provider(query),
+            );
+            append_extra_provider_with_budget(
+                "weather",
+                timeout_ms,
+                &debug_provider_delays_ms,
+                &provider_item_budgets,
+                &mut aggregated,
+                || weather_provider(query, false),
+            );
+            append_extra_provider_with_budget(
+                "timezone",
+                timeout_ms,
+                &debug_provider_delays_ms,
+                &provider_item_budgets,
+                &mut aggregated,
+                || timezone_provider(query, false),
+            );
+            append_extra_provider_with_budget(
+                "emoji",
+                timeout_ms,
+                &debug_provider_delays_ms,
+                &provider_item_budgets,
+                &mut aggregated,
+                || emoji_provider(query),
+            );
+            append_extra_provider_with_budget(
+                "web_search",
+                timeout_ms,
+                &debug_provider_delays_ms,
+                &provider_item_budgets,
+                &mut aggregated,
+                || web_search_provider(query, config),
+            );
         }
     }
-    items
+    aggregated
+}
+
+struct ProviderAggregation {
+    items: Vec<SearchItem>,
+    timed_out_providers: Vec<String>,
+    provider_errors: Vec<Value>,
+}
+
+fn provider_timeout_ms_from_config(config: &HashMap<String, Value>) -> u64 {
+    config
+        .get("search.provider_timeout_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn debug_provider_delays_from_config(config: &HashMap<String, Value>) -> HashMap<String, u64> {
+    config
+        .iter()
+        .filter_map(|(key, value)| {
+            let provider = key.strip_prefix("debug.provider_delay_ms.")?;
+            let delay_ms = value.as_u64()?;
+            Some((provider.to_string(), delay_ms))
+        })
+        .collect()
+}
+
+fn append_extra_provider_with_budget<F>(
+    provider_name: &str,
+    timeout_ms: u64,
+    debug_provider_delays_ms: &HashMap<String, u64>,
+    provider_item_budgets: &HashMap<String, usize>,
+    aggregation: &mut ProviderAggregation,
+    provider: F,
+) where
+    F: FnOnce() -> Vec<SearchItem>,
+{
+    let started_at = Instant::now();
+    if let Some(delay_ms) = debug_provider_delays_ms.get(provider_name).copied() {
+        if delay_ms > 0 {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
+    }
+    let mut items = provider();
+    if let Some(max_items) = provider_item_budgets.get(provider_name).copied() {
+        if items.len() > max_items {
+            items.truncate(max_items);
+        }
+    }
+    let elapsed_ms = started_at.elapsed().as_millis() as u64;
+    if timeout_ms > 0 && elapsed_ms > timeout_ms {
+        if !aggregation
+            .timed_out_providers
+            .iter()
+            .any(|row| row == provider_name)
+        {
+            aggregation.timed_out_providers.push(provider_name.to_string());
+        }
+        return;
+    }
+    aggregation.items.extend(items);
+}
+
+fn adaptive_provider_item_budget(provider_name: &str, query: &str, limit: usize) -> usize {
+    let query_len = query.trim().chars().count();
+    let multiplier = match provider_name {
+        "files" | "recents" => {
+            if query_len < 3 {
+                2
+            } else {
+                4
+            }
+        }
+        "apps" | "windows" | "settings" => 6,
+        _ => 4,
+    };
+    limit.saturating_mul(multiplier).clamp(limit.max(1), 256)
+}
+
+fn provider_item_budgets(query: &str, config: &HashMap<String, Value>) -> HashMap<String, usize> {
+    let limit = config
+        .get("search.provider_budget_base")
+        .and_then(Value::as_u64)
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(8);
+    let mut budgets = HashMap::new();
+    for key in [
+        "apps",
+        "windows",
+        "files",
+        "recents",
+        "settings",
+        "utility",
+        "calculator",
+        "currency",
+        "weather",
+        "timezone",
+        "emoji",
+        "web_search",
+    ] {
+        let config_key = format!("search.provider_budget.{key}");
+        let budget = config
+            .get(&config_key)
+            .and_then(Value::as_u64)
+            .and_then(|v| usize::try_from(v).ok())
+            .unwrap_or_else(|| adaptive_provider_item_budget(key, query, limit));
+        budgets.insert(key.to_string(), budget.max(1));
+    }
+    budgets
 }
 
 fn indexed_folders_from_config(config: &HashMap<String, Value>) -> Vec<String> {
@@ -1459,5 +1824,23 @@ mod tests {
         assert_eq!(row["icon"], "system-search-symbolic");
         assert_eq!(row["title"], "Search Google for \"rust\"");
         assert_eq!(row["subtitle"], "www.google.com");
+    }
+
+    #[test]
+    fn adaptive_budget_reduces_files_for_short_queries() {
+        let short_budget = adaptive_provider_item_budget("files", "ab", 8);
+        let long_budget = adaptive_provider_item_budget("files", "alpha", 8);
+        let apps_budget = adaptive_provider_item_budget("apps", "ab", 8);
+        assert!(short_budget < long_budget);
+        assert!(short_budget < apps_budget);
+    }
+
+    #[test]
+    fn short_query_uses_higher_match_threshold() {
+        let rank = RankSettings::from_config(&HashMap::new());
+        let short_threshold = effective_min_match_score("ab", &rank);
+        let long_threshold = effective_min_match_score("alpha", &rank);
+        assert!(short_threshold > rank.min_fuzzy_score);
+        assert_eq!(long_threshold, rank.min_fuzzy_score);
     }
 }
