@@ -1895,8 +1895,7 @@ fn open_settings_window(
         .title("Hop Launcher Settings")
         .default_width(560)
         .default_height(420)
-        .transient_for(parent)
-        .modal(true)
+        .modal(false)
         .build();
     prefs.set_search_enabled(true);
 
