@@ -88,6 +88,46 @@ Phase 2 channel note:
 
 - AUR remains deferred until managed APT/COPR flow is stable.
 
+## 6) First managed release runbook (APT + COPR + AppImage)
+
+Use this checklist for the first real managed distro release.
+
+1. Configure GitHub repository secrets:
+   - `LAUNCHPAD_PPA`
+   - `LAUNCHPAD_DPUT_HOST` (optional; defaults to `ppa`)
+   - `LAUNCHPAD_GPG_PRIVATE_KEY`
+   - `LAUNCHPAD_GPG_PASSPHRASE`
+   - `COPR_CONFIG`
+   - `COPR_OWNER`
+   - `COPR_PROJECT`
+   - `COPR_CHROOTS` (optional)
+2. Confirm packaging metadata is aligned with the release version:
+   - Debian changelogs in `crates/hopd/debian/changelog` and `crates/hop-hotkeyd/debian/changelog`
+   - RPM `Version` fields in `packaging/rpm/hopd.spec` and `packaging/rpm/hop-hotkeyd.spec`
+3. Push a release tag from `main`:
+   - Example: `git tag v0.1.0 && git push origin v0.1.0`
+4. Trigger release workflow:
+   - Preferred: Git tag push triggers automatically
+   - Optional manual run: `workflow_dispatch` with `tag_name=v0.1.0`, `dry_run=false`, `build_appimage=true`
+5. Verify workflow job outcomes:
+   - `verify=success`
+   - `build_release=success`
+   - `publish_launchpad=success` (or explicitly skipped if secrets missing)
+   - `publish_copr=success` (or explicitly skipped if secrets missing)
+   - `release_summary=success`
+6. Verify published channels:
+   - GitHub release assets include tarballs, `.deb`, checksums, and AppImage
+   - Launchpad PPA shows new source upload/build
+   - COPR project shows new builds for configured chroots
+7. Run clean-host smoke installs:
+   - Ubuntu: `sudo apt update && sudo apt install hopd hop-hotkeyd`
+   - Fedora: `sudo dnf install hopd hop-hotkeyd`
+8. Run runtime checks:
+   - `systemctl --user status hopd.service`
+   - `systemctl --user status hop-hotkeyd.service`
+   - `~/.local/bin/hop-hotkeyd doctor --strict`
+9. Record evidence in the managed verification snapshot section below.
+
 Managed publish prerequisites (CI secrets):
 
 - `LAUNCHPAD_PPA`
