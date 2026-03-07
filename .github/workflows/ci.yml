@@ -157,6 +157,12 @@ jobs:
         run: |
           bash scripts/release/verify-artifacts.sh dist/manifest/deb.txt dist/deb
 
+      - name: Verify distro publish scripts syntax
+        shell: bash
+        run: |
+          bash -n scripts/release/publish-launchpad.sh
+          bash -n scripts/release/publish-copr.sh
+
       - name: Upload .deb artifacts
         uses: actions/upload-artifact@v4
         with:
