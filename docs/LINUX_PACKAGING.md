@@ -108,6 +108,18 @@ Useful references:
 - COPR: https://docs.pagure.org/copr.copr/user_documentation.html
 - AUR submission guidelines: https://wiki.archlinux.org/title/AUR_submission_guidelines
 
+COPR automation helper in this repo:
+
+```bash
+COPR_OWNER='your-owner' COPR_PROJECT='hop-launcher' RELEASE_TAG='v0.1.0' \
+  bash scripts/release/publish-copr.sh
+```
+
+The script expects RPM spec files at:
+
+- `packaging/rpm/hopd.spec`
+- `packaging/rpm/hop-hotkeyd.spec`
+
 ## Suggested release order
 
 1. Release GitHub artifacts (zip + tarballs).
