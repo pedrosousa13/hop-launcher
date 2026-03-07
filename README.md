@@ -183,3 +183,6 @@ Use `docs/RELEASE.md` for a complete checklist including:
 - pre-release verification
 - tag/release artifact flow
 - Linux package publishing (APT and alternatives)
+
+Managed distro channel settings template:
+- `.github/release-channels.example.env`
