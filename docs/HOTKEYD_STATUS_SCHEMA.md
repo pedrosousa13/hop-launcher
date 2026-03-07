@@ -16,6 +16,16 @@ This document defines the structured JSON output fields for:
 - `applied` (`boolean`): whether the current backend can apply/use the configured shortcut now.
 - `requires_manual_step` (`boolean`): whether operator action is required to finish wiring.
 - `warnings` (`string[]`): non-fatal issues (config read, backend readiness, etc.).
+- `capability_matrix` (`object[]`): normalized readiness rows with:
+  - `name` (`string`)
+  - `supported` (`boolean`)
+  - `configured` (`boolean`)
+  - `healthy` (`boolean`)
+  - `fix_hint` (`string`)
+- `shortcut_drift` (`object`): shortcut mismatch summary with:
+  - `detected` (`boolean`)
+  - `reason` (`string | null`)
+  - `repair_command` (`string | null`)
 
 ### X11-specific fields
 
@@ -60,3 +70,21 @@ If `--strict` is enabled and either:
 - status reports `applied: false`
 
 then `doctor` exits non-zero.
+
+## Repair Command
+
+`hop-hotkeyd` also provides a one-shot repair entrypoint:
+
+- `hop-hotkeyd repair-shortcut [--compositor <name>] [--socket <path>] [--dry-run]`
+
+This command resolves the configured shortcut and attempts to apply compositor-native wiring
+using the existing setup flow. The result payload includes:
+
+- `ok` (`boolean`)
+- `repaired` (`boolean`)
+- `requires_manual_step` (`boolean`)
+- `compositor` (`string`)
+- `shortcut` (`string`)
+- `socket_path` (`string`)
+- `dry_run` (`boolean`)
+- `warnings` (`string[]`)

@@ -129,6 +129,12 @@ Configure desktop-native shortcut wiring (GNOME/KDE helpers) with:
 ~/.local/bin/hop-hotkeyd setup-shortcut
 ```
 
+Auto-repair shortcut wiring based on current config/compositor with:
+
+```bash
+~/.local/bin/hop-hotkeyd repair-shortcut
+```
+
 For non-default control sockets:
 
 ```bash
@@ -144,7 +150,7 @@ Force compositor-specific status diagnostics when testing:
 ~/.local/bin/hop-hotkeyd status --compositor gnome
 ```
 
-`status` now also reports native Wayland readiness details (`native_backend_ready`, `native_backend_socket`, `native_backend_error`) and a `recommended_binding` command for the detected compositor mode.
+`status` now also reports native Wayland readiness details (`native_backend_ready`, `native_backend_socket`, `native_backend_error`), a `recommended_binding` command for the detected compositor mode, plus `capability_matrix` and `shortcut_drift` diagnostics.
 See `docs/HOTKEYD_STATUS_SCHEMA.md` for the structured `status`/`doctor` payload schema.
 
 Run structured diagnostics (with optional wait/retry) with:

@@ -54,10 +54,15 @@ enum Command {
         compositor: Option<String>,
         socket_path: String,
     },
+    RepairShortcut {
+        compositor: Option<String>,
+        socket_path: String,
+        dry_run: bool,
+    },
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd config get\n  hop-hotkeyd config set --shortcut <accel>\n  hop-hotkeyd setup-shortcut [--compositor <name>] [--shortcut <accel>] [--socket <path>] [--dry-run]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd config get\n  hop-hotkeyd config set --shortcut <accel>\n  hop-hotkeyd setup-shortcut [--compositor <name>] [--shortcut <accel>] [--socket <path>] [--dry-run]\n  hop-hotkeyd repair-shortcut [--compositor <name>] [--socket <path>] [--dry-run]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +277,40 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             socket_path,
         });
     }
+    if args[1] == "repair-shortcut" {
+        let mut compositor: Option<String> = None;
+        let mut socket_path = default_control_socket_path();
+        let mut dry_run = false;
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--compositor" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--compositor requires a value".to_string());
+                    }
+                    compositor = Some(args[i].to_ascii_lowercase());
+                }
+                "--socket" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err("--socket requires a value".to_string());
+                    }
+                    socket_path = args[i].clone();
+                }
+                "--dry-run" => {
+                    dry_run = true;
+                }
+                unknown => return Err(format!("unknown argument: {}", unknown)),
+            }
+            i += 1;
+        }
+        return Ok(Command::RepairShortcut {
+            compositor,
+            socket_path,
+            dry_run,
+        });
+    }
     if args[1] != "trigger" {
         return Err(usage().to_string());
     }
@@ -370,6 +409,7 @@ fn run() -> Result<(), String> {
             add_runtime_shortcut_fields(&mut payload);
             let summary = summarize_probe_result(probe_control_socket(&socket_path));
             add_control_probe_fields(&mut payload, &socket_path, summary);
+            add_diagnostic_fields(&mut payload);
             println!("{}", payload);
             Ok(())
         }
@@ -388,6 +428,8 @@ fn run() -> Result<(), String> {
                 wait_seconds,
                 interval_ms,
             ));
+            add_control_probe_fields(&mut backend_payload, &socket_path, summary.clone());
+            add_diagnostic_fields(&mut backend_payload);
             let doctor = json!({
                 "status": backend_payload,
                 "control_socket_path": socket_path,
@@ -432,6 +474,62 @@ fn run() -> Result<(), String> {
                 build_binding_snippet_payload(&resolved, &socket_path)
             );
             Ok(())
+        }
+        Command::RepairShortcut {
+            compositor,
+            socket_path,
+            dry_run,
+        } => {
+            let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
+            let resolved = compositor.unwrap_or_else(|| {
+                if session_type.eq_ignore_ascii_case("wayland") {
+                    detect_wayland_compositor(
+                        &env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+                        &env::var("XDG_SESSION_DESKTOP").unwrap_or_default(),
+                        &env::var("SWAYSOCK").unwrap_or_default(),
+                        &env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default(),
+                    )
+                    .to_string()
+                } else {
+                    "x11".to_string()
+                }
+            });
+            let configured = load_configured_shortcut(&configured_shortcut_path())
+                .unwrap_or_else(|_| default_configured_shortcut());
+            match setup_shortcut(&resolved, &configured, &socket_path, dry_run) {
+                Ok(()) => {
+                    println!(
+                        "{}",
+                        json!({
+                            "ok": true,
+                            "repaired": true,
+                            "requires_manual_step": false,
+                            "compositor": resolved,
+                            "shortcut": configured,
+                            "socket_path": socket_path,
+                            "dry_run": dry_run,
+                            "warnings": []
+                        })
+                    );
+                    Ok(())
+                }
+                Err(error) => {
+                    println!(
+                        "{}",
+                        json!({
+                            "ok": false,
+                            "repaired": false,
+                            "requires_manual_step": true,
+                            "compositor": resolved,
+                            "shortcut": configured,
+                            "socket_path": socket_path,
+                            "dry_run": dry_run,
+                            "warnings": [error]
+                        })
+                    );
+                    Ok(())
+                }
+            }
         }
     }
 }
@@ -807,6 +905,106 @@ fn add_control_probe_fields(
             },
         );
     }
+}
+
+fn add_diagnostic_fields(payload: &mut serde_json::Value) {
+    let capability_matrix = build_capability_matrix(payload);
+    let shortcut_drift = build_shortcut_drift(payload);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "capability_matrix".to_string(),
+            serde_json::Value::Array(capability_matrix),
+        );
+        object.insert("shortcut_drift".to_string(), shortcut_drift);
+    }
+}
+
+fn build_capability_matrix(payload: &serde_json::Value) -> Vec<serde_json::Value> {
+    let backend = payload
+        .get("backend")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let supported = payload
+        .get("global_hotkey_supported")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let applied = payload
+        .get("applied")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let configured = !payload
+        .get("requires_manual_step")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    let fix_hint = payload
+        .get("recommended_binding")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Run `hop-hotkeyd print-bindings` and apply the suggested binding.")
+        .to_string();
+
+    let control_reachable = payload
+        .get("control_socket_reachable")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let control_fix_hint = if control_reachable {
+        "Control socket is reachable.".to_string()
+    } else {
+        "Ensure launcher UI is running and control socket path is correct.".to_string()
+    };
+
+    vec![
+        json!({
+            "name": format!("{}_shortcut_backend", backend),
+            "supported": supported,
+            "configured": configured,
+            "healthy": supported && applied,
+            "fix_hint": fix_hint
+        }),
+        json!({
+            "name": "control_socket",
+            "supported": true,
+            "configured": payload.get("control_socket_path").is_some(),
+            "healthy": control_reachable,
+            "fix_hint": control_fix_hint
+        }),
+    ]
+}
+
+fn build_shortcut_drift(payload: &serde_json::Value) -> serde_json::Value {
+    let applied = payload
+        .get("applied")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if applied {
+        return json!({
+            "detected": false,
+            "reason": null,
+            "repair_command": null
+        });
+    }
+
+    let backend = payload
+        .get("backend")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let compositor = payload
+        .get("wayland_compositor")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(backend);
+    let socket_path = payload
+        .get("control_socket_path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("/tmp/hop-launcher-control.sock");
+    let repair_command = format!(
+        "hop-hotkeyd setup-shortcut --compositor {} --socket {}",
+        compositor, socket_path
+    );
+
+    json!({
+        "detected": true,
+        "reason": "configured shortcut is not applied to active backend",
+        "repair_command": repair_command
+    })
 }
 
 fn probe_wayland_native_backend(
@@ -1991,6 +2189,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_repair_shortcut_subcommand_with_explicit_compositor() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "repair-shortcut".to_string(),
+            "--compositor".to_string(),
+            "gnome".to_string(),
+            "--socket".to_string(),
+            "/tmp/hop.sock".to_string(),
+            "--dry-run".to_string(),
+        ];
+        let command = parse_command(&args).expect("repair-shortcut should parse");
+        assert_eq!(
+            command,
+            Command::RepairShortcut {
+                compositor: Some("gnome".to_string()),
+                socket_path: "/tmp/hop.sock".to_string(),
+                dry_run: true,
+            }
+        );
+    }
+
+    #[test]
     fn variants_include_lock_modifier_combinations() {
         let variants = hotkey_modifier_variants(ModMask::M2);
         assert!(variants.contains(&(ModMask::CONTROL | ModMask::SHIFT)));
@@ -2204,6 +2424,48 @@ mod tests {
         assert_eq!(payload["control_ping_supported"], false);
         assert_eq!(payload["control_probe_status"], "unreachable");
         assert_eq!(payload["control_probe_error"], "missing socket");
+    }
+
+    #[test]
+    fn capability_matrix_includes_fix_hint_fields() {
+        let payload = json!({
+            "backend": "wayland",
+            "wayland_compositor": "unknown",
+            "global_hotkey_supported": false,
+            "applied": false,
+            "requires_manual_step": true,
+            "recommended_binding": "hop-hotkeyd trigger",
+            "control_socket_reachable": false
+        });
+        let matrix = build_capability_matrix(&payload);
+        assert!(!matrix.is_empty());
+        let first = &matrix[0];
+        assert!(first.get("name").is_some());
+        assert!(first.get("supported").is_some());
+        assert!(first.get("configured").is_some());
+        assert!(first.get("healthy").is_some());
+        assert!(first.get("fix_hint").is_some());
+    }
+
+    #[test]
+    fn shortcut_drift_reports_repair_command_when_unapplied() {
+        let payload = json!({
+            "applied": false,
+            "configured_shortcut": "<Super>space",
+            "backend": "wayland",
+            "wayland_compositor": "gnome",
+            "control_socket_path": "/tmp/hop.sock"
+        });
+        let drift = build_shortcut_drift(&payload);
+        assert_eq!(drift["detected"], true);
+        assert!(drift["repair_command"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("setup-shortcut"));
+        assert!(drift["repair_command"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("--compositor gnome"));
     }
 
     #[test]
