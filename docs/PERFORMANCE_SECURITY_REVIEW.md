@@ -85,4 +85,6 @@ Reviewed runtime paths in:
 4. Verify `w ` and `a ` prefixes.
 5. Validate window focus/close/move action on normal windows.
 6. Set an invalid keybinding string in prefs and confirm it is ignored (previous valid shortcut remains effective).
-7. Observe logs during testing via `journalctl --user -f /usr/bin/gnome-shell`.
+7. Confirm daemon-owned shortcut path: `hop-hotkeyd config set --shortcut '<Super>space'`, then verify `hop-hotkeyd status` reports `configured_shortcut` and `applied`.
+8. Confirm strict diagnostics fail on unhealthy apply state and pass on healthy state using `hop-hotkeyd doctor --strict`.
+9. Observe logs during testing via `journalctl --user -f /usr/bin/gnome-shell`.

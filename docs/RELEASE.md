@@ -58,6 +58,8 @@ On a clean Linux user account:
    - `systemctl --user status hop-hotkeyd.service`
 3. Verify shortcut and bridge behavior:
    - `~/.local/bin/hop-hotkeyd status`
+   - `~/.local/bin/hop-hotkeyd config get`
+   - `~/.local/bin/hop-hotkeyd config set --shortcut '<Super>space'`
    - `~/.local/bin/hop-hotkeyd doctor --strict`
    - `~/.local/bin/hop-hotkeyd setup-shortcut --dry-run`
 4. Verify launcher parity behavior in GTK:

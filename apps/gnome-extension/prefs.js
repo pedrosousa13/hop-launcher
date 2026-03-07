@@ -10,6 +10,7 @@ import {
     resolveTypedAccelerator,
     sanitizeModifierState,
 } from './lib/keybindingCapture.js';
+import {createHotkeydConfigClient} from './lib/hotkeydConfigClient.js';
 import {parseAliasesConfig} from './lib/aliases.js';
 import {buildLearningInsights} from './lib/learningInsights.js';
 import {
@@ -161,9 +162,38 @@ function formatLearningTimestamp(ms) {
     return new Date(ms).toISOString().replace('T', ' ').replace('Z', ' UTC');
 }
 
+function decodeUtf8(bytes) {
+    if (!bytes)
+        return '';
+    return new TextDecoder().decode(bytes).trim();
+}
+
+function runHotkeydJsonCommand(args) {
+    const argv = ['hop-hotkeyd', ...args];
+    const [ok, stdout, stderr, status] = GLib.spawn_sync(
+        null,
+        argv,
+        null,
+        GLib.SpawnFlags.SEARCH_PATH,
+        null
+    );
+    if (!ok)
+        throw new Error('failed to execute hop-hotkeyd');
+    if (status !== 0)
+        throw new Error(decodeUtf8(stderr) || `hop-hotkeyd exited with ${status}`);
+
+    const payload = decodeUtf8(stdout);
+    if (!payload)
+        throw new Error('empty response from hop-hotkeyd');
+    return JSON.parse(payload);
+}
+
 export default class HopLauncherPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings('org.gnome.shell.extensions.hop-launcher');
+        const hotkeydClient = createHotkeydConfigClient({
+            runJsonCommand: runHotkeydJsonCommand,
+        });
 
         const page = new Adw.PreferencesPage({title: 'Hop Launcher'});
 
@@ -181,6 +211,19 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
 
         const captureButton = new Gtk.Button({label: 'Capture'});
         captureButton.set_valign(Gtk.Align.CENTER);
+
+        const syncToggleShortcutRow = () => {
+            let value = settings.get_strv('toggle-launcher').join(', ');
+            try {
+                value = hotkeydClient.getShortcut();
+            } catch (_) {
+                // Fall back to local settings when daemon lookup is unavailable.
+            }
+            const accel = resolveTypedAccelerator(value, '', isValidAccelerator);
+            keybindRow.set_text(accel ?? '');
+        };
+        syncToggleShortcutRow();
+
         captureButton.connect('clicked', () => {
             const dialog = new Adw.MessageDialog({
                 transient_for: window,
@@ -225,7 +268,12 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
                 if (!isValidAccelerator(accel))
                     return true;
 
-                settings.set_strv('toggle-launcher', [accel]);
+                try {
+                    const result = hotkeydClient.setShortcut(accel);
+                    settings.set_strv('toggle-launcher', [result.shortcut]);
+                } catch (_) {
+                    settings.set_strv('toggle-launcher', [accel]);
+                }
                 dialog.close();
                 return true;
             });
@@ -234,14 +282,7 @@ export default class HopLauncherPreferences extends ExtensionPreferences {
         });
         keybindRow.add_suffix(captureButton);
 
-        settings.connect('changed::toggle-launcher', () => {
-            const accel = resolveTypedAccelerator(
-                settings.get_strv('toggle-launcher').join(', '),
-                '',
-                isValidAccelerator
-            );
-            keybindRow.set_text(accel ?? '');
-        });
+        settings.connect('changed::toggle-launcher', syncToggleShortcutRow);
         behaviorGroup.add(keybindRow);
 
         const blurRow = new Adw.SwitchRow({

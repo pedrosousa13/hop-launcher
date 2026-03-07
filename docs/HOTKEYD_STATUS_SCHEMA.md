@@ -11,7 +11,11 @@ This document defines the structured JSON output fields for:
 
 - `session_type` (`string`): raw `XDG_SESSION_TYPE` input.
 - `backend` (`"x11" | "wayland" | "unknown"`): selected high-level backend family.
+- `configured_shortcut` (`string`): daemon-owned canonical accelerator value.
 - `global_hotkey_supported` (`boolean`): whether native global capture/bridge is currently available.
+- `applied` (`boolean`): whether the current backend can apply/use the configured shortcut now.
+- `requires_manual_step` (`boolean`): whether operator action is required to finish wiring.
+- `warnings` (`string[]`): non-fatal issues (config read, backend readiness, etc.).
 
 ### X11-specific fields
 
@@ -50,4 +54,9 @@ This document defines the structured JSON output fields for:
 - `doctor_interval_ms` (`number`)
 - `doctor_strict` (`boolean`)
 
-If `--strict` is enabled and control socket is unreachable, `doctor` exits non-zero.
+If `--strict` is enabled and either:
+
+- control socket is unreachable, or
+- status reports `applied: false`
+
+then `doctor` exits non-zero.

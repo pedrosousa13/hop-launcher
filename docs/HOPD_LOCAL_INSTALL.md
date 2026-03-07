@@ -75,6 +75,15 @@ Shortcut setup helper:
 ~/.local/bin/hop-hotkeyd setup-shortcut --dry-run
 ```
 
+Daemon-owned shortcut source of truth:
+
+```bash
+~/.local/bin/hop-hotkeyd config get
+~/.local/bin/hop-hotkeyd config set --shortcut '<Super>space'
+```
+
+`setup-shortcut` now defaults to the daemon-configured shortcut unless `--shortcut` is explicitly passed.
+
 If `socat` is installed:
 
 ```bash

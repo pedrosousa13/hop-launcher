@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::fs::FileTypeExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command as ProcessCommand, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -30,9 +30,12 @@ const GNOME_BRIDGE_MEMBER: &str = "Toggle";
 enum Command {
     Run,
     Trigger { socket_path: String },
+    ConfigGet,
+    ConfigSet { shortcut: String },
     SetupShortcut {
         compositor: Option<String>,
         shortcut: String,
+        shortcut_explicit: bool,
         socket_path: String,
         dry_run: bool,
     },
@@ -54,7 +57,7 @@ enum Command {
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd setup-shortcut [--compositor <name>] [--shortcut <accel>] [--socket <path>] [--dry-run]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
+    "Usage:\n  hop-hotkeyd                 # run daemon backend mode\n  hop-hotkeyd trigger [--socket <path>]\n  hop-hotkeyd config get\n  hop-hotkeyd config set --shortcut <accel>\n  hop-hotkeyd setup-shortcut [--compositor <name>] [--shortcut <accel>] [--socket <path>] [--dry-run]\n  hop-hotkeyd status [--socket <path>] [--compositor <name>]  # print backend capability status\n  hop-hotkeyd doctor [--socket <path>] [--wait-seconds <n>] [--interval-ms <n>] [--compositor <name>] [--strict]  # print diagnostics\n  hop-hotkeyd print-bindings [--compositor <name>] [--socket <path>]  # print compositor binding snippet\n"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +79,35 @@ struct NativeBackendProbe {
 fn parse_command(args: &[String]) -> Result<Command, String> {
     if args.len() < 2 {
         return Ok(Command::Run);
+    }
+    if args[1] == "config" {
+        if args.len() < 3 {
+            return Err("config requires a subcommand: get|set".to_string());
+        }
+        if args[2] == "get" {
+            return Ok(Command::ConfigGet);
+        }
+        if args[2] == "set" {
+            let mut shortcut: Option<String> = None;
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--shortcut" => {
+                        i += 1;
+                        if i >= args.len() {
+                            return Err("--shortcut requires a value".to_string());
+                        }
+                        shortcut = Some(args[i].clone());
+                    }
+                    unknown => return Err(format!("unknown argument: {}", unknown)),
+                }
+                i += 1;
+            }
+            return Ok(Command::ConfigSet {
+                shortcut: shortcut.unwrap_or_else(default_configured_shortcut),
+            });
+        }
+        return Err("config subcommand must be get or set".to_string());
     }
     if args[1] == "status" {
         let mut socket_path = default_control_socket_path();
@@ -109,6 +141,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
     if args[1] == "setup-shortcut" {
         let mut compositor: Option<String> = None;
         let mut shortcut = "<Super>space".to_string();
+        let mut shortcut_explicit = false;
         let mut socket_path = default_control_socket_path();
         let mut dry_run = false;
         let mut i = 2;
@@ -127,6 +160,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                         return Err("--shortcut requires a value".to_string());
                     }
                     shortcut = args[i].clone();
+                    shortcut_explicit = true;
                 }
                 "--socket" => {
                     i += 1;
@@ -145,6 +179,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
         return Ok(Command::SetupShortcut {
             compositor,
             shortcut,
+            shortcut_explicit,
             socket_path,
             dry_run,
         });
@@ -265,9 +300,42 @@ fn run() -> Result<(), String> {
     let command = parse_command(&args)?;
     match command {
         Command::Trigger { socket_path } => send_toggle(&socket_path, "hotkey-trigger"),
+        Command::ConfigGet => {
+            let path = configured_shortcut_path();
+            println!(
+                "{}",
+                json!({
+                    "shortcut": load_configured_shortcut(&path).unwrap_or_else(|_| default_configured_shortcut()),
+                })
+            );
+            Ok(())
+        }
+        Command::ConfigSet { shortcut } => {
+            let path = configured_shortcut_path();
+            let (applied, shortcut, warnings) = match store_configured_shortcut(&path, &shortcut) {
+                Ok(saved) => (true, saved, Vec::<String>::new()),
+                Err(error) => (
+                    false,
+                    load_configured_shortcut(&path)
+                        .unwrap_or_else(|_| default_configured_shortcut()),
+                    vec![error],
+                ),
+            };
+            println!(
+                "{}",
+                json!({
+                    "shortcut": shortcut,
+                    "applied": applied,
+                    "requires_manual_step": !applied,
+                    "warnings": warnings,
+                })
+            );
+            Ok(())
+        }
         Command::SetupShortcut {
             compositor,
             shortcut,
+            shortcut_explicit,
             socket_path,
             dry_run,
         } => {
@@ -285,7 +353,13 @@ fn run() -> Result<(), String> {
                     "x11".to_string()
                 }
             });
-            setup_shortcut(&resolved, &shortcut, &socket_path, dry_run)
+            let effective_shortcut = if shortcut_explicit {
+                shortcut
+            } else {
+                let path = configured_shortcut_path();
+                load_configured_shortcut(&path).unwrap_or_else(|_| default_configured_shortcut())
+            };
+            setup_shortcut(&resolved, &effective_shortcut, &socket_path, dry_run)
         }
         Command::Status {
             socket_path,
@@ -293,6 +367,7 @@ fn run() -> Result<(), String> {
         } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
             let mut payload = build_status_payload(&session_type, compositor.as_deref());
+            add_runtime_shortcut_fields(&mut payload);
             let summary = summarize_probe_result(probe_control_socket(&socket_path));
             add_control_probe_fields(&mut payload, &socket_path, summary);
             println!("{}", payload);
@@ -306,7 +381,8 @@ fn run() -> Result<(), String> {
             strict,
         } => {
             let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string());
-            let backend_payload = build_status_payload(&session_type, compositor.as_deref());
+            let mut backend_payload = build_status_payload(&session_type, compositor.as_deref());
+            add_runtime_shortcut_fields(&mut backend_payload);
             let summary = summarize_probe_result(run_doctor_probe(
                 &socket_path,
                 wait_seconds,
@@ -324,8 +400,11 @@ fn run() -> Result<(), String> {
                 "doctor_strict": strict
             });
             println!("{}", doctor);
-            if strict && !summary.reachable {
-                return Err("doctor strict check failed: control socket unreachable".to_string());
+            if should_fail_doctor_strict(strict, &summary, &backend_payload) {
+                return Err(
+                    "doctor strict check failed: control socket unreachable or shortcut unapplied"
+                        .to_string(),
+                );
             }
             Ok(())
         }
@@ -412,13 +491,193 @@ fn normalize_compositor_name(raw: &str) -> &'static str {
     }
 }
 
+fn default_configured_shortcut() -> String {
+    "<Super>space".to_string()
+}
+
+fn should_fail_doctor_strict(
+    strict: bool,
+    summary: &ProbeSummary,
+    backend_payload: &serde_json::Value,
+) -> bool {
+    if !strict {
+        return false;
+    }
+    if !summary.reachable {
+        return true;
+    }
+    !backend_payload
+        .get("applied")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn configured_shortcut_path() -> PathBuf {
+    if let Ok(path) = env::var("HOP_HOTKEYD_CONFIG") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    if let Ok(config_home) = env::var("XDG_CONFIG_HOME") {
+        let trimmed = config_home.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed).join("hop").join("hotkeyd.json");
+        }
+    }
+
+    if let Ok(home) = env::var("HOME") {
+        let trimmed = home.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed)
+                .join(".config")
+                .join("hop")
+                .join("hotkeyd.json");
+        }
+    }
+
+    PathBuf::from("/tmp/hop-hotkeyd.json")
+}
+
+fn validate_shortcut(shortcut: &str) -> Result<(), String> {
+    let trimmed = shortcut.trim();
+    if trimmed.is_empty() {
+        return Err("shortcut must not be empty".to_string());
+    }
+
+    let mut has_modifier = false;
+    let mut index = 0usize;
+    let bytes = trimmed.as_bytes();
+    while index < bytes.len() && bytes[index] == b'<' {
+        let Some(end_rel) = trimmed[index + 1..].find('>') else {
+            return Err("shortcut has unterminated modifier".to_string());
+        };
+        let end = index + 1 + end_rel;
+        let modifier = trimmed[index + 1..end].trim();
+        if modifier.is_empty() {
+            return Err("shortcut contains empty modifier".to_string());
+        }
+        has_modifier = true;
+        index = end + 1;
+    }
+
+    if !has_modifier {
+        return Err("shortcut must include at least one modifier".to_string());
+    }
+
+    let key = trimmed[index..].trim();
+    if key.is_empty() {
+        return Err("shortcut must include a key".to_string());
+    }
+    if key.starts_with('<') || key.contains('>') {
+        return Err("shortcut key segment is invalid".to_string());
+    }
+
+    Ok(())
+}
+
+fn load_configured_shortcut(path: &Path) -> Result<String, String> {
+    if !path.exists() {
+        return Ok(default_configured_shortcut());
+    }
+
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("read shortcut config failed: {}", error))?;
+    let payload: serde_json::Value = serde_json::from_str(content.trim())
+        .map_err(|error| format!("parse shortcut config failed: {}", error))?;
+    let shortcut = payload
+        .get("shortcut")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "shortcut config missing `shortcut`".to_string())?
+        .trim()
+        .to_string();
+    validate_shortcut(&shortcut)?;
+    Ok(shortcut)
+}
+
+fn store_configured_shortcut(path: &Path, shortcut: &str) -> Result<String, String> {
+    validate_shortcut(shortcut)?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("create config directory failed: {}", error))?;
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "invalid config path".to_string())?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "invalid config file name".to_string())?;
+    let temp_name = format!(
+        ".{}.tmp-{}-{}",
+        file_name,
+        process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| format!("clock failure: {}", error))?
+            .as_nanos()
+    );
+    let temp_path = parent.join(temp_name);
+
+    let mut file = fs::File::create(&temp_path)
+        .map_err(|error| format!("create temp config failed: {}", error))?;
+    let payload = json!({ "shortcut": shortcut.trim() }).to_string();
+    file.write_all(payload.as_bytes())
+        .map_err(|error| format!("write temp config failed: {}", error))?;
+    file.write_all(b"\n")
+        .map_err(|error| format!("write temp newline failed: {}", error))?;
+    file.sync_all()
+        .map_err(|error| format!("sync temp config failed: {}", error))?;
+
+    fs::rename(&temp_path, path).map_err(|error| format!("replace config failed: {}", error))?;
+    Ok(shortcut.trim().to_string())
+}
+
+fn add_runtime_shortcut_fields(payload: &mut serde_json::Value) {
+    let path = configured_shortcut_path();
+    match load_configured_shortcut(&path) {
+        Ok(shortcut) => {
+            if let Some(object) = payload.as_object_mut() {
+                object.insert(
+                    "configured_shortcut".to_string(),
+                    serde_json::Value::String(shortcut),
+                );
+            }
+        }
+        Err(error) => {
+            if let Some(object) = payload.as_object_mut() {
+                object.insert(
+                    "configured_shortcut".to_string(),
+                    serde_json::Value::String(default_configured_shortcut()),
+                );
+                let warnings = object
+                    .entry("warnings".to_string())
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if let Some(arr) = warnings.as_array_mut() {
+                    arr.push(serde_json::Value::String(format!(
+                        "config read failed: {}",
+                        error
+                    )));
+                }
+            }
+        }
+    }
+}
+
 fn build_status_payload(session_type: &str, compositor_override: Option<&str>) -> serde_json::Value {
     match select_backend_mode(session_type) {
         Ok(hop_hotkeyd::BackendMode::X11) => json!({
             "session_type": session_type,
             "backend": "x11",
             "global_hotkey_supported": true,
-            "mode": "daemon"
+            "mode": "daemon",
+            "configured_shortcut": default_configured_shortcut(),
+            "applied": true,
+            "requires_manual_step": false,
+            "warnings": [],
         }),
         Ok(hop_hotkeyd::BackendMode::Wayland) => {
             let compositor = compositor_override
@@ -446,6 +705,9 @@ fn build_status_payload(session_type: &str, compositor_override: Option<&str>) -
             "session_type": session_type,
             "backend": "unknown",
             "global_hotkey_supported": false,
+            "applied": false,
+            "requires_manual_step": true,
+            "warnings": [error.clone()],
             "error": error
         }),
     }
@@ -462,10 +724,15 @@ fn build_wayland_status_payload(
         probe_wayland_native_backend(compositor, sway_socket, hyprland_signature, runtime_dir);
     let recommended_binding =
         recommended_wayland_binding(compositor, native_probe.backend_mode, native_probe.socket_path.as_deref());
+    let warning = native_probe.error.clone();
     json!({
         "session_type": session_type,
         "backend": "wayland",
+        "configured_shortcut": default_configured_shortcut(),
         "global_hotkey_supported": native_probe.ready,
+        "applied": native_probe.ready,
+        "requires_manual_step": !native_probe.ready,
+        "warnings": warning.into_iter().collect::<Vec<String>>(),
         "fallback": "hop-hotkeyd trigger",
         "wayland_compositor": compositor,
         "wayland_backend_mode": native_probe.backend_mode,
@@ -1425,6 +1692,7 @@ mod tests {
             Command::SetupShortcut {
                 compositor: None,
                 shortcut: "<Super>space".to_string(),
+                shortcut_explicit: false,
                 socket_path: default_control_socket_path(),
                 dry_run: false,
             }
@@ -1450,10 +1718,61 @@ mod tests {
             Command::SetupShortcut {
                 compositor: Some("gnome".to_string()),
                 shortcut: "<Super>Return".to_string(),
+                shortcut_explicit: true,
                 socket_path: "/tmp/hop.sock".to_string(),
                 dry_run: true,
             }
         );
+    }
+
+    #[test]
+    fn parse_config_get_subcommand() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "config".to_string(),
+            "get".to_string(),
+        ];
+        let command = parse_command(&args).expect("config get should parse");
+        assert_eq!(command, Command::ConfigGet);
+    }
+
+    #[test]
+    fn parse_config_set_subcommand() {
+        let args = vec![
+            "hop-hotkeyd".to_string(),
+            "config".to_string(),
+            "set".to_string(),
+            "--shortcut".to_string(),
+            "<Super>Return".to_string(),
+        ];
+        let command = parse_command(&args).expect("config set should parse");
+        assert_eq!(
+            command,
+            Command::ConfigSet {
+                shortcut: "<Super>Return".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn shortcut_config_round_trip_persists_value() {
+        let path = unique_temp_path("hotkey-config-roundtrip");
+        let written = store_configured_shortcut(&path, "<Super>Return").expect("store shortcut");
+        assert_eq!(written, "<Super>Return");
+        let loaded = load_configured_shortcut(&path).expect("load shortcut");
+        assert_eq!(loaded, "<Super>Return");
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn shortcut_config_set_rejects_invalid_and_preserves_previous() {
+        let path = unique_temp_path("hotkey-config-invalid");
+        store_configured_shortcut(&path, "<Super>space").expect("seed config");
+        let result = store_configured_shortcut(&path, "bad");
+        assert!(result.is_err());
+        let loaded = load_configured_shortcut(&path).expect("load previous");
+        assert_eq!(loaded, "<Super>space");
+        fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -1727,6 +2046,10 @@ mod tests {
         let payload = build_status_payload("x11", None);
         assert_eq!(payload["backend"], "x11");
         assert_eq!(payload["global_hotkey_supported"], true);
+        assert_eq!(payload["configured_shortcut"], "<Super>space");
+        assert_eq!(payload["applied"], true);
+        assert_eq!(payload["requires_manual_step"], false);
+        assert_eq!(payload["warnings"], json!([]));
     }
 
     #[test]
@@ -1742,6 +2065,22 @@ mod tests {
         assert_eq!(payload["backend"], "wayland");
         assert_eq!(payload["global_hotkey_supported"], false);
         assert_eq!(payload["wayland_backend_mode"], "fallback");
+        assert_eq!(payload["applied"], false);
+        assert_eq!(payload["requires_manual_step"], true);
+    }
+
+    #[test]
+    fn doctor_strict_fails_for_unapplied_backend_state() {
+        let summary = ProbeSummary {
+            reachable: true,
+            ping_supported: true,
+            status: "healthy",
+            error: None,
+        };
+        let backend = json!({
+            "applied": false
+        });
+        assert!(should_fail_doctor_strict(true, &summary, &backend));
     }
 
     #[test]

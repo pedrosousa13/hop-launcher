@@ -116,6 +116,13 @@ Check detected backend/capabilities with:
 ~/.local/bin/hop-hotkeyd status
 ```
 
+Daemon-owned shortcut config:
+
+```bash
+~/.local/bin/hop-hotkeyd config get
+~/.local/bin/hop-hotkeyd config set --shortcut '<Super>space'
+```
+
 Configure desktop-native shortcut wiring (GNOME/KDE helpers) with:
 
 ```bash
@@ -146,7 +153,7 @@ Run structured diagnostics (with optional wait/retry) with:
 ~/.local/bin/hop-hotkeyd doctor --wait-seconds 5 --interval-ms 200
 ```
 
-Use `--strict` to make diagnostics exit non-zero when control socket is unreachable:
+Use `--strict` to make diagnostics exit non-zero when control socket is unreachable or shortcut apply state is not healthy:
 
 ```bash
 ~/.local/bin/hop-hotkeyd doctor --strict

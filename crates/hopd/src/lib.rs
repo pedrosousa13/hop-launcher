@@ -1111,7 +1111,7 @@ fn web_search_provider(query: &str, config: &HashMap<String, Value>) -> Vec<Sear
                 "action",
                 &format!("Search {} for \"{}\"", service.name, q),
                 &host_from_url(&url),
-                "edit-find-symbolic",
+                "system-search-symbolic",
                 "web search action browser",
             )
         })

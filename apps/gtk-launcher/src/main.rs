@@ -1105,7 +1105,7 @@ fn toggle_window(
     entry: &gtk::Entry,
     settings: &LauncherUiSettings,
 ) {
-    if window.is_visible() {
+    if window.has_css_class("hop-shown") {
         hide_window(window, settings);
     } else {
         present_window(window, entry, settings);
@@ -1114,6 +1114,7 @@ fn toggle_window(
 
 #[cfg(feature = "gtk_ui")]
 fn present_window(window: &adw::ApplicationWindow, entry: &gtk::Entry, settings: &LauncherUiSettings) {
+    window.add_css_class("hop-shown");
     let target_opacity = settings.overlay_opacity_percent as f64 / 100.0;
     if settings.animations_enabled {
         window.set_opacity(0.0);
@@ -1129,6 +1130,7 @@ fn present_window(window: &adw::ApplicationWindow, entry: &gtk::Entry, settings:
 
 #[cfg(feature = "gtk_ui")]
 fn hide_window(window: &adw::ApplicationWindow, settings: &LauncherUiSettings) {
+    window.remove_css_class("hop-shown");
     let target_opacity = settings.overlay_opacity_percent as f64 / 100.0;
     if !window.is_visible() {
         window.set_opacity(target_opacity);
@@ -1466,8 +1468,9 @@ fn window_height_for_target_height(target_height: i32) -> i32 {
 
 #[cfg(feature = "gtk_ui")]
 fn apply_window_height(window: &adw::ApplicationWindow, height: i32) {
+    // Reset constraints first so the window can shrink below its previous size.
+    window.set_size_request(-1, -1);
     window.set_default_size(900, height);
-    // Force immediate shrink/grow so the dropdown hugs current result content.
     window.set_size_request(900, height);
 }
 
@@ -1780,18 +1783,62 @@ fn open_settings_window(
         .title("Global shortcut")
         .subtitle("Apply compositor/global shortcut via hop-hotkeyd.")
         .build();
-    let shortcut_entry = gtk::Entry::builder()
-        .text(&settings.borrow().global_shortcut)
-        .placeholder_text("<Super>space")
-        .width_chars(18)
-        .build();
-    shortcut_entry.set_tooltip_text(Some(
-        "Focus and press your desired shortcut combination to capture it.",
-    ));
+    let shortcut_value = Rc::new(RefCell::new(settings.borrow().global_shortcut.clone()));
+    let shortcut_capturing = Rc::new(RefCell::new(false));
+    let shortcut_button = gtk::Button::with_label(&settings.borrow().global_shortcut);
+    shortcut_button.set_tooltip_text(Some("Click to record a new shortcut combination."));
+    shortcut_button.set_width_request(180);
+    shortcut_button.set_focusable(true);
     {
-        let shortcut_entry_for_cb = shortcut_entry.clone();
+        let shortcut_button_for_click = shortcut_button.clone();
+        let capturing = shortcut_capturing.clone();
+        let shortcut_value_for_click = shortcut_value.clone();
+        shortcut_button.connect_clicked(move |_| {
+            let was_capturing = *capturing.borrow();
+            if was_capturing {
+                let restored = shortcut_value_for_click.borrow().clone();
+                shortcut_button_for_click.set_label(&restored);
+                *capturing.borrow_mut() = false;
+            } else {
+                *capturing.borrow_mut() = true;
+                shortcut_button_for_click.set_label("Press shortcut\u{2026}");
+            }
+        });
+    }
+    {
+        let shortcut_button_for_key = shortcut_button.clone();
+        let capturing = shortcut_capturing.clone();
+        let shortcut_value_for_key = shortcut_value.clone();
         let controller = gtk::EventControllerKey::new();
         controller.connect_key_pressed(move |_, key, _, state| {
+            if !*capturing.borrow() {
+                return false.into();
+            }
+            if key == gtk::gdk::Key::Escape {
+                let restored = shortcut_value_for_key.borrow().clone();
+                shortcut_button_for_key.set_label(&restored);
+                *capturing.borrow_mut() = false;
+                return true.into();
+            }
+            let is_modifier_only = matches!(
+                key,
+                gtk::gdk::Key::Control_L
+                    | gtk::gdk::Key::Control_R
+                    | gtk::gdk::Key::Shift_L
+                    | gtk::gdk::Key::Shift_R
+                    | gtk::gdk::Key::Alt_L
+                    | gtk::gdk::Key::Alt_R
+                    | gtk::gdk::Key::Super_L
+                    | gtk::gdk::Key::Super_R
+                    | gtk::gdk::Key::Meta_L
+                    | gtk::gdk::Key::Meta_R
+                    | gtk::gdk::Key::ISO_Level3_Shift
+                    | gtk::gdk::Key::Hyper_L
+                    | gtk::gdk::Key::Hyper_R
+            );
+            if is_modifier_only {
+                return true.into();
+            }
             let mods = state
                 & (gtk::gdk::ModifierType::CONTROL_MASK
                     | gtk::gdk::ModifierType::SHIFT_MASK
@@ -1809,17 +1856,19 @@ fn open_settings_window(
             }
             let accel = gtk::accelerator_name(key, mods);
             let value = sanitize_shortcut(accel.as_str());
-            shortcut_entry_for_cb.set_text(&value);
+            shortcut_button_for_key.set_label(&value);
+            *shortcut_value_for_key.borrow_mut() = value;
+            *capturing.borrow_mut() = false;
             true.into()
         });
-        shortcut_entry.add_controller(controller);
+        shortcut_button.add_controller(controller);
     }
     let apply_shortcut_button = gtk::Button::with_label("Apply");
     let shortcut_controls = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(8)
         .build();
-    shortcut_controls.append(&shortcut_entry);
+    shortcut_controls.append(&shortcut_button);
     shortcut_controls.append(&apply_shortcut_button);
     shortcut_row.add_suffix(&shortcut_controls);
     let shortcut_hint_row = adw::ActionRow::builder()
@@ -1830,11 +1879,14 @@ fn open_settings_window(
     {
         let settings = settings.clone();
         let settings_status = settings_status.clone();
-        let shortcut_entry = shortcut_entry.clone();
+        let shortcut_value = shortcut_value.clone();
+        let shortcut_button_for_apply = shortcut_button.clone();
         let apply_shortcut_button_for_cb = apply_shortcut_button.clone();
         apply_shortcut_button.connect_clicked(move |_| {
-            let value = sanitize_shortcut(shortcut_entry.text().as_str());
-            shortcut_entry.set_text(&value);
+            let raw = shortcut_value.borrow().clone();
+            let value = sanitize_shortcut(&raw);
+            shortcut_button_for_apply.set_label(&value);
+            *shortcut_value.borrow_mut() = value.clone();
             apply_shortcut_button_for_cb.set_sensitive(false);
             set_settings_feedback(&settings_status, "Applying global shortcut...", false);
 
@@ -2407,7 +2459,7 @@ fn open_settings_window(
 
         let keyword_row = adw::ActionRow::builder()
             .title("Keyword and enabled")
-            .subtitle("Keyword enables `<keyword> query` mode.")
+            .subtitle("Keyword enables \u{201c}&lt;keyword&gt; query\u{201d} mode.")
             .build();
         let keyword_entry = gtk::Entry::builder().width_chars(8).text(&keyword).build();
         keyword_entry.set_valign(gtk::Align::Center);
