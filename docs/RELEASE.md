@@ -112,3 +112,23 @@ Packaging dry-run note:
 
 - `dpkg-buildpackage -us -uc -b` currently requires Debian build dependencies (`dh-cargo`, etc.) preinstalled.
 - In restricted environments without `sudo`, package dry-runs may be blocked until dependencies are available.
+
+## Verification Snapshot (Managed distro publish) - Pending first RC
+
+Record this after first real RC tag run (for example `v0.2.0-rc1`).
+
+Required evidence:
+
+1. GitHub Actions `Release` workflow URL and run ID
+2. `verify` and `build_release` job status
+3. `publish_launchpad` and `publish_copr` job status (or skipped reason)
+4. Published package references:
+   - Launchpad PPA page URL
+   - COPR project/build URLs
+5. Install smoke checks on clean hosts:
+   - Ubuntu: `sudo apt install hopd hop-hotkeyd`
+   - Fedora: `sudo dnf install hopd hop-hotkeyd`
+6. Runtime checks:
+   - `systemctl --user status hopd.service`
+   - `systemctl --user status hop-hotkeyd.service`
+   - `~/.local/bin/hop-hotkeyd doctor --strict`
