@@ -122,9 +122,21 @@ The script expects RPM spec files at:
 
 ## Suggested release order
 
+Phase 1 (current target):
+
 1. Release GitHub artifacts (zip + tarballs).
-2. Publish APT packages for Debian/Ubuntu users.
-3. Add RPM/AUR/OBS after APT flow is stable.
+2. Publish Ubuntu packages via Launchpad PPA.
+3. Publish Fedora packages via COPR.
+
+Phase 2:
+
+1. Add Arch AUR packaging and publication automation.
+2. Evaluate OBS/openSUSE support.
+
+Partial release policy:
+
+- If Launchpad or COPR publish fails after artifact release, treat the release as partial.
+- Do not overwrite published assets; ship a fix-forward patch tag (`vX.Y.Z+1` semantic via normal patch bump).
 
 ## Security and signing notes
 

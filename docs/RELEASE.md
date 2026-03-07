@@ -46,6 +46,12 @@ Trigger options:
 - automatic on semver tag pushes (`v*.*.*`)
 - manual via `workflow_dispatch` with explicit `tag_name`
 
+Managed distro publish behavior:
+
+- Release publish is tag-gated and verification-gated (`verify` -> `build_release` -> distro publish jobs).
+- Launchpad and COPR publishing run only when required secrets are configured.
+- If one distro publish stage fails, workflow reports a partial release and requires fix-forward in the next patch release.
+
 CI (`.github/workflows/ci.yml`) also builds `.deb` packages on PR/push and uploads them as artifact `hop-launcher-deb`.
 
 ## 4) Post-release smoke checks
@@ -75,6 +81,17 @@ On a clean Linux user account:
 For `.deb`/APT and cross-distro guidance, follow:
 
 - `docs/LINUX_PACKAGING.md`
+
+Managed publish prerequisites (CI secrets):
+
+- `LAUNCHPAD_PPA`
+- `LAUNCHPAD_DPUT_HOST` (optional; defaults to `ppa`)
+- `LAUNCHPAD_GPG_PRIVATE_KEY`
+- `LAUNCHPAD_GPG_PASSPHRASE`
+- `COPR_CONFIG`
+- `COPR_OWNER`
+- `COPR_PROJECT`
+- `COPR_CHROOTS` (optional)
 
 ## Verification Snapshot (2026-03-05)
 
