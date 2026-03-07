@@ -384,7 +384,7 @@ fn shortcut_setup_hint() -> String {
         return "Hyprland: use `hop-hotkeyd print-bindings` and add the bind snippet to hyprland.conf."
             .to_string();
     }
-    "If Apply fails, run `~/.local/bin/hop-hotkeyd setup-shortcut --dry-run` for diagnostics."
+    "If shortcut setup fails, run `~/.local/bin/hop-hotkeyd setup-shortcut --dry-run` for diagnostics."
         .to_string()
 }
 
@@ -2273,81 +2273,17 @@ fn open_settings_window(
         });
         shortcut_button.add_controller(controller);
     }
-    let apply_shortcut_button = gtk::Button::with_label("Apply");
     let shortcut_controls = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
-        .spacing(8)
+        .spacing(0)
         .build();
     shortcut_controls.append(&shortcut_button);
-    shortcut_controls.append(&apply_shortcut_button);
     shortcut_row.add_suffix(&shortcut_controls);
     let shortcut_hint_row = adw::ActionRow::builder()
         .title("Shortcut backend hint")
         .subtitle(&shortcut_setup_hint())
         .build();
     shortcut_hint_row.set_activatable(false);
-    {
-        let settings = settings.clone();
-        let app = app.clone();
-        let settings_status = settings_status.clone();
-        let shortcut_value = shortcut_value.clone();
-        let shortcut_button_for_apply = shortcut_button.clone();
-        let apply_shortcut_button_for_cb = apply_shortcut_button.clone();
-        apply_shortcut_button.connect_clicked(move |_| {
-            let raw = shortcut_value.borrow().clone();
-            let value = match persist_global_shortcut_setting(&settings, &raw) {
-                Ok(value) => value,
-                Err(error) => {
-                    apply_shortcut_button_for_cb.set_sensitive(true);
-                    set_settings_feedback(
-                        &settings_status,
-                        &format!("Save failed: {error}"),
-                        true,
-                    );
-                    return;
-                }
-            };
-            shortcut_button_for_apply.set_label(&value);
-            *shortcut_value.borrow_mut() = value.clone();
-            apply_shortcut_button_for_cb.set_sensitive(false);
-            set_settings_feedback(&settings_status, "Applying global shortcut...", false);
-
-            apply_toggle_accelerators(&app, &value, false);
-
-            let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-            let control_socket = default_control_socket_path();
-            let value_for_worker = value.clone();
-            std::thread::spawn(move || {
-                let outcome = apply_shortcut_via_hotkeyd(&value_for_worker, &control_socket);
-                let _ = tx.send(outcome);
-            });
-
-            let settings_status = settings_status.clone();
-            let apply_shortcut_button = apply_shortcut_button_for_cb.clone();
-            gtk::glib::timeout_add_local(Duration::from_millis(25), move || match rx.try_recv() {
-                Ok(Ok(())) => {
-                    apply_shortcut_button.set_sensitive(true);
-                    set_settings_feedback(&settings_status, "Applied global shortcut", false);
-                    gtk::glib::ControlFlow::Break
-                }
-                Ok(Err(message)) => {
-                    apply_shortcut_button.set_sensitive(true);
-                    set_settings_feedback(&settings_status, &message, true);
-                    gtk::glib::ControlFlow::Break
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    apply_shortcut_button.set_sensitive(true);
-                    set_settings_feedback(
-                        &settings_status,
-                        "Shortcut apply failed: worker disconnected",
-                        true,
-                    );
-                    gtk::glib::ControlFlow::Break
-                }
-            });
-        });
-    }
     shortcuts_group.add(&shortcut_row);
     shortcuts_group.add(&shortcut_hint_row);
 
