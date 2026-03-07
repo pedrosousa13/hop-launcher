@@ -33,6 +33,11 @@ COPR_TARGET="${COPR_OWNER}/${COPR_PROJECT}"
 build_package() {
   local package_name="$1"
   local spec_path="$2"
+  if [[ ! -f "${spec_path}" ]]; then
+    echo "Missing RPM spec file for ${package_name}: ${spec_path}" >&2
+    exit 1
+  fi
+
   echo "Triggering COPR build for ${package_name} on ${COPR_TARGET} from tag ${RELEASE_TAG}"
 
   local output
@@ -49,4 +54,3 @@ build_package() {
 
 build_package "hopd" "packaging/rpm/hopd.spec"
 build_package "hop-hotkeyd" "packaging/rpm/hop-hotkeyd.spec"
-

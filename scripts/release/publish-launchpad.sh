@@ -37,10 +37,12 @@ upload_source_pkg() {
 
   pushd "${crate_dir}" >/dev/null
   dpkg-buildpackage -S -sa
-  local changes_file
-  changes_file="$(ls -1 ../*.changes | head -n 1)"
+  local source_name version changes_file
+  source_name="$(dpkg-parsechangelog -S Source)"
+  version="$(dpkg-parsechangelog -S Version)"
+  changes_file="../${source_name}_${version}_source.changes"
   if [[ -z "${changes_file}" || ! -f "${changes_file}" ]]; then
-    echo "Could not find .changes file in $(pwd)/.." >&2
+    echo "Could not find expected .changes file: ${changes_file}" >&2
     exit 1
   fi
 
@@ -52,4 +54,3 @@ upload_source_pkg() {
 
 upload_source_pkg "crates/hopd"
 upload_source_pkg "crates/hop-hotkeyd"
-
