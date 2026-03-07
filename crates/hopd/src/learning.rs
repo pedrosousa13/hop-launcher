@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -19,6 +23,8 @@ const FREQ_BOOST_CAP: i32 = 60;
 const DECAY_HALF_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 /// 90 days in milliseconds — quarter-life for decay.
 const DECAY_QUARTER_MS: u64 = 90 * 24 * 60 * 60 * 1000;
+/// Hard retention cutoff for persisted learning data.
+const PERSIST_RETENTION_MS: u64 = 90 * 24 * 60 * 60 * 1000;
 
 // --- Data types ---
 
@@ -31,10 +37,17 @@ pub struct LearningEntry {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LearningStore {
     pub version: u32,
+    #[serde(default, skip_serializing)]
     pub selections: HashMap<String, HashMap<String, LearningEntry>>,
     pub global_frequency: HashMap<String, LearningEntry>,
     #[serde(skip)]
     path: PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PersistedLearningStore {
+    version: u32,
+    global_frequency: HashMap<String, LearningEntry>,
 }
 
 // --- Helper functions ---
@@ -115,8 +128,17 @@ impl LearningStore {
     /// Load from disk, falling back to a fresh store on any error.
     pub fn load_or_new(path: PathBuf) -> Self {
         if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(persisted) = serde_json::from_str::<PersistedLearningStore>(&data) {
+                let mut store = Self::new(path);
+                store.version = persisted.version;
+                store.global_frequency = persisted.global_frequency;
+                store.purge_expired();
+                return store;
+            }
             if let Ok(mut store) = serde_json::from_str::<LearningStore>(&data) {
                 store.path = path;
+                store.selections.clear();
+                store.purge_expired();
                 return store;
             }
         }
@@ -125,6 +147,7 @@ impl LearningStore {
 
     /// Record a selection: the user chose `result_id` while typing `query`.
     pub fn record(&mut self, query: &str, result_id: &str) {
+        self.purge_expired();
         let ts = now_ms();
         let normalized = query.trim().to_lowercase();
 
@@ -162,11 +185,56 @@ impl LearningStore {
     }
 
     /// Persist the store to disk.
-    pub fn save(&self) {
+    pub fn save(&mut self) {
+        self.purge_expired();
         if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            let _ = fs::create_dir_all(parent);
+            #[cfg(unix)]
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
         }
-        let _ = std::fs::write(&self.path, serde_json::to_string_pretty(self).unwrap_or_default());
+        let Some(parent) = self.path.parent() else {
+            return;
+        };
+        let Some(file_name) = self.path.file_name().and_then(|name| name.to_str()) else {
+            return;
+        };
+        let temp_name = format!(
+            ".{}.tmp-{}-{}",
+            file_name,
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let temp_path = parent.join(temp_name);
+        let payload = serde_json::to_string_pretty(&PersistedLearningStore {
+            version: self.version,
+            global_frequency: canonicalized_global_frequency(&self.global_frequency),
+        })
+        .unwrap_or_default();
+
+        let mut options = OpenOptions::new();
+        options.create(true).truncate(true).write(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let Ok(mut file) = options.open(&temp_path) else {
+            return;
+        };
+        if file.write_all(payload.as_bytes()).is_err() {
+            let _ = fs::remove_file(&temp_path);
+            return;
+        }
+        if file.write_all(b"\n").is_err() || file.sync_all().is_err() {
+            let _ = fs::remove_file(&temp_path);
+            return;
+        }
+        if fs::rename(&temp_path, &self.path).is_err() {
+            let _ = fs::remove_file(&temp_path);
+            return;
+        }
+        #[cfg(unix)]
+        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600));
     }
 
     /// Clear all learned data and persist.
@@ -249,6 +317,48 @@ impl LearningStore {
     pub fn is_empty(&self) -> bool {
         self.selections.is_empty() && self.global_frequency.is_empty()
     }
+
+    fn purge_expired(&mut self) {
+        let cutoff = now_ms().saturating_sub(PERSIST_RETENTION_MS);
+        self.selections.retain(|_, inner| {
+            inner.retain(|_, entry| entry.last_ms >= cutoff);
+            !inner.is_empty()
+        });
+        self.global_frequency
+            .retain(|_, entry| entry.last_ms >= cutoff);
+    }
+}
+
+fn canonicalize_result_id(result_id: &str) -> String {
+    if let Some(utility_tail) = result_id.strip_prefix("utility:") {
+        let utility_kind = utility_tail.split(':').next().unwrap_or_default();
+        if !utility_kind.is_empty() {
+            return format!("utility:{utility_kind}");
+        }
+    }
+    if let Some(web_tail) = result_id.strip_prefix("web-search:") {
+        let service = web_tail.split(':').next().unwrap_or_default();
+        if !service.is_empty() {
+            return format!("web-search:{service}");
+        }
+    }
+    result_id.to_string()
+}
+
+fn canonicalized_global_frequency(
+    input: &HashMap<String, LearningEntry>,
+) -> HashMap<String, LearningEntry> {
+    let mut out: HashMap<String, LearningEntry> = HashMap::new();
+    for (id, entry) in input {
+        let key = canonicalize_result_id(id);
+        let aggregate = out.entry(key).or_insert(LearningEntry {
+            count: 0,
+            last_ms: 0,
+        });
+        aggregate.count = aggregate.count.saturating_add(entry.count);
+        aggregate.last_ms = aggregate.last_ms.max(entry.last_ms);
+    }
+    out
 }
 
 // --- Tests ---
@@ -291,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn save_and_load_round_trip() {
+    fn save_and_load_round_trip_without_persisting_query_keys() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("learning.json");
 
@@ -299,6 +409,12 @@ mod tests {
         store.record("fire", "app:firefox");
         store.record("fire", "app:firefox");
         store.save();
+
+        let saved = std::fs::read_to_string(&path).expect("saved learning file");
+        assert!(
+            !saved.contains("\"fire\""),
+            "raw query keys should not be persisted"
+        );
 
         let loaded = LearningStore::load_or_new(path);
         assert_eq!(
@@ -309,8 +425,34 @@ mod tests {
                 .count,
             2
         );
-        let inner = loaded.selections.get("fire").unwrap();
-        assert_eq!(inner.get("app:firefox").unwrap().count, 2);
+        assert!(
+            loaded.selections.is_empty(),
+            "query selections should remain in-memory only after reload"
+        );
+    }
+
+    #[test]
+    fn canonicalizes_dynamic_result_ids_for_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+
+        let mut store = LearningStore::new(path.clone());
+        store.record(
+            "rust docs",
+            "web-search:duckduckgo:https%3A%2F%2Fduckduckgo.com%2F%3Fq%3Drust%2Bdocs",
+        );
+        store.record("2+2", "utility:calculator:2+2");
+        store.save();
+
+        let loaded = LearningStore::load_or_new(path);
+        assert!(
+            loaded.global_frequency.contains_key("web-search:duckduckgo"),
+            "web-search ids should strip query payloads before persistence"
+        );
+        assert!(
+            loaded.global_frequency.contains_key("utility:calculator"),
+            "utility ids should strip dynamic suffixes before persistence"
+        );
     }
 
     #[test]
