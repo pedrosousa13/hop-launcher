@@ -45,6 +45,7 @@ Trigger options:
 
 - automatic on semver tag pushes (`v*.*.*`)
 - manual via `workflow_dispatch` with explicit `tag_name`
+- manual dry-run via `workflow_dispatch` with `dry_run=true` (skips Launchpad/COPR publish)
 
 Managed distro publish behavior:
 

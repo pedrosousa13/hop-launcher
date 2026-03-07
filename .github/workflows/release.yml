@@ -15,6 +15,11 @@ on:
         required: true
         type: boolean
         default: true
+      dry_run:
+        description: "Run verify/build/release asset generation but skip distro publishing"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -204,7 +209,7 @@ jobs:
   publish_launchpad:
     runs-on: ubuntu-latest
     needs: [verify, build_release]
-    if: ${{ needs.verify.result == 'success' && needs.build_release.result == 'success' && secrets.LAUNCHPAD_PPA != '' && secrets.LAUNCHPAD_GPG_PRIVATE_KEY != '' && secrets.LAUNCHPAD_GPG_PASSPHRASE != '' }}
+    if: ${{ needs.verify.result == 'success' && needs.build_release.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) && secrets.LAUNCHPAD_PPA != '' && secrets.LAUNCHPAD_GPG_PRIVATE_KEY != '' && secrets.LAUNCHPAD_GPG_PASSPHRASE != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -235,7 +240,7 @@ jobs:
   publish_copr:
     runs-on: ubuntu-latest
     needs: [verify, build_release]
-    if: ${{ needs.verify.result == 'success' && needs.build_release.result == 'success' && secrets.COPR_CONFIG != '' && secrets.COPR_OWNER != '' && secrets.COPR_PROJECT != '' }}
+    if: ${{ needs.verify.result == 'success' && needs.build_release.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) && secrets.COPR_CONFIG != '' && secrets.COPR_OWNER != '' && secrets.COPR_PROJECT != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -271,6 +276,7 @@ jobs:
       - name: Summarize release channel status
         shell: bash
         run: |
+          echo "dry_run=${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}"
           echo "verify=${{ needs.verify.result }}"
           echo "build_release=${{ needs.build_release.result }}"
           echo "publish_launchpad=${{ needs.publish_launchpad.result }}"
@@ -287,6 +293,11 @@ jobs:
           if [[ "${launchpad_status}" == "failure" || "${copr_status}" == "failure" ]]; then
             echo "Partial release: at least one distro publish stage failed." >&2
             exit 1
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
+            echo "Dry-run mode: distro publish stages were intentionally skipped."
+            exit 0
           fi
 
           echo "Release pipeline completed without distro publish failures."
