@@ -999,7 +999,7 @@ fn setup_gnome_shortcut(shortcut: &str, socket_path: &str, dry_run: bool) -> Res
     let updated = append_gsettings_array_path(current.trim(), binding_path);
     let home = env::var("HOME").unwrap_or_else(|_| "~".to_string());
     let command = format!("{}/.local/bin/hop-hotkeyd trigger --socket {}", home, socket_path);
-    let binding = format!("['{}']", shortcut);
+    let binding = shortcut.to_string();
 
     run_external_command(dry_run, "gsettings", &["set", schema, key, updated.as_str()])?;
     run_external_command(

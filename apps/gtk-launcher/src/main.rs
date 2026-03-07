@@ -155,6 +155,87 @@ fn sanitize_shortcut(raw: &str) -> String {
 }
 
 #[cfg(feature = "gtk_ui")]
+fn resolve_hop_hotkeyd_program() -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = format!("{home}/.local/bin/hop-hotkeyd");
+        if Path::new(&candidate).exists() {
+            return candidate;
+        }
+    }
+    "hop-hotkeyd".to_string()
+}
+
+#[cfg(feature = "gtk_ui")]
+fn build_shortcut_apply_steps(shortcut: &str, control_socket: &str) -> [Vec<String>; 2] {
+    [
+        vec![
+            "config".to_string(),
+            "set".to_string(),
+            "--shortcut".to_string(),
+            shortcut.to_string(),
+        ],
+        vec![
+            "setup-shortcut".to_string(),
+            "--socket".to_string(),
+            control_socket.to_string(),
+        ],
+    ]
+}
+
+#[cfg(feature = "gtk_ui")]
+fn apply_shortcut_via_hotkeyd(shortcut: &str, control_socket: &str) -> Result<(), String> {
+    let program = resolve_hop_hotkeyd_program();
+    let steps = build_shortcut_apply_steps(shortcut, control_socket);
+
+    // Step 1: config set must report applied=true.
+    let config_set = ProcessCommand::new(&program)
+        .args(&steps[0])
+        .output()
+        .map_err(|error| format!("Shortcut apply failed: {error}"))?;
+    if !config_set.status.success() {
+        let stderr = String::from_utf8_lossy(&config_set.stderr).trim().to_string();
+        let detail = if stderr.is_empty() {
+            "config set exited non-zero".to_string()
+        } else {
+            stderr
+        };
+        return Err(format!("Shortcut apply failed: {detail}"));
+    }
+    let config_payload: serde_json::Value = serde_json::from_slice(&config_set.stdout)
+        .map_err(|error| format!("Shortcut apply failed: invalid config set response ({error})"))?;
+    let applied = config_payload
+        .get("applied")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !applied {
+        let warning = config_payload
+            .get("warnings")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|arr| arr.first())
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("shortcut rejected by hotkeyd");
+        return Err(format!("Shortcut apply failed: {warning}"));
+    }
+
+    // Step 2: compositor setup wiring.
+    let setup = ProcessCommand::new(&program)
+        .args(&steps[1])
+        .output()
+        .map_err(|error| format!("Shortcut apply failed: {error}"))?;
+    if !setup.status.success() {
+        let stderr = String::from_utf8_lossy(&setup.stderr).trim().to_string();
+        let detail = if stderr.is_empty() {
+            "setup-shortcut exited non-zero".to_string()
+        } else {
+            stderr
+        };
+        return Err(format!("Shortcut apply failed: {detail}"));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "gtk_ui")]
 fn shortcut_setup_hint() -> String {
     let desktop = format!(
         "{}:{}",
@@ -178,6 +259,92 @@ fn shortcut_setup_hint() -> String {
     }
     "If Apply fails, run `~/.local/bin/hop-hotkeyd setup-shortcut --dry-run` for diagnostics."
         .to_string()
+}
+
+#[cfg(feature = "gtk_ui")]
+fn toggle_accelerators_for_state(configured: &str, is_capturing: bool) -> Vec<String> {
+    if is_capturing {
+        return Vec::new();
+    }
+    vec![configured.to_string(), toggle_accelerator().to_string()]
+}
+
+#[cfg(feature = "gtk_ui")]
+fn apply_toggle_accelerators(app: &adw::Application, configured: &str, is_capturing: bool) {
+    let values = toggle_accelerators_for_state(configured, is_capturing);
+    let refs = values.iter().map(|v| v.as_str()).collect::<Vec<_>>();
+    app.set_accels_for_action("app.toggle", &refs);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn global_shortcut_warning_from_status_payload(payload: &serde_json::Value) -> Option<String> {
+    let control_socket_reachable = payload
+        .get("control_socket_reachable")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    if !control_socket_reachable {
+        return Some(
+            "Global shortcut not active: hop-hotkeyd cannot reach launcher control socket."
+                .to_string(),
+        );
+    }
+
+    let applied = payload
+        .get("applied")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !applied {
+        let compositor = payload
+            .get("wayland_compositor")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("current compositor");
+        return Some(format!(
+            "Global shortcut not active for {}. Run `hop-hotkeyd setup-shortcut --dry-run` and apply the suggested binding.",
+            compositor
+        ));
+    }
+
+    None
+}
+
+#[cfg(feature = "gtk_ui")]
+fn probe_global_shortcut_warning(control_socket_path: &str) -> Option<String> {
+    let mut cmd = ProcessCommand::new(resolve_hop_hotkeyd_program());
+
+    let output = cmd
+        .args(["status", "--socket", control_socket_path])
+        .output();
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            return Some(format!(
+                "Global shortcut probe failed: unable to run hop-hotkeyd status ({error})"
+            ));
+        }
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = if stderr.is_empty() {
+            "non-zero exit status".to_string()
+        } else {
+            stderr
+        };
+        return Some(format!(
+            "Global shortcut probe failed: hop-hotkeyd status error ({detail})"
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let payload: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return Some(format!(
+                "Global shortcut probe failed: invalid status JSON ({error})"
+            ));
+        }
+    };
+
+    global_shortcut_warning_from_status_payload(&payload)
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -847,7 +1014,8 @@ fn run() {
             });
         }
         app.add_action(&toggle);
-        app.set_accels_for_action("app.toggle", &[toggle_accelerator()]);
+        let configured_shortcut = sanitize_shortcut(&ui_settings.borrow().global_shortcut);
+        apply_toggle_accelerators(app, &configured_shortcut, false);
 
         let (toggle_tx, toggle_rx) = mpsc::channel::<()>();
         {
@@ -865,6 +1033,27 @@ fn run() {
             eprintln!("failed to start control listener: {}", error);
         }
         sync_settings_to_hopd(&socket_path, &ui_settings.borrow());
+        {
+            let status = status.clone();
+            let control_socket_path = default_control_socket_path();
+            let (probe_tx, probe_rx) = std::sync::mpsc::channel::<Option<String>>();
+            std::thread::spawn(move || {
+                let _ = probe_tx.send(probe_global_shortcut_warning(&control_socket_path));
+            });
+            gtk::glib::timeout_add_local(Duration::from_millis(25), move || match probe_rx.try_recv() {
+                Ok(Some(warning)) => {
+                    eprintln!("[hop-launcher] {}", warning);
+                    status.set_text(&warning);
+                    gtk::glib::ControlFlow::Break
+                }
+                Ok(None) => gtk::glib::ControlFlow::Break,
+                Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    eprintln!("[hop-launcher] global shortcut probe worker disconnected");
+                    gtk::glib::ControlFlow::Break
+                }
+            });
+        }
 
         {
             let list = list.clone();
@@ -1790,6 +1979,7 @@ fn open_settings_window(
     shortcut_button.set_width_request(180);
     shortcut_button.set_focusable(true);
     {
+        let app = app.clone();
         let shortcut_button_for_click = shortcut_button.clone();
         let capturing = shortcut_capturing.clone();
         let shortcut_value_for_click = shortcut_value.clone();
@@ -1799,13 +1989,16 @@ fn open_settings_window(
                 let restored = shortcut_value_for_click.borrow().clone();
                 shortcut_button_for_click.set_label(&restored);
                 *capturing.borrow_mut() = false;
+                apply_toggle_accelerators(&app, &restored, false);
             } else {
                 *capturing.borrow_mut() = true;
                 shortcut_button_for_click.set_label("Press shortcut\u{2026}");
+                apply_toggle_accelerators(&app, "", true);
             }
         });
     }
     {
+        let app = app.clone();
         let shortcut_button_for_key = shortcut_button.clone();
         let capturing = shortcut_capturing.clone();
         let shortcut_value_for_key = shortcut_value.clone();
@@ -1818,6 +2011,7 @@ fn open_settings_window(
                 let restored = shortcut_value_for_key.borrow().clone();
                 shortcut_button_for_key.set_label(&restored);
                 *capturing.borrow_mut() = false;
+                apply_toggle_accelerators(&app, &restored, false);
                 return true.into();
             }
             let is_modifier_only = matches!(
@@ -1859,6 +2053,8 @@ fn open_settings_window(
             shortcut_button_for_key.set_label(&value);
             *shortcut_value_for_key.borrow_mut() = value;
             *capturing.borrow_mut() = false;
+            let restored = shortcut_value_for_key.borrow().clone();
+            apply_toggle_accelerators(&app, &restored, false);
             true.into()
         });
         shortcut_button.add_controller(controller);
@@ -1878,6 +2074,7 @@ fn open_settings_window(
     shortcut_hint_row.set_activatable(false);
     {
         let settings = settings.clone();
+        let app = app.clone();
         let settings_status = settings_status.clone();
         let shortcut_value = shortcut_value.clone();
         let shortcut_button_for_apply = shortcut_button.clone();
@@ -1902,46 +2099,13 @@ fn open_settings_window(
                 return;
             }
             *settings.borrow_mut() = next;
+            apply_toggle_accelerators(&app, &value, false);
 
             let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
             let control_socket = default_control_socket_path();
+            let value_for_worker = value.clone();
             std::thread::spawn(move || {
-                let output = {
-                    let mut cmd = if let Ok(home) = std::env::var("HOME") {
-                        let candidate = format!("{home}/.local/bin/hop-hotkeyd");
-                        if Path::new(&candidate).exists() {
-                            ProcessCommand::new(candidate)
-                        } else {
-                            ProcessCommand::new("hop-hotkeyd")
-                        }
-                    } else {
-                        ProcessCommand::new("hop-hotkeyd")
-                    };
-                    cmd.args([
-                        "setup-shortcut",
-                        "--shortcut",
-                        &value,
-                        "--socket",
-                        &control_socket,
-                    ])
-                    .output()
-                };
-                let outcome = match output {
-                    Ok(result) if result.status.success() => Ok(()),
-                    Ok(result) => {
-                        let stderr = String::from_utf8_lossy(&result.stderr);
-                        let message = stderr.trim();
-                        Err(format!(
-                            "Shortcut apply failed: {}",
-                            if message.is_empty() {
-                                "setup-shortcut returned non-zero"
-                            } else {
-                                message
-                            }
-                        ))
-                    }
-                    Err(error) => Err(format!("Shortcut apply failed: {error}")),
-                };
+                let outcome = apply_shortcut_via_hotkeyd(&value_for_worker, &control_socket);
                 let _ = tx.send(outcome);
             });
 
@@ -3900,6 +4064,94 @@ mod tests {
     fn canonical_web_search_services_json_rejects_non_array_payload() {
         let out = canonical_web_search_services_json("{}", false);
         assert!(out.is_err());
+    }
+
+    #[test]
+    fn startup_hotkey_probe_accepts_healthy_status_payload() {
+        let payload = serde_json::json!({
+            "applied": true,
+            "control_socket_reachable": true
+        });
+        assert_eq!(global_shortcut_warning_from_status_payload(&payload), None);
+    }
+
+    #[test]
+    fn startup_hotkey_probe_warns_when_shortcut_not_applied() {
+        let payload = serde_json::json!({
+            "applied": false,
+            "control_socket_reachable": true,
+            "wayland_compositor": "sway"
+        });
+        let warning = global_shortcut_warning_from_status_payload(&payload).expect("warning");
+        assert!(warning.contains("not active"));
+        assert!(warning.contains("sway"));
+    }
+
+    #[test]
+    fn startup_hotkey_probe_warns_when_control_socket_unreachable() {
+        let payload = serde_json::json!({
+            "applied": true,
+            "control_socket_reachable": false
+        });
+        let warning = global_shortcut_warning_from_status_payload(&payload).expect("warning");
+        assert!(warning.contains("control socket"));
+    }
+
+    #[test]
+    fn shortcut_apply_steps_use_config_set_then_setup_shortcut() {
+        let steps = build_shortcut_apply_steps("<Primary><Shift>ampersand", "/tmp/control.sock");
+        assert_eq!(
+            steps[0],
+            vec![
+                "config".to_string(),
+                "set".to_string(),
+                "--shortcut".to_string(),
+                "<Primary><Shift>ampersand".to_string()
+            ]
+        );
+        assert_eq!(
+            steps[1],
+            vec![
+                "setup-shortcut".to_string(),
+                "--socket".to_string(),
+                "/tmp/control.sock".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn toggle_accelerators_are_disabled_while_capturing() {
+        let active = toggle_accelerators_for_state("<Primary><Shift>ampersand", false);
+        assert_eq!(
+            active,
+            vec![
+                "<Primary><Shift>ampersand".to_string(),
+                toggle_accelerator().to_string()
+            ]
+        );
+
+        let during_capture = toggle_accelerators_for_state("<Primary><Shift>ampersand", true);
+        assert!(during_capture.is_empty());
+    }
+
+    #[test]
+    fn shortcut_apply_rejects_unapplied_config_payload() {
+        let payload = serde_json::json!({
+            "applied": false,
+            "warnings": ["shortcut must include a key"]
+        });
+        let applied = payload
+            .get("applied")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        assert!(!applied);
+        let warning = payload
+            .get("warnings")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|arr| arr.first())
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("shortcut rejected by hotkeyd");
+        assert_eq!(warning, "shortcut must include a key");
     }
 }
 
