@@ -20,6 +20,11 @@ on:
         required: true
         type: boolean
         default: true
+      build_appimage:
+        description: "Build and upload AppImage artifact"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -77,8 +82,10 @@ jobs:
           bash -n scripts/release/generate-checksums.sh
           bash -n scripts/release/publish-launchpad.sh
           bash -n scripts/release/publish-copr.sh
+          bash -n scripts/release/build-appimage.sh
           test -f packaging/rpm/hopd.spec
           test -f packaging/rpm/hop-hotkeyd.spec
+          test -f packaging/appimage/hop-launcher.desktop
 
   build_release:
     runs-on: ubuntu-latest
@@ -110,6 +117,12 @@ jobs:
       - name: Build distributable zip
         run: npm run package
         working-directory: apps/gnome-extension
+
+      - name: Build AppImage
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_appimage) }}
+        run: |
+          chmod +x scripts/release/build-appimage.sh
+          bash scripts/release/build-appimage.sh
 
       - name: Setup Rust targets
         run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
@@ -188,6 +201,7 @@ jobs:
           path: |
             ${{ steps.asset.outputs.asset_path }}
             dist/*linux-*.tar.gz
+            dist/hop-launcher-gtk-linux-x86_64.AppImage
             dist/deb/*.deb
             dist/ARTIFACT_MANIFEST.txt
             dist/SHA256SUMS
@@ -207,6 +221,15 @@ jobs:
             dist/ARTIFACT_MANIFEST.txt
             dist/SHA256SUMS
           generate_release_notes: true
+
+      - name: Upload AppImage to GitHub release
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_appimage) }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          overwrite_files: false
+          files: |
+            dist/hop-launcher-gtk-linux-x86_64.AppImage
 
   publish_launchpad:
     runs-on: ubuntu-latest

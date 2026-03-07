@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Hop Launcher
+Comment=Cross-desktop launcher frontend for Linux
+Exec=hop-launcher-gtk
+Icon=hop-launcher
+Terminal=false
+Categories=Utility;

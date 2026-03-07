@@ -17,6 +17,7 @@ This repository now contains multiple Linux launcher components in one codebase.
 - Release artifacts:
   - GNOME extension zip is published by GitHub Actions release workflow.
   - `hopd` and `hop-hotkeyd` Linux tarballs are also attached to release artifacts.
+  - `hop-launcher-gtk-linux-x86_64.AppImage` is attached on tag-triggered releases.
 - Packaging/distribution docs:
   - APT + Linux packaging guide: `docs/LINUX_PACKAGING.md`
   - Maintainer release checklist: `docs/RELEASE.md`

@@ -46,6 +46,7 @@ Trigger options:
 - automatic on semver tag pushes (`v*.*.*`)
 - manual via `workflow_dispatch` with explicit `tag_name`
 - manual dry-run via `workflow_dispatch` with `dry_run=true` (skips Launchpad/COPR publish)
+- manual AppImage toggle via `workflow_dispatch` with `build_appimage=true`
 
 Managed distro publish behavior:
 
@@ -85,7 +86,7 @@ For `.deb`/APT and cross-distro guidance, follow:
 
 Phase 2 channel note:
 
-- AUR and AppImage are tracked as deferred channels after managed APT/COPR flow is stable.
+- AUR remains deferred until managed APT/COPR flow is stable.
 
 Managed publish prerequisites (CI secrets):
 

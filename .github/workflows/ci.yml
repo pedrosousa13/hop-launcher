@@ -162,8 +162,10 @@ jobs:
         run: |
           bash -n scripts/release/publish-launchpad.sh
           bash -n scripts/release/publish-copr.sh
+          bash -n scripts/release/build-appimage.sh
           test -f packaging/rpm/hopd.spec
           test -f packaging/rpm/hop-hotkeyd.spec
+          test -f packaging/appimage/hop-launcher.desktop
 
       - name: Upload .deb artifacts
         uses: actions/upload-artifact@v4

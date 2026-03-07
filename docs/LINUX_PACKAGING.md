@@ -94,6 +94,23 @@ Good for early adopters and non-Debian distros.
 
 Note: `.deb` packages are currently built for the runner host architecture in CI/release.
 
+## Option D: AppImage (portable desktop app)
+
+Build locally:
+
+```bash
+bash scripts/release/build-appimage.sh
+```
+
+Output:
+
+- `dist/hop-launcher-gtk-linux-x86_64.AppImage`
+
+Release automation:
+
+- Tag-triggered releases build and attach AppImage automatically.
+- Manual `workflow_dispatch` can include AppImage when `build_appimage=true`.
+
 ## Option C: Other distro channels
 
 Depending on target audience:
@@ -136,8 +153,7 @@ Phase 1 (current target):
 Phase 2:
 
 1. Add Arch AUR packaging and publication automation.
-2. Add AppImage universal desktop artifact.
-3. Evaluate OBS/openSUSE support.
+2. Evaluate OBS/openSUSE support.
 
 Partial release policy:
 
