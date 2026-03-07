@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INSTALL_SCRIPT="$ROOT_DIR/apps/gnome-extension/scripts/install-hopd-local.sh"
+INSTALL_SCRIPT="$ROOT_DIR/scripts/install-hopd-local.sh"
 GTK_DIR="$ROOT_DIR/apps/gtk-launcher"
 SOCKET_PATH="${HOPD_SOCKET:-${XDG_RUNTIME_DIR:-/tmp}/hopd.sock}"
 CONTROL_SOCKET_PATH="${HOP_LAUNCHER_CONTROL_SOCKET:-${XDG_RUNTIME_DIR:-/tmp}/hop-launcher-control.sock}"

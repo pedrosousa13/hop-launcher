@@ -36,24 +36,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/gnome-extension/package-lock.json
-
-      - name: Install JS dependencies
-        run: npm ci --ignore-scripts
-        working-directory: apps/gnome-extension
-
-      - name: Run GNOME extension tests and validations
-        run: |
-          npm test
-          glib-compile-schemas --strict --dry-run schemas
-          bash -n scripts/install-local.sh scripts/install-hopd-local.sh scripts/package-extension.sh scripts/bump-version.sh
-        working-directory: apps/gnome-extension
-
       - name: Run hopd tests
         run: cargo test
         working-directory: crates/hopd
@@ -103,21 +85,6 @@ jobs:
           release_tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}"
           echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/gnome-extension/package-lock.json
-
-      - name: Install JS dependencies
-        run: npm ci --ignore-scripts
-        working-directory: apps/gnome-extension
-
-      - name: Build distributable zip
-        run: npm run package
-        working-directory: apps/gnome-extension
-
       - name: Build AppImage
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_appimage) }}
         run: |
@@ -166,30 +133,17 @@ jobs:
           mkdir -p dist/deb
           find crates -maxdepth 2 -type f -name '*.deb' -exec cp {} dist/deb/ \;
 
-      - name: Resolve release asset path
-        id: asset
-        shell: bash
-        run: |
-          asset_path="$(ls apps/gnome-extension/dist/*.zip | head -n 1)"
-          if [[ -z "${asset_path}" ]]; then
-            echo "No zip file found in apps/gnome-extension/dist/." >&2
-            exit 1
-          fi
-          echo "asset_path=${asset_path}" >> "$GITHUB_OUTPUT"
-
       - name: Verify release artifact manifest
         shell: bash
         run: |
           bash scripts/release/verify-artifacts.sh dist/ARTIFACT_MANIFEST.txt \
             dist \
-            dist/deb \
-            "${{ steps.asset.outputs.asset_path }}"
+            dist/deb
 
       - name: Generate release checksums
         shell: bash
         run: |
           bash scripts/release/generate-checksums.sh dist/SHA256SUMS \
-            "${{ steps.asset.outputs.asset_path }}" \
             dist \
             dist/deb \
             dist/ARTIFACT_MANIFEST.txt
@@ -199,7 +153,6 @@ jobs:
         with:
           name: hop-launcher-release-assets
           path: |
-            ${{ steps.asset.outputs.asset_path }}
             dist/*linux-*.tar.gz
             dist/hop-launcher-gtk-linux-x86_64.AppImage
             dist/deb/*.deb
@@ -215,7 +168,6 @@ jobs:
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           overwrite_files: false
           files: |
-            ${{ steps.asset.outputs.asset_path }}
             dist/*linux-*.tar.gz
             dist/deb/*.deb
             dist/ARTIFACT_MANIFEST.txt

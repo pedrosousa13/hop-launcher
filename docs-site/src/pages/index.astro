@@ -4,18 +4,16 @@ import Hero from "../components/Hero.astro";
 import LauncherDemo from "../components/LauncherDemo.astro";
 import FeatureGrid from "../components/FeatureGrid.astro";
 import HowItWorks from "../components/HowItWorks.astro";
-import StatusBlock from "../components/StatusBlock.astro";
 import { demoScenarios } from "../data/demoScenarios";
 import { featureCards } from "../data/features";
 ---
 
 <MainLayout
   title="Hop Launcher"
-  description="Cross-Linux launcher stack powered by hopd, hop-hotkeyd, and a GTK frontend."
+  description="A fast, keyboard-first launcher experience for Linux desktops."
 >
   <Hero />
   <LauncherDemo scenarios={demoScenarios} />
   <FeatureGrid cards={featureCards} />
   <HowItWorks />
-  <StatusBlock />
 </MainLayout>

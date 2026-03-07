@@ -1,8 +1,0 @@
-{
-  "uuid": "hop-launcher@hoplauncher.app",
-  "name": "Hop Launcher",
-  "description": "Launcher for GNOME Wayland with apps, windows, recents, file search, clipboard copy, weather, and web search.",
-  "shell-version": ["45", "46", "47", "48", "49"],
-  "settings-schema": "org.gnome.shell.extensions.hop-launcher",
-  "url": "https://github.com/pedrosousa13/hop-launcher"
-}

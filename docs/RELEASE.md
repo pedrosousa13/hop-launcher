@@ -7,8 +7,7 @@ This is the maintainer checklist for shipping Hop Launcher artifacts.
 Run the full suite from repository root:
 
 ```bash
-cd apps/gnome-extension && npm test
-cd ../../crates/hopd && cargo test
+cd crates/hopd && cargo test
 cd ../hop-hotkeyd && cargo test
 cd ../../apps/gtk-launcher && cargo test
 cargo test --features gtk_ui
@@ -30,7 +29,6 @@ cd ../..
 
 The release workflow currently builds:
 
-- GNOME extension zip (`apps/gnome-extension/dist/*.zip`)
 - `hopd-linux-x86_64.tar.gz`
 - `hopd-linux-aarch64.tar.gz`
 - `hop-hotkeyd-linux-x86_64.tar.gz`
@@ -60,7 +58,7 @@ CI (`.github/workflows/ci.yml`) also builds `.deb` packages on PR/push and uploa
 
 On a clean Linux user account:
 
-1. Install local services (`npm run install:hopd:local`) or use release binaries.
+1. Install local services (`./scripts/install-hopd-local.sh`) or use release binaries.
 2. Verify service status:
    - `systemctl --user status hopd.service`
    - `systemctl --user status hop-hotkeyd.service`
@@ -147,7 +145,6 @@ Observed passing commands in this branch:
 cd crates/hopd && cargo test
 cd ../hop-hotkeyd && cargo test
 cd ../../apps/gtk-launcher && cargo test --features gtk_ui
-cd ../gnome-extension && npm test
 cd ../../crates/hopd && cargo run --bin hopd-bench -- 5 > /tmp/hopd-bench-final.txt
 bash scripts/check-bench-thresholds.sh /tmp/hopd-bench-final.txt
 bash scripts/bench-trend-report.sh /tmp/hopd-bench-final.txt > /tmp/hopd-bench-final-summary.md

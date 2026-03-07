@@ -23,3 +23,13 @@ Use these repository docs as source of truth:
 ## Next focus
 
 Finalize verified publish paths for managed distro channels and keep release evidence attached to checklist snapshots.
+
+## After first official release
+
+Update this docs site with official install channels and links:
+
+- GitHub Releases page URL
+- AppImage download URL
+- Launchpad PPA URL (if enabled)
+- COPR project URL (if enabled)
+- Any additional distro channel pages

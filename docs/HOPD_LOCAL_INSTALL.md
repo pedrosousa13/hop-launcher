@@ -11,8 +11,7 @@
 From repository root:
 
 ```bash
-cd apps/gnome-extension
-npm run install:hopd:local
+./scripts/install-hopd-local.sh
 ```
 
 What this does:
@@ -51,7 +50,6 @@ What this does:
 
 ```bash
 # Preview commands without changing your system
-cd apps/gnome-extension
 ./scripts/install-hopd-local.sh --dry-run
 
 # Install unit without auto-starting service
@@ -92,13 +90,14 @@ echo '{"id":"1","method":"health.ping"}' | socat - UNIX-CONNECT:${XDG_RUNTIME_DI
 
 Expected response contains `"ok":true`.
 
-## Enable in GNOME extension
+## GTK launcher usage
 
-After installing and starting `hopd`, open Hop Launcher preferences and enable:
+After installing and starting services, run the GTK frontend:
 
-- `Main features` -> `hopd daemon`
-
-`hopd` integration is off by default. Once enabled, utility-intent queries (weather/timezone/emoji routes) can be served by the daemon.
+```bash
+cd apps/gtk-launcher
+cargo run --features gtk_ui
+```
 
 For packaged distribution (`.deb`/APT and other Linux channels), see:
 

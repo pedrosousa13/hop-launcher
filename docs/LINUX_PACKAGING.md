@@ -9,7 +9,6 @@ Current shippable pieces in this repository:
 - `hopd` (Rust daemon)
 - `kde-hopd-query` (KDE adapter helper CLI, shipped inside `hopd` package)
 - `hop-hotkeyd` (Rust global hotkey agent)
-- GNOME extension zip (`apps/gnome-extension/dist/*.zip`)
 
 ## Option A: Debian package (`.deb`) + APT repository
 
@@ -146,7 +145,7 @@ Current model:
 
 Phase 1 (current target):
 
-1. Release GitHub artifacts (zip + tarballs).
+1. Release GitHub artifacts (tarballs + checksums).
 2. Publish Ubuntu packages via Launchpad PPA.
 3. Publish Fedora packages via COPR.
 

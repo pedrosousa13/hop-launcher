@@ -58,7 +58,7 @@ const getLeftIconClass = (src: string) =>
           aria-selected={index === 0 ? "true" : "false"}
           data-active={index === 0 ? "true" : "false"}
         >
-          {scenario.query}
+          {scenario.label}
         </button>
       ))}
     </div>
@@ -119,7 +119,7 @@ const getLeftIconClass = (src: string) =>
     leftIcon?: string;
     actionLabel?: string;
   };
-  type ClientScenario = { id: string; query: string; description: string; results: ClientResult[] };
+  type ClientScenario = { id: string; label: string; query: string; description: string; results: ClientResult[] };
 
   const kindIcon: Record<ClientResult["kind"], string> = {
     app: "/icons/lucide/app-window.svg",

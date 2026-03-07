@@ -70,6 +70,6 @@ Completed in this branch:
 
 ## Local Install (Required for Adapter Integration)
 
-- Install locally with `cd apps/gnome-extension && npm run install:hopd:local`.
+- Install locally with `./scripts/install-hopd-local.sh`.
 - Validate daemon with `systemctl --user status hopd.service`.
 - Use `echo '{"id":"1","method":"health.ping"}' | socat - UNIX-CONNECT:${XDG_RUNTIME_DIR}/hopd.sock`.

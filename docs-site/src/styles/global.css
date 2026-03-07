@@ -39,17 +39,17 @@ body {
 }
 
 body {
-  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   line-height: 1.5;
 }
 
 .font-display {
-  font-family: "Sora", "Avenir Next", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
 code,
 .font-mono {
-  font-family: "JetBrains Mono", "Fira Mono", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .field-layer {
@@ -283,7 +283,7 @@ code,
 
 .docs-prose h2,
 .docs-prose h3 {
-  font-family: "Sora", "Avenir Next", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   margin-top: 2rem;
   margin-bottom: 0.8rem;
 }
@@ -329,7 +329,7 @@ code,
 }
 
 .docs-page {
-  font-family: "Atkinson Hyperlegible", "Manrope", "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: clamp(1.04rem, 0.99rem + 0.2vw, 1.15rem);
 }
 

@@ -5,7 +5,6 @@ This repository now contains multiple Linux launcher components in one codebase.
 ## Layout
 
 - `docs-site` - Astro documentation site for the current hop-launcher stack
-- `legacy/gnome-extension` - archived GNOME Shell extension implementation
 - `apps/gtk-launcher` - standalone GTK4/libadwaita launcher frontend scaffold
 - `crates/hopd` - Rust daemon (`hopd`) serving launcher IPC methods
 - `crates/hop-hotkeyd` - companion Rust daemon for global hotkey -> GTK toggle IPC
@@ -13,8 +12,8 @@ This repository now contains multiple Linux launcher components in one codebase.
 
 ## Install options
 
-- Local/dev install (recommended while iterating):
-  - `cd legacy/gnome-extension && npm run install:hopd:local`
+- Local/dev install:
+  - `./scripts/install-hopd-local.sh`
 - Release artifacts:
   - `hopd` and `hop-hotkeyd` Linux tarballs are also attached to release artifacts.
   - `hop-launcher-gtk-linux-x86_64.AppImage` is attached on tag-triggered releases.
@@ -23,13 +22,6 @@ This repository now contains multiple Linux launcher components in one codebase.
   - Maintainer release checklist: `docs/RELEASE.md`
 
 ## Per-folder commands
-
-### Legacy GNOME extension
-
-```bash
-cd legacy/gnome-extension
-npm test
-```
 
 ### hopd daemon
 
@@ -52,21 +44,6 @@ cd apps/gtk-launcher
 cargo test
 cargo run
 cargo run --features gtk_ui
-```
-
-## Local daemon install (with GNOME integration)
-
-```bash
-cd legacy/gnome-extension
-npm run install:hopd:local
-```
-
-This installs both `hopd` and `hop-hotkeyd` user services.
-See `docs/HOPD_LOCAL_INSTALL.md` for full details.
-You can override default shortcut during install with:
-
-```bash
-HOP_LAUNCHER_SHORTCUT='<Super>space' npm run install:hopd:local
 ```
 
 ## One-command local GTK manual test

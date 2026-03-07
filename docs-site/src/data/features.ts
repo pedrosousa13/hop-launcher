@@ -4,44 +4,44 @@ export type FeatureCard = {
   title: string;
   summary: string;
   group: FeatureGroup;
-  examples: string[];
+  points: string[];
 };
 
 export const featureCards: FeatureCard[] = [
   {
-    title: "hopd IPC Runtime",
-    summary: "A Rust daemon serving launcher control and query IPC over a local socket.",
+    title: "Fast Core Search",
+    summary: "Instant results that keep up with fast typing.",
     group: "runtime",
-    examples: ["cargo test -p hopd", "hopd user service", "socket health checks"]
+    points: ["Apps", "Windows", "Files"]
   },
   {
-    title: "hop-hotkeyd Shortcut Control",
-    summary: "Compositor-aware global toggle handling with runtime shortcut configuration.",
+    title: "Global Toggle",
+    summary: "Open the launcher from anywhere with one shortcut.",
     group: "runtime",
-    examples: ["hop-hotkeyd config set", "hop-hotkeyd setup-shortcut", "hop-hotkeyd repair-shortcut"]
+    points: ["X11", "Wayland", "Custom shortcut"]
   },
   {
-    title: "GTK Launcher Frontend",
-    summary: "Native GTK client talking to daemon services for responsive launcher interactions.",
+    title: "Native Linux UI",
+    summary: "A clean launcher interface built for keyboard-first workflows.",
     group: "platform",
-    examples: ["cargo run --features gtk_ui", "scripts/run-gtk-manual-test.sh"]
+    points: ["Minimal UI", "Fast navigation"]
   },
   {
-    title: "Doctor + Status Diagnostics",
-    summary: "Structured health output for sockets, native backend readiness, and shortcut drift.",
+    title: "Built-In Health Checks",
+    summary: "Quick diagnostics make setup and troubleshooting straightforward.",
     group: "diagnostics",
-    examples: ["hop-hotkeyd status", "hop-hotkeyd doctor --strict"]
+    points: ["Status", "Doctor"]
   },
   {
-    title: "Compositor Bridges",
-    summary: "Native toggle bridge support for Sway, Hyprland, KDE Wayland, and GNOME Wayland.",
+    title: "Works Across Desktops",
+    summary: "Designed to run across popular Linux desktop environments.",
     group: "platform",
-    examples: ["sway send_tick", "hyprctl dispatch event", "qdbus invokeShortcut"]
+    points: ["GNOME", "KDE", "Sway", "Hyprland"]
   },
   {
-    title: "Release + Packaging",
-    summary: "Release workflows produce tarballs and AppImage with managed distro publishing scaffolding.",
+    title: "Ready to Ship",
+    summary: "Release flows support portable and distro-friendly packaging.",
     group: "diagnostics",
-    examples: ["docs/RELEASE.md", "docs/LINUX_PACKAGING.md", "packaging/appimage"]
+    points: ["Tarballs", "AppImage", "Deb packages"]
   }
 ];
