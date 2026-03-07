@@ -1650,6 +1650,11 @@ fn apply_scroller_height(list_scroller: &gtk::ScrolledWindow, target_height: i32
 }
 
 #[cfg(feature = "gtk_ui")]
+fn target_height_for_natural_list_height(natural_height: i32, max_height: i32) -> i32 {
+    natural_height.max(1).min(max_height.max(1))
+}
+
+#[cfg(feature = "gtk_ui")]
 fn window_height_for_target_height(target_height: i32) -> i32 {
     // Non-list chrome: content margins + entry + spacing.
     (84 + target_height).clamp(120, 620)
@@ -3652,13 +3657,8 @@ fn refresh_results(
                     ensure_row_visible(list_scroller, &first);
                 }
             }
-            let rows_visible = rows.len().min(max_results as usize);
-            let estimated_row_height = match ui_settings.density_mode.as_str() {
-                "compact" => 42,
-                "comfortable" => 62,
-                _ => 54,
-            };
-            let target_height = (rows_visible as i32 * estimated_row_height).clamp(0, 420);
+            let (_, natural_height, _, _) = list.measure(gtk::Orientation::Vertical, -1);
+            let target_height = target_height_for_natural_list_height(natural_height, 420);
             apply_scroller_height(list_scroller, target_height);
             apply_window_height(window, window_height_for_target_height(target_height));
             status.set_text(&render_status_text(if rows.is_empty() {
@@ -4012,6 +4012,21 @@ mod tests {
     #[test]
     fn window_height_formula_does_not_force_chin_for_single_row() {
         assert_eq!(window_height_for_target_height(48), 132);
+    }
+
+    #[test]
+    fn target_height_uses_minimum_for_empty_results() {
+        assert_eq!(target_height_for_natural_list_height(0, 420), 1);
+    }
+
+    #[test]
+    fn target_height_preserves_natural_height_when_within_bounds() {
+        assert_eq!(target_height_for_natural_list_height(137, 420), 137);
+    }
+
+    #[test]
+    fn target_height_clamps_to_max_height() {
+        assert_eq!(target_height_for_natural_list_height(680, 420), 420);
     }
 
     #[test]
