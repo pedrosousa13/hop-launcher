@@ -83,6 +83,10 @@ For `.deb`/APT and cross-distro guidance, follow:
 
 - `docs/LINUX_PACKAGING.md`
 
+Phase 2 channel note:
+
+- AUR and AppImage are tracked as deferred channels after managed APT/COPR flow is stable.
+
 Managed publish prerequisites (CI secrets):
 
 - `LAUNCHPAD_PPA`

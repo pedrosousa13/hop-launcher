@@ -120,6 +120,11 @@ The script expects RPM spec files at:
 - `packaging/rpm/hopd.spec`
 - `packaging/rpm/hop-hotkeyd.spec`
 
+Current model:
+
+- COPR builds from repository tags and these in-repo spec files.
+- Keep spec `Version` values aligned with release tag semver.
+
 ## Suggested release order
 
 Phase 1 (current target):
@@ -131,7 +136,8 @@ Phase 1 (current target):
 Phase 2:
 
 1. Add Arch AUR packaging and publication automation.
-2. Evaluate OBS/openSUSE support.
+2. Add AppImage universal desktop artifact.
+3. Evaluate OBS/openSUSE support.
 
 Partial release policy:
 

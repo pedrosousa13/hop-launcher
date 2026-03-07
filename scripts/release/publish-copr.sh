@@ -30,6 +30,12 @@ COPR_CHROOTS="${COPR_CHROOTS:-fedora-41-x86_64}"
 COPR_SOURCE_REPO="${COPR_SOURCE_REPO:-https://github.com/pedrosousa13/hop-launcher.git}"
 COPR_TARGET="${COPR_OWNER}/${COPR_PROJECT}"
 
+read -r -a COPR_CHROOT_LIST <<< "${COPR_CHROOTS}"
+if [[ "${#COPR_CHROOT_LIST[@]}" -eq 0 ]]; then
+  echo "COPR_CHROOTS must provide at least one chroot" >&2
+  exit 1
+fi
+
 build_package() {
   local package_name="$1"
   local spec_path="$2"
@@ -41,13 +47,21 @@ build_package() {
   echo "Triggering COPR build for ${package_name} on ${COPR_TARGET} from tag ${RELEASE_TAG}"
 
   local output
+  local -a chroot_args=()
+  local chroot
+  for chroot in "${COPR_CHROOT_LIST[@]}"; do
+    chroot_args+=(-r "${chroot}")
+  done
+
   # Use SCM build so COPR checks out the tag directly from the repository.
   output="$(copr-cli buildscm "${COPR_TARGET}" \
     --clone-url "${COPR_SOURCE_REPO}" \
     --commit "${RELEASE_TAG}" \
-    --method tito \
+    --method rpkg \
+    --subdir . \
     --spec "${spec_path}" \
-    --chroots ${COPR_CHROOTS} 2>&1)"
+    --nowait \
+    "${chroot_args[@]}" 2>&1)"
 
   echo "${output}"
 }

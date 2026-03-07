@@ -77,6 +77,8 @@ jobs:
           bash -n scripts/release/generate-checksums.sh
           bash -n scripts/release/publish-launchpad.sh
           bash -n scripts/release/publish-copr.sh
+          test -f packaging/rpm/hopd.spec
+          test -f packaging/rpm/hop-hotkeyd.spec
 
   build_release:
     runs-on: ubuntu-latest
@@ -248,7 +250,8 @@ jobs:
       - name: Install COPR CLI
         run: |
           sudo apt-get update
-          sudo apt-get install -y copr-cli
+          sudo apt-get install -y python3-pip
+          python3 -m pip install --user copr-cli
 
       - name: Configure COPR credentials
         shell: bash
@@ -266,7 +269,9 @@ jobs:
           COPR_PROJECT: ${{ secrets.COPR_PROJECT }}
           COPR_CHROOTS: ${{ secrets.COPR_CHROOTS }}
           RELEASE_TAG: ${{ needs.build_release.outputs.release_tag }}
-        run: bash scripts/release/publish-copr.sh
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          bash scripts/release/publish-copr.sh
 
   release_summary:
     runs-on: ubuntu-latest
