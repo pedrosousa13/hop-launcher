@@ -8,17 +8,17 @@ interface Props {
 const { cards } = Astro.props;
 
 const groupLabel: Record<FeatureCard["group"], string> = {
-  navigation: "Navigation",
-  utilities: "Utilities",
-  web: "Web Actions"
+  runtime: "Runtime",
+  diagnostics: "Diagnostics",
+  platform: "Platform"
 };
 ---
 
 <section id="features" class="mx-auto mt-18 w-full max-w-6xl px-6 md:px-10">
   <div class="flex flex-wrap items-end justify-between gap-4">
-    <h2 class="font-display text-3xl font-semibold md:text-4xl">Everything in one launcher surface</h2>
+    <h2 class="font-display text-3xl font-semibold md:text-4xl">Current hop-launcher stack capabilities</h2>
     <p class="max-w-xl text-sm leading-relaxed text-[color:var(--muted)] md:text-base">
-      Results are tuned for speed: ranked fuzzy matches, intent shortcuts, and direct actions that keep you in flow.
+      The project now targets cross-Linux operation with daemon-owned control, compositors bridges, and packaging automation.
     </p>
   </div>
 

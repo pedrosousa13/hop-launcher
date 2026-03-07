@@ -5,11 +5,11 @@ import MainLayout from "../../layouts/MainLayout.astro";
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 ---
 
-<MainLayout title="Hop Launcher Docs" description="Structured documentation for Hop Launcher usage, ranking, and release status.">
+<MainLayout title="Hop Launcher Docs" description="Structured docs for hopd runtime, hotkey bridge, GTK client, and release operations.">
   <section class="docs-page mx-auto w-full max-w-6xl px-6 pt-8 pb-20 md:px-10 md:pt-12">
     <h1 class="font-display text-4xl font-semibold md:text-5xl">Documentation</h1>
     <p class="mt-4 max-w-2xl text-base text-[color:var(--muted)] md:text-lg">
-      Browse focused docs for setup, query patterns, ranking behavior, and current release status.
+      Browse setup, runtime operations, diagnostics, and release docs for the current cross-Linux hop-launcher stack.
     </p>
 
     <div class="mt-8 grid gap-4 md:grid-cols-2">

@@ -40,7 +40,7 @@ mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications" "${APPDIR}/usr/s
 
 install -m 0755 "${ROOT_DIR}/apps/gtk-launcher/target/release/hop-launcher-gtk" "${APPDIR}/usr/bin/hop-launcher-gtk"
 install -m 0644 "${ROOT_DIR}/packaging/appimage/hop-launcher.desktop" "${APPDIR}/usr/share/applications/hop-launcher.desktop"
-install -m 0644 "${ROOT_DIR}/apps/gnome-extension/docs-site/public/icons/apps/chromium.png" "${APPDIR}/usr/share/icons/hicolor/256x256/apps/hop-launcher.png"
+install -m 0644 "${ROOT_DIR}/docs-site/public/icons/apps/chromium.png" "${APPDIR}/usr/share/icons/hicolor/256x256/apps/hop-launcher.png"
 
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "${LINUXDEPLOY}" --appdir "${APPDIR}" \
   --executable "${APPDIR}/usr/bin/hop-launcher-gtk" \

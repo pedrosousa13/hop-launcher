@@ -4,7 +4,8 @@ This repository now contains multiple Linux launcher components in one codebase.
 
 ## Layout
 
-- `apps/gnome-extension` - full GNOME Shell extension implementation
+- `docs-site` - Astro documentation site for the current hop-launcher stack
+- `legacy/gnome-extension` - archived GNOME Shell extension implementation
 - `apps/gtk-launcher` - standalone GTK4/libadwaita launcher frontend scaffold
 - `crates/hopd` - Rust daemon (`hopd`) serving launcher IPC methods
 - `crates/hop-hotkeyd` - companion Rust daemon for global hotkey -> GTK toggle IPC
@@ -13,9 +14,8 @@ This repository now contains multiple Linux launcher components in one codebase.
 ## Install options
 
 - Local/dev install (recommended while iterating):
-  - `cd apps/gnome-extension && npm run install:hopd:local`
+  - `cd legacy/gnome-extension && npm run install:hopd:local`
 - Release artifacts:
-  - GNOME extension zip is published by GitHub Actions release workflow.
   - `hopd` and `hop-hotkeyd` Linux tarballs are also attached to release artifacts.
   - `hop-launcher-gtk-linux-x86_64.AppImage` is attached on tag-triggered releases.
 - Packaging/distribution docs:
@@ -24,10 +24,10 @@ This repository now contains multiple Linux launcher components in one codebase.
 
 ## Per-folder commands
 
-### GNOME extension
+### Legacy GNOME extension
 
 ```bash
-cd apps/gnome-extension
+cd legacy/gnome-extension
 npm test
 ```
 
@@ -57,7 +57,7 @@ cargo run --features gtk_ui
 ## Local daemon install (with GNOME integration)
 
 ```bash
-cd apps/gnome-extension
+cd legacy/gnome-extension
 npm run install:hopd:local
 ```
 
