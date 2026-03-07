@@ -236,14 +236,7 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
                 .iter()
                 .find(|it| it.id == *id)
                 .cloned()
-                .unwrap_or_else(|| {
-                    let title = id
-                        .strip_prefix("app:")
-                        .unwrap_or(id)
-                        .trim_end_matches(".desktop")
-                        .to_string();
-                    SearchItem::new(id, "app", &title, "Recently launched", "application-x-executable-symbolic", "")
-                });
+                .unwrap_or_else(|| fallback_item_for_learning_id(id));
             seen_ids.insert(id.clone());
             blended.push((score, item));
         }
@@ -257,14 +250,7 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
                 .iter()
                 .find(|it| it.id == *id)
                 .cloned()
-                .unwrap_or_else(|| {
-                    let title = id
-                        .strip_prefix("app:")
-                        .unwrap_or(id)
-                        .trim_end_matches(".desktop")
-                        .to_string();
-                    SearchItem::new(id, "app", &title, "Recently launched", "application-x-executable-symbolic", "")
-                });
+                .unwrap_or_else(|| fallback_item_for_learning_id(id));
             seen_ids.insert(id.clone());
             blended.push((score, item));
         }
@@ -352,6 +338,88 @@ async fn build_search_result(params: &Value, config: &HashMap<String, Value>, le
             "elapsed_ms": elapsed_ms,
         }
     })
+}
+
+fn fallback_item_for_learning_id(id: &str) -> SearchItem {
+    if let Some(payload) = id.strip_prefix("web-search:") {
+        let mut parts = payload.splitn(3, ':');
+        let service_id = parts.next().unwrap_or("web");
+        let encoded_url = parts.next().unwrap_or_default();
+        let decoded_url = decode_component(encoded_url);
+        let host = decoded_url
+            .as_deref()
+            .map(host_from_url)
+            .unwrap_or_default();
+        let provider = prettify_service_name(service_id);
+        let query_text = decoded_url
+            .as_deref()
+            .and_then(extract_search_query_from_url);
+        let title = if let Some(q) = query_text {
+            format!("Search {provider} for \"{q}\"")
+        } else {
+            format!("Search {provider}")
+        };
+        let subtitle = if host.trim().is_empty() {
+            "Web search".to_string()
+        } else {
+            host
+        };
+        return SearchItem::new(
+            id,
+            "action",
+            &title,
+            &subtitle,
+            "system-search-symbolic",
+            "web search action browser",
+        );
+    }
+
+    let title = id
+        .strip_prefix("app:")
+        .unwrap_or(id)
+        .trim_end_matches(".desktop")
+        .to_string();
+    SearchItem::new(
+        id,
+        "app",
+        &title,
+        "Recently launched",
+        "application-x-executable-symbolic",
+        "",
+    )
+}
+
+fn prettify_service_name(raw: &str) -> String {
+    let normalized = raw.trim().replace(['-', '_'], " ");
+    if normalized.trim().is_empty() {
+        return "Web".to_string();
+    }
+    normalized
+        .split_whitespace()
+        .map(|token| {
+            let mut chars = token.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn extract_search_query_from_url(url: &str) -> Option<String> {
+    let query = url.split_once('?')?.1;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key == "q" || key == "query" {
+            let decoded = decode_component(value)?;
+            let trimmed = decoded.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn enrich_utility_live_data(mut items: Vec<SearchItem>) -> Vec<SearchItem> {
@@ -1359,5 +1427,37 @@ mod tests {
             has_launched,
             "empty query should include recently launched items from learning data"
         );
+    }
+
+    #[tokio::test]
+    async fn empty_query_recents_formats_web_search_rows_readably() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learning.json");
+        let server = HopdServer::new_with_learning_path(path);
+
+        let result_id = "web-search:google:https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Drust";
+        let req = serde_json::json!({
+            "id": "rec-web",
+            "method": "learning.record",
+            "params": { "query": "web rust", "result_id": result_id }
+        });
+        server.handle_json_line(&req.to_string()).await.unwrap();
+
+        let query_req = serde_json::json!({
+            "id": "s-web",
+            "method": "search.query",
+            "params": { "query": "", "limit": 8 }
+        });
+        let raw = server.handle_json_line(&query_req.to_string()).await.unwrap();
+        let resp: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let results = resp["result"]["results"].as_array().unwrap();
+        let row = results
+            .iter()
+            .find(|row| row["id"] == result_id)
+            .expect("web-search row present in recents");
+        assert_eq!(row["kind"], "action");
+        assert_eq!(row["icon"], "system-search-symbolic");
+        assert_eq!(row["title"], "Search Google for \"rust\"");
+        assert_eq!(row["subtitle"], "www.google.com");
     }
 }

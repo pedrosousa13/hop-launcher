@@ -236,6 +236,133 @@ fn apply_shortcut_via_hotkeyd(shortcut: &str, control_socket: &str) -> Result<()
 }
 
 #[cfg(feature = "gtk_ui")]
+fn normalize_accel_value(raw: &str) -> String {
+    raw.trim()
+        .trim_matches('\'')
+        .trim_matches('"')
+        .replace(' ', "")
+        .to_ascii_lowercase()
+}
+
+#[cfg(feature = "gtk_ui")]
+fn extract_gsettings_path_items(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\'' {
+            continue;
+        }
+        let mut item = String::new();
+        for next in chars.by_ref() {
+            if next == '\'' {
+                break;
+            }
+            item.push(next);
+        }
+        if !item.trim().is_empty() {
+            out.push(item);
+        }
+    }
+    out
+}
+
+#[cfg(feature = "gtk_ui")]
+fn parse_gsettings_recursive_conflict_line(line: &str, target: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parts = trimmed.split_whitespace();
+    let schema = parts.next()?;
+    let key = parts.next()?;
+    let value = parts.collect::<Vec<_>>().join(" ");
+    let normalized_target = normalize_accel_value(target);
+    let normalized_value = normalize_accel_value(&value);
+    if normalized_target.is_empty() || !normalized_value.contains(&normalized_target) {
+        return None;
+    }
+    Some(format!("{schema} {key}"))
+}
+
+#[cfg(feature = "gtk_ui")]
+fn run_gsettings(args: &[&str]) -> Result<String, String> {
+    let output = ProcessCommand::new("gsettings")
+        .args(args)
+        .output()
+        .map_err(|error| format!("gsettings failed: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            "gsettings exited non-zero".to_string()
+        } else {
+            detail
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(feature = "gtk_ui")]
+fn detect_gnome_shortcut_conflict(shortcut: &str, control_socket: &str) -> Option<String> {
+    let normalized_target = normalize_accel_value(shortcut);
+    if normalized_target.is_empty() {
+        return None;
+    }
+
+    if let Ok(lines) = run_gsettings(&["list-recursively", "org.gnome.desktop.wm.keybindings"]) {
+        for line in lines.lines() {
+            if let Some(owner) = parse_gsettings_recursive_conflict_line(line, shortcut) {
+                return Some(owner);
+            }
+        }
+    }
+
+    let custom_paths_raw = run_gsettings(&[
+        "get",
+        "org.gnome.settings-daemon.plugins.media-keys",
+        "custom-keybindings",
+    ]).ok()?;
+    let custom_paths = extract_gsettings_path_items(&custom_paths_raw);
+    for path in custom_paths {
+        let schema = format!(
+            "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{}",
+            path
+        );
+        let binding = run_gsettings(&["get", &schema, "binding"]).ok()?;
+        if normalize_accel_value(&binding) != normalized_target {
+            continue;
+        }
+        let name = run_gsettings(&["get", &schema, "name"]).unwrap_or_else(|_| "'Custom binding'".to_string());
+        let command = run_gsettings(&["get", &schema, "command"]).unwrap_or_default();
+        let control_marker = format!("--socket {control_socket}");
+        let is_ours = command.contains("hop-hotkeyd trigger")
+            && (command.contains(&control_marker) || command.contains("hop-hotkeyd trigger"));
+        if !is_ours {
+            return Some(format!(
+                "{} ({})",
+                name.trim_matches('\''),
+                command.trim_matches('\'')
+            ));
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "gtk_ui")]
+fn detect_shortcut_conflict_owner(shortcut: &str, control_socket: &str) -> Option<String> {
+    let desktop = format!(
+        "{}:{}",
+        std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+        std::env::var("XDG_SESSION_DESKTOP").unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    if desktop.contains("gnome") {
+        return detect_gnome_shortcut_conflict(shortcut, control_socket);
+    }
+    None
+}
+
+#[cfg(feature = "gtk_ui")]
 fn shortcut_setup_hint() -> String {
     let desktop = format!(
         "{}:{}",
@@ -274,6 +401,24 @@ fn apply_toggle_accelerators(app: &adw::Application, configured: &str, is_captur
     let values = toggle_accelerators_for_state(configured, is_capturing);
     let refs = values.iter().map(|v| v.as_str()).collect::<Vec<_>>();
     app.set_accels_for_action("app.toggle", &refs);
+}
+
+#[cfg(feature = "gtk_ui")]
+fn should_hide_on_focus_loss(is_active: bool, is_shown: bool) -> bool {
+    is_shown && !is_active
+}
+
+#[cfg(feature = "gtk_ui")]
+fn persist_global_shortcut_setting(
+    settings: &Rc<RefCell<LauncherUiSettings>>,
+    raw: &str,
+) -> Result<String, String> {
+    let value = sanitize_shortcut(raw);
+    let mut next = settings.borrow().clone();
+    next.global_shortcut = value.clone();
+    save_ui_settings(&next)?;
+    *settings.borrow_mut() = next;
+    Ok(value)
 }
 
 #[cfg(feature = "gtk_ui")]
@@ -950,6 +1095,10 @@ fn run() {
             apply_density_class(&window, &settings.density_mode);
             apply_blur_class(&window, settings.blur_strength_percent);
         }
+        window.set_hide_on_close(true);
+        window.set_modal(false);
+        window.set_can_focus(true);
+        window.set_focus_visible(true);
         window.add_css_class("hop-launcher-window");
 
         let content = gtk::Box::builder()
@@ -1031,6 +1180,14 @@ fn run() {
         }
         if let Err(error) = start_control_listener(default_control_socket_path(), toggle_tx) {
             eprintln!("failed to start control listener: {}", error);
+        }
+        {
+            let ui_settings = ui_settings.clone();
+            window.connect_is_active_notify(move |window| {
+                if should_hide_on_focus_loss(window.is_active(), window.has_css_class("hop-shown")) {
+                    hide_window(window, &ui_settings.borrow());
+                }
+            });
         }
         sync_settings_to_hopd(&socket_path, &ui_settings.borrow());
         {
@@ -1975,7 +2132,7 @@ fn open_settings_window(
 
     let shortcut_row = adw::ActionRow::builder()
         .title("Global shortcut")
-        .subtitle("Apply compositor/global shortcut via hop-hotkeyd.")
+        .subtitle("Captured shortcut is auto-applied via hop-hotkeyd.")
         .build();
     let shortcut_value = Rc::new(RefCell::new(settings.borrow().global_shortcut.clone()));
     let shortcut_capturing = Rc::new(RefCell::new(false));
@@ -2007,6 +2164,8 @@ fn open_settings_window(
         let shortcut_button_for_key = shortcut_button.clone();
         let capturing = shortcut_capturing.clone();
         let shortcut_value_for_key = shortcut_value.clone();
+        let settings = settings.clone();
+        let settings_status = settings_status.clone();
         let controller = gtk::EventControllerKey::new();
         controller.connect_key_pressed(move |_, key, _, state| {
             if !*capturing.borrow() {
@@ -2054,12 +2213,63 @@ fn open_settings_window(
                 return true.into();
             }
             let accel = gtk::accelerator_name(key, mods);
-            let value = sanitize_shortcut(accel.as_str());
+            let value = match persist_global_shortcut_setting(&settings, accel.as_str()) {
+                Ok(value) => value,
+                Err(error) => {
+                    set_settings_feedback(
+                        &settings_status,
+                        &format!("Save failed: {error}"),
+                        true,
+                    );
+                    *capturing.borrow_mut() = false;
+                    return true.into();
+                }
+            };
             shortcut_button_for_key.set_label(&value);
-            *shortcut_value_for_key.borrow_mut() = value;
+            *shortcut_value_for_key.borrow_mut() = value.clone();
             *capturing.borrow_mut() = false;
             let restored = shortcut_value_for_key.borrow().clone();
             apply_toggle_accelerators(&app, &restored, false);
+            let control_socket = default_control_socket_path();
+            if let Some(owner) = detect_shortcut_conflict_owner(&value, &control_socket) {
+                set_settings_feedback(
+                    &settings_status,
+                    &format!("Shortcut already used by {owner}. Replace it there first."),
+                    true,
+                );
+                return true.into();
+            }
+            set_settings_feedback(
+                &settings_status,
+                "Applying global shortcut...",
+                false,
+            );
+            let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+            let value_for_worker = value.clone();
+            std::thread::spawn(move || {
+                let outcome = apply_shortcut_via_hotkeyd(&value_for_worker, &control_socket);
+                let _ = tx.send(outcome);
+            });
+            let settings_status_async = settings_status.clone();
+            gtk::glib::timeout_add_local(Duration::from_millis(25), move || match rx.try_recv() {
+                Ok(Ok(())) => {
+                    set_settings_feedback(&settings_status_async, "Applied global shortcut", false);
+                    gtk::glib::ControlFlow::Break
+                }
+                Ok(Err(message)) => {
+                    set_settings_feedback(&settings_status_async, &message, true);
+                    gtk::glib::ControlFlow::Break
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    set_settings_feedback(
+                        &settings_status_async,
+                        "Shortcut apply failed: worker disconnected",
+                        true,
+                    );
+                    gtk::glib::ControlFlow::Break
+                }
+            });
             true.into()
         });
         shortcut_button.add_controller(controller);
@@ -2086,24 +2296,23 @@ fn open_settings_window(
         let apply_shortcut_button_for_cb = apply_shortcut_button.clone();
         apply_shortcut_button.connect_clicked(move |_| {
             let raw = shortcut_value.borrow().clone();
-            let value = sanitize_shortcut(&raw);
+            let value = match persist_global_shortcut_setting(&settings, &raw) {
+                Ok(value) => value,
+                Err(error) => {
+                    apply_shortcut_button_for_cb.set_sensitive(true);
+                    set_settings_feedback(
+                        &settings_status,
+                        &format!("Save failed: {error}"),
+                        true,
+                    );
+                    return;
+                }
+            };
             shortcut_button_for_apply.set_label(&value);
             *shortcut_value.borrow_mut() = value.clone();
             apply_shortcut_button_for_cb.set_sensitive(false);
             set_settings_feedback(&settings_status, "Applying global shortcut...", false);
 
-            let mut next = settings.borrow().clone();
-            next.global_shortcut = value.clone();
-            if let Err(error) = save_ui_settings(&next) {
-                apply_shortcut_button_for_cb.set_sensitive(true);
-                set_settings_feedback(
-                    &settings_status,
-                    &format!("Save failed: {error}"),
-                    true,
-                );
-                return;
-            }
-            *settings.borrow_mut() = next;
             apply_toggle_accelerators(&app, &value, false);
 
             let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
@@ -4147,6 +4356,47 @@ mod tests {
 
         let during_capture = toggle_accelerators_for_state("<Primary><Shift>ampersand", true);
         assert!(during_capture.is_empty());
+    }
+
+    #[test]
+    fn normalize_accel_value_strips_quotes_spaces_and_case() {
+        assert_eq!(
+            normalize_accel_value(" '<Super> space' "),
+            "<super>space".to_string()
+        );
+    }
+
+    #[test]
+    fn extract_gsettings_path_items_parses_single_quoted_array() {
+        let items = extract_gsettings_path_items(
+            "['/org/gnome/x/', '/org/gnome/y/']",
+        );
+        assert_eq!(
+            items,
+            vec![
+                "/org/gnome/x/".to_string(),
+                "/org/gnome/y/".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_gsettings_recursive_conflict_line_detects_matching_owner() {
+        let line =
+            "org.gnome.desktop.wm.keybindings switch-windows ['<Super>space', '<Alt>Tab']";
+        let owner = parse_gsettings_recursive_conflict_line(line, "<Super>space");
+        assert_eq!(
+            owner,
+            Some("org.gnome.desktop.wm.keybindings switch-windows".to_string())
+        );
+    }
+
+    #[test]
+    fn focus_loss_hides_only_when_launcher_is_shown() {
+        assert!(should_hide_on_focus_loss(false, true));
+        assert!(!should_hide_on_focus_loss(true, true));
+        assert!(!should_hide_on_focus_loss(false, false));
+        assert!(!should_hide_on_focus_loss(true, false));
     }
 
     #[test]

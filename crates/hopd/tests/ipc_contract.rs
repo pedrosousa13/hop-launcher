@@ -111,6 +111,9 @@ async fn search_query_returns_web_search_action_rows_for_web_prefix() {
     let results = parsed.result["results"].as_array().expect("results array");
     assert!(!results.is_empty(), "expected web action result");
     assert!(results.iter().any(|row| row["kind"] == "action"));
+    assert!(results.iter().any(|row| {
+        row["kind"] == "action" && row["icon"] == "system-search-symbolic"
+    }));
 }
 
 #[tokio::test]

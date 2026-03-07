@@ -1,5 +1,11 @@
 use crate::SearchItem;
 
+const ICON_CALCULATOR: &str = "accessories-calculator-symbolic";
+const ICON_CURRENCY: &str = "accessories-calculator-symbolic";
+const ICON_WEATHER: &str = "weather-overcast-symbolic";
+const ICON_TIMEZONE: &str = "preferences-system-time-symbolic";
+const ICON_EMOJI: &str = "face-smile-symbolic";
+
 pub fn results(query: &str) -> Vec<SearchItem> {
     let lower = query.trim().to_lowercase();
     let Some(utility_query) = utility_query_body(&lower) else {
@@ -15,7 +21,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             "utility",
             &format!("Calculator: {}", utility_query),
             "Run quick calculations",
-            "accessories-calculator-symbolic",
+            ICON_CALCULATOR,
             "utility calculator math expression evaluate",
         )];
     }
@@ -26,7 +32,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             "utility",
             &format!("{amount} {src} -> {dst}"),
             "Currency conversion",
-            "preferences-system-time-symbolic",
+            ICON_CURRENCY,
             "utility currency conversion exchange rates money",
         )];
     }
@@ -37,7 +43,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             "utility",
             &format!("Weather in {}", title_case(&location)),
             "Show current weather",
-            "weather-overcast-symbolic",
+            ICON_WEATHER,
             "utility weather forecast temperature",
         )];
     }
@@ -47,7 +53,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             "utility",
             "Weather",
             "Show current weather",
-            "weather-overcast-symbolic",
+            ICON_WEATHER,
             "utility weather forecast temperature",
         )];
     }
@@ -58,7 +64,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             "utility",
             &format!("Time in {}", title_case(&location)),
             "Lookup time in cities",
-            "alarm-symbolic",
+            ICON_TIMEZONE,
             "utility timezone world clock city time",
         )];
     }
@@ -69,7 +75,7 @@ pub fn results(query: &str) -> Vec<SearchItem> {
             "utility",
             "Emoji Search",
             "Find emojis by name",
-            "face-smile-symbolic",
+            ICON_EMOJI,
             "utility emoji symbols picker",
         )];
     }
@@ -190,7 +196,7 @@ fn utility_catalog() -> Vec<SearchItem> {
             "utility",
             "Calculator",
             "Run quick calculations",
-            "accessories-calculator-symbolic",
+            ICON_CALCULATOR,
             "utility utilities calculator math expression evaluate",
         ),
         SearchItem::new(
@@ -198,7 +204,7 @@ fn utility_catalog() -> Vec<SearchItem> {
             "utility",
             "Currency Converter",
             "Convert money values",
-            "preferences-system-time-symbolic",
+            ICON_CURRENCY,
             "utility utilities currency conversion exchange rates money",
         ),
         SearchItem::new(
@@ -206,7 +212,7 @@ fn utility_catalog() -> Vec<SearchItem> {
             "utility",
             "Weather",
             "Show current weather",
-            "weather-overcast-symbolic",
+            ICON_WEATHER,
             "utility utilities weather forecast temperature",
         ),
         SearchItem::new(
@@ -214,7 +220,7 @@ fn utility_catalog() -> Vec<SearchItem> {
             "utility",
             "World Clock",
             "Lookup time in cities",
-            "alarm-symbolic",
+            ICON_TIMEZONE,
             "utility utilities timezone world clock city time",
         ),
         SearchItem::new(
@@ -222,7 +228,7 @@ fn utility_catalog() -> Vec<SearchItem> {
             "utility",
             "Emoji Search",
             "Find emojis by name",
-            "face-smile-symbolic",
+            ICON_EMOJI,
             "utility utilities emoji symbols picker",
         ),
     ]
@@ -250,7 +256,11 @@ mod tests {
     #[test]
     fn parses_utility_currency_query() {
         let rows = results("utility 12 usd to chf");
-        assert!(rows.iter().any(|row| row.id == "utility:currency:12:USD:CHF"));
+        let row = rows
+            .iter()
+            .find(|row| row.id == "utility:currency:12:USD:CHF")
+            .expect("currency utility row");
+        assert_eq!(row.icon, "accessories-calculator-symbolic");
     }
 
     #[test]
