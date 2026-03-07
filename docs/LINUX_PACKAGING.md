@@ -54,6 +54,15 @@ sudo apt install -y build-essential debhelper dh-cargo cargo rustc dpkg-dev
      - https://www.aptly.info/
      - https://wiki.debian.org/DebianRepository/SetupWithReprepro
 
+Automation helper in this repo:
+
+```bash
+LAUNCHPAD_PPA='~owner/ubuntu/hop-launcher' RELEASE_TAG='v0.1.0' \
+  bash scripts/release/publish-launchpad.sh
+```
+
+The script builds signed source packages and uploads with `dput` to Launchpad.
+
 ### A3) User installation (APT)
 
 Once repo is published, users install with:
